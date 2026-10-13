@@ -1,5 +1,5 @@
-import {londonDay} from './core.js';
-const day=document.querySelector('#day'), output=document.querySelector('#result');day.value=londonDay();
+import {londonDay,addDays} from './core.js';
+const day=document.querySelector('#day'), output=document.querySelector('#result');day.value=addDays(londonDay(),8);
 async function send(kind) {output.textContent='Checking…';try {
  const result=await chrome.runtime.sendMessage({kind,day:day.value});output.textContent=JSON.stringify(result,null,2);
  if(kind==='status') {
