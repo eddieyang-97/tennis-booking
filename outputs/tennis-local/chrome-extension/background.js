@@ -291,7 +291,6 @@ chrome.runtime.onMessage.addListener((message,sender,respond)=>{
     if(message.kind==='resume') return resume(message.day);
     if(message.kind==='prepareCheckout')return checkout();
     if(message.kind==='verifyPayment')return verifyPayment();
-    if(message.kind==='payTest')return automaticPayment(true);
     if(message.kind==='openCardVault'){await chrome.tabs.create({url:chrome.runtime.getURL('card-vault.html'),active:true});return {status:'local-card-setup-opened'};}
     if(message.kind==='payCheckout')return automaticPayment();
     if(message.kind==='armPayment')return arm(message.day,'payment');

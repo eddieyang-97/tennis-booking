@@ -24,20 +24,23 @@ chrome.runtime.onMessage.addListener((request,sender,respond)=>{
   if(/\/(verify-human|login|sign-in)(\/|$)/.test(location.pathname))throw Error('Human verification required; inspect retained tab');
   if(request.kind==='basket-read')return basketSummary();
   const s=request.slot;
+  const courts=Object.hasOwn(s,'courts')?s.courts:Array(s.hours).fill(s.court);
+  if(![1,2].includes(s.hours)||!Array.isArray(courts)||courts.length!==s.hours||courts[0]!==s.court||!courts.every(c=>[1,2,3,4].includes(c)))throw Error('Invalid hourly court identity');
   if(!['bethnal-green-gardens','victoria-park'].includes(s.venue)||location.pathname!==`/book/courts/${s.venue}/${s.date}`)throw Error('Wrong selection page');
   const d=new Date(s.date+'T12:00:00Z');const book=document.querySelector('#book');
   const weekday=new Intl.DateTimeFormat('en-GB',{weekday:'long',timeZone:'UTC'}).format(d),month=new Intl.DateTimeFormat('en-GB',{month:'long',year:'numeric',timeZone:'UTC'}).format(d);
   if(!book?.textContent.includes(`${weekday} ${d.getUTCDate()}`)||!book.textContent.includes(month))throw Error('Visible date mismatch');
   const boxes=[];let total=0;
   for(let i=0;i<s.hours;i++) {
+   const court=courts[i];
    const h=+s.start.slice(0,2)+i,label=`${h%12||12}${h>=12?'pm':'am'}`;
    const rows=[...book.querySelectorAll('tr')].filter(r=>r.querySelector('th')?.textContent.trim()===label);
    if(rows.length!==1)throw Error('Hour unavailable');
    // Identify the court before checking availability: booked labels have no price.
-   const matches=[...rows[0].querySelectorAll('input[type=checkbox]')].filter(b=>new RegExp(`^(?:Tennis court|Court) ${s.court}(?!\\d)`).test(b.labels?.[0]?.textContent.trim()||''));
-   if(matches.length!==1)throw Error(`Court identity missing or ambiguous: court ${s.court}, ${label}`);
-   if(matches[0].disabled)throw Error(`Slot unavailable: court ${s.court}, ${label} (${matches[0].labels[0].textContent.trim()})`);
-   if(matches[0].checked)throw Error(`Slot already selected: court ${s.court}, ${label}; no additional selection attempted`);
+   const matches=[...rows[0].querySelectorAll('input[type=checkbox]')].filter(b=>new RegExp(`^(?:Tennis court|Court) ${court}(?!\\d)`).test(b.labels?.[0]?.textContent.trim()||''));
+   if(matches.length!==1)throw Error(`Court identity missing or ambiguous: court ${court}, ${label}`);
+   if(matches[0].disabled)throw Error(`Slot unavailable: court ${court}, ${label} (${matches[0].labels[0].textContent.trim()})`);
+   if(matches[0].checked)throw Error(`Slot already selected: court ${court}, ${label}; no additional selection attempted`);
    const m=/£(\d+(?:\.\d{1,2})?)$/.exec(matches[0].labels[0].textContent.trim());if(!m)throw Error('Unknown price');total+=Math.round(+m[1]*100);boxes.push(matches[0]);
   }
   if(total!==Math.round(+s.totalGBP*100))throw Error('Price changed before selection');

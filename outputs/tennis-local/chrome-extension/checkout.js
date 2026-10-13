@@ -1,10 +1,10 @@
 import {validateSlot,verifyBasket,sameSlot} from './stage-rules.js';
-import {londonDay,addDays} from './core.js';
+import {londonDay,addDays,slotKey} from './core.js';
 export const PAYMENT_TEST_SLOT={venue:'victoria-park',date:'2026-10-17',court:2,start:'07:00',hours:1,totalGBP:'2.50'};
 export function checkoutKey(slot,test=false) {
  if(test){if(!sameSlot(slot,PAYMENT_TEST_SLOT))throw Error('Unauthorized payment test');if(slot.date<londonDay() || slot.date>addDays(londonDay(),7))throw Error('Payment test outside booking window');}
  else {validateSlot(slot);if(+slot.totalGBP>(slot.hours===2?14:7))throw Error('Checkout exceeds authorized price limit');}
- return JSON.stringify([slot.venue,slot.date,slot.court,slot.start,slot.hours]);
+ return slotKey(slot);
 }
 export function checkoutCandidate(results) {
  for(const entry of results||[])for(const candidate of entry.candidates||[]) {

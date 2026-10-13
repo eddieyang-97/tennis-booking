@@ -1,8 +1,6 @@
 # Tennis booking — developer reference
 
-This enhancement branch develops v0.5.1's readiness panel. The stable MVP release candidate remains v0.5.0 on `main`; use it for live acceptance first. The enhancement suite has 52 passing tests and its runtime build has 25 files.
-
-Normal-Chrome Manifest V3 extension for Tower Hamlets Courtside bookings. The active source is [outputs/tennis-local/chrome-extension](outputs/tennis-local/chrome-extension/). Current version: **0.5.0 MVP**. This repository preserves the working source, regression tests and payment-system findings so future development can continue without repeating the investigation.
+Normal-Chrome Manifest V3 extension for Tower Hamlets Courtside bookings. The active source is [outputs/tennis-local/chrome-extension](outputs/tennis-local/chrome-extension/). This enhancement branch develops **v0.5.4**, adding a readiness panel to the current v0.5.3 MVP. It includes mixed-court support, the eight-day playing-date default and removal of paid-test controls. Keep the installed MVP unchanged until its live midnight run completes. This repository preserves the working source, regression tests and payment-system findings so future development can continue without repeating the investigation.
 
 **Verified on 13 October 2026:** the extension filled Stripe's card form and submitted the authorised £2.50 Victoria Park test payment. The merchant's account purchase history showed the matching reference as **Confirmed / Paid ✔ / £2.50**. The owner subsequently cancelled the court booking manually. Cancellation does not establish a refund.
 
@@ -17,20 +15,25 @@ cd outputs/tennis-local/chrome-extension
 npm test
 ```
 
-The extension has no npm dependencies; tests use Node's built-in test runner (verified with Node 24.18). The current suite has 50 passing tests. Load this directory as an unpacked extension in Chrome's extension manager. After changing source, reload the extension and relevant court/checkout tabs. **Reload before unlocking the card**: extension reload and browser restart clear the unlocked session.
+The extension has no npm dependencies; tests use Node's built-in test runner (verified with Node 24.18). This enhancement suite has 56 passing tests. Load this directory as an unpacked extension in Chrome's extension manager. After changing source, reload the extension and relevant court/checkout tabs. **Reload before unlocking the card**: extension reload and browser restart clear the unlocked session.
 
-Build the runtime ZIP with `powershell -ExecutionPolicy Bypass -File .\build.ps1` from the repository root. It checks an explicit 24-file runtime allowlist and prints the SHA256. The artifact is written under `artifacts/`, excluded from Git; release assets are published separately.
+Build the runtime ZIP with `powershell -ExecutionPolicy Bypass -File .\build.ps1` from the repository root. It checks an explicit 25-file runtime allowlist and prints the SHA256. The artifact is written under `artifacts/`, excluded from Git; release assets are published separately.
+
+The readiness panel shows version, card lock, unresolved checkout, London release time and preflight state. It refreshes after popup actions and has a manual refresh button. Prepared status requires an unlocked card, no pending checkout, a future payment job and completed preflight; it does not guarantee that human/bank verification will remain satisfied. This branch is not installed or merged before the current MVP's live run.
 
 Create or unlock the encrypted card file through the extension's card setup page. Keep the downloaded file outside the repository. Card setup, passphrase entry and any bank/site authentication happen locally. See the [extension usage guide](outputs/tennis-local/chrome-extension/README.md).
 
 ## Booking rules and execution
 
+- The popup defaults the playing-date field to London’s current date plus eight days. This is a suggested date, not an automatic weekday adjustment; choose a Monday–Thursday date before arming. Opening the popup does not change an existing armed job.
 - Playing dates: Monday–Thursday; starts at 20:00 or 21:00.
-- Bethnal Green Gardens before Victoria Park; two hours before one; consecutive hours on the same court.
+- Bethnal Green Gardens before Victoria Park; two hours before one; consecutive hours may use different courts in the same venue. Same-court options are tried first.
 - Maximum £14 for two hours or £7 for one; re-verify the exact item prices and total before payment.
 - One confirmed booking per playing date. Other bookings in the same week do not block a new date; there is no weekly skip rule.
 - Release is London midnight seven days before the playing date, with a preflight five minutes earlier. Date conversion accounts for GMT/BST.
 - Each armed job runs once. Chrome must be open and the laptop awake; Chrome alarms do not wake a sleeping laptop. A check over a minute late stops. Startup restores future alarms and stops a missed release.
+
+An `armed` response with `mode:payment` and `paymentAutomatic:true` confirms the saved date and automatic payment mode, not a completed preflight or booking. The response's release timestamp is UTC; London midnight during BST appears as 23:00Z on the preceding date. Preflight runs five minutes before that release. Source updates take effect after extension reload; saved jobs survive, but the unlocked card session does not. Unlock again after the final reload and avoid further reloads before the run. The paid-test launch control has been removed; its historical payment journal and receipt-only recovery remain intact.
 
 At release the service worker checks the account, reads availability, selects an exact candidate, verifies the basket, opens card checkout, verifies the provisional reference and price, fills Stripe, journals submission, clicks Pay once, and attempts receipt reconciliation. A pending checkout blocks another checkout. Human verification or bank approval can still stop an unattended run.
 
@@ -51,13 +54,13 @@ At release the service worker checks the account, reads availability, selects an
 | `popup.html`, `popup.js` | Scheduling, card readiness, test and recovery controls |
 | `test-*.js` | Regression fixtures; these do not prove live merchant behaviour |
 
-Persistent Chrome local storage includes `job`, `checkoutRecords`, `checkoutResult`, availability results and timestamped `runHistory`. The unlocked card lives only in trusted Chrome session storage as `localPaymentCard`. Checkout identity binds venue, date, court, start, hours and exact price. `paymentDispatchedAt` is persisted **before** submission and is sticky across later phases. After that point, recovery may inspect receipts but must never submit again automatically.
+Persistent Chrome local storage includes `job`, `checkoutRecords`, `checkoutResult`, availability results and timestamped `runHistory`. The unlocked card lives only in trusted Chrome session storage as `localPaymentCard`. Checkout identity binds venue, date, hourly court assignments, start, hours and exact price. Mixed slots add a courts array; legacy single-court keys remain unchanged. `paymentDispatchedAt` is persisted **before** submission and is sticky across later phases. After that point, recovery may inspect receipts but must never submit again automatically.
 
 ## Evidence and next work
 
 | Check | Status |
 | --- | --- |
-| Regression suite | 50 passing tests, including worker recovery and two-hour simulated flow |
+| Regression suite | 56 passing tests, including worker recovery, mixed-court two-hour simulated flow and popup readiness integration |
 | Live one-hour Victoria Park basket selection and cleanup | Passed on 12 October UTC / 13 October London |
 | Live local-card autofill and £2.50 submission | Paid merchant purchase independently verified on 13 October |
 | Test booking cancellation | Manually performed and confirmed by owner |

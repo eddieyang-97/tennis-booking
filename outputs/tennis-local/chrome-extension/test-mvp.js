@@ -3,10 +3,10 @@ import {PAYMENT_TEST_SLOT} from './checkout.js';
 import {prepareCheckout} from './checkout.js';
 import {payCheckout} from './payment.js';
 import {verifyBasket} from './stage-rules.js';
-test('two-hour MVP flow selects once, fills once, dispatches once and confirms from account history',async()=>{
+test('mixed-court two-hour MVP flow selects once, fills once, dispatches once and confirms from account history',async()=>{
  const now=Date.now;Date.now=()=>Date.parse('2026-10-13T00:00:00Z');
- const slot={venue:'victoria-park',date:'2026-10-20',court:2,start:'20:00',hours:2,totalGBP:'10.00'};
- const basket={empty:false,items:[20,21].map(hour=>({venue:'Victoria Park',court:2,day:20,month:10,hour,priceGBP:'5.00'})),totalGBP:'10.00',paymentBoundary:true};
+ const slot={venue:'victoria-park',date:'2026-10-20',court:2,courts:[2,3],start:'20:00',hours:2,totalGBP:'10.00'};
+ const basket={empty:false,items:[20,21].map((hour,i)=>({venue:'Victoria Park',court:slot.courts[i],day:20,month:10,hour,priceGBP:'5.00'})),totalGBP:'10.00',paymentBoundary:true};
  let records=[],current={empty:true,items:[]},selects=0,fills=0,submits=0;
  try {
   const prepared=await prepareCheckout(slot,{load:async()=>records,save:async r=>records=r,read:async()=>current,select:async()=>{selects++;current=basket;},retain:async()=>42,notify:async()=>{}});
@@ -36,6 +36,6 @@ test('worker reconciles old paid journal with closed tab and locked card before 
   const locked=await send('armPayment');assert.equal(locked.error,'Local card is locked. Open card setup, unlock the encrypted file, then close setup and return to checkout. No Link payment was attempted.');assert.equal(alarms.length,0);
   globalThis.chrome.storage.session.get=async()=>({localPaymentCard:{number:'4242424242424242',expiry:'12/30',cvc:'123',postcode:'E1 1AA'}});
   const armed=await send('armPayment');assert.equal(armed.status,'armed');assert.equal(state.job.mode,'payment');assert.equal(alarms.length,2);assert.equal(mutations,0);
-  const again=await send('payTest');assert.match(again.error,/already confirmed/);assert.equal(mutations,0);
+  const again=await send('payTest');assert.match(again.error,/Unknown action/);assert.equal(mutations,0);
  }finally{globalThis.chrome=oldChrome;Date.now=oldNow;}
 });

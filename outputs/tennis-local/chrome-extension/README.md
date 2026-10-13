@@ -1,6 +1,8 @@
-# Tennis booking extension — v0.5.0 MVP
+# Tennis booking extension — v0.5.4 readiness enhancement (draft)
 
-Runs in normal Chrome using your Courtside sign-in. It checks and books at London midnight, seven days before the selected playing date, then attempts payment. Monday–Thursday only; starts at 20:00 or 21:00. Bethnal Green Gardens precedes Victoria Park; two hours precede one, with consecutive hours on the same court. Limits are £14 for two hours and £7 for one. Confirmed dates and unresolved checkouts block duplicate bookings. Each armed job runs once.
+This draft includes the latest MVP rules and a compact readiness panel. Keep the installed v0.5.3 unchanged until the live midnight run completes; merge and reload this enhancement afterwards. The panel updates after actions or **Refresh status** and reports setup/preflight evidence without guaranteeing a booking.
+
+Runs in normal Chrome using your Courtside sign-in. It checks and books at London midnight, seven days before the selected playing date, then attempts payment. Monday–Thursday only; starts at 20:00 or 21:00. Bethnal Green Gardens precedes Victoria Park; two hours precede one, with consecutive hours in the same venue; switching courts is allowed, with same-court options tried first. Limits are £14 for two hours and £7 for one. Confirmed dates and unresolved checkouts block duplicate bookings. Each armed job runs once.
 
 ## Setup and scheduling
 
@@ -8,15 +10,19 @@ Runs in normal Chrome using your Courtside sign-in. It checks and books at Londo
 2. Open **Set up or unlock card file**. Enter card number, expiry, CVC and billing postcode locally; choose a passphrase of at least 12 characters. Creation downloads `tennis-card.encrypted.json` and unlocks it for the current Chrome session.
 3. Close setup, choose a future playing date, and use **Arm midnight booking and payment**. Unlock the existing file before subsequent sessions. Keep Chrome open and the laptop awake. Chrome restart or extension reload locks the card.
 
+The playing-date field defaults to London’s today plus eight days. It does not skip weekends automatically or change an already armed job; choose a Monday–Thursday date before arming. The armed response shows the saved date and release in UTC. During BST, 23:00Z means midnight London on the next calendar day. Preflight runs five minutes before release. An armed response does not mean preflight has passed or a booking has succeeded.
+
+After a source update, reload the extension once, then unlock the card again. The saved schedule survives reload, but the unlocked card does not. Keep the card unlocked and avoid another reload before the run.
+
 The file uses AES-GCM encryption with PBKDF2-SHA256 and a random salt and IV. Card details stay only in trusted extension session storage while unlocked; they are not written to project files, persistent extension storage, logs or results. Store the encrypted file separately from the extension source.
 
-Payments require an unlocked local card and fill Stripe's card form directly. There is no Link fallback. The popup shows whether the card is unlocked, and enables the test only when ready (or when reconciling a previously submitted payment). Unlock verifies the session-storage write. Arming, preflight and release check card availability before proceeding. Human verification and bank approval can still require intervention.
+Payments require an unlocked local card and fill Stripe's card form directly. There is no Link fallback. The popup shows whether the card is unlocked. Unlock verifies the session-storage write. Arming, preflight and release check card availability before proceeding. Receipt-only recovery does not require an unlocked card. Human verification and bank approval can still require intervention.
 
-## Recovery and the current payment test
+## Recovery and historical payment test
 
 **Check and recover** contains availability checks, site-verification resume, checkout preparation, payment reconciliation and paid-receipt verification. The availability reset does not erase payment uncertainty. The legacy basket reconciliation control only verifies an explicitly empty basket; it removes nothing and exists for unresolved records from older versions.
 
-**Run £2.50 checkout test** is the authorised Victoria Park court 2 booking on Saturday 17 October 2026, 07:00–07:59, £2.50. Run it from its existing basket or card checkout. Do not add another item or clear its pending record. Payment uses the extension's submission code; leave the site's Pay button untouched.
+The paid-test button and its launch action were removed in v0.5.2. The earlier £2.50 test remains in historical payment records; receipt reconciliation still supports that record without submitting another charge. Do not delete its submission marker. This update does not change saved jobs, but reloading the extension clears the unlocked card session; unlock again before an armed run.
 
 The extension verifies slot, total and provisional reference, commits its payment journal before submitting once, and requires matching paid evidence. It now reconciles the merchant account purchase history if the receipt tab is closed, stale or unrecognised, requiring the exact dispatched reference and amount in one Confirmed / Paid ✔ row. Account history confirms payment and leaves active booking state unknown. An interrupted or uncertain submission is never charged again automatically. Unknown layouts and mismatched details stop for inspection. Discovery and temporary read retries are bounded; run steps include timestamps. Arming, preflight and release reconcile an older dispatched payment before proceeding; unpaid unresolved baskets still stop.
 
@@ -30,7 +36,7 @@ Run `npm test` in this directory for the maintained regression suite. Runtime ar
 
 ## Card file troubleshooting
 
-After an extension reload, close old card-setup tabs and reopen setup from the popup. Select the original `tennis-card.encrypted.json` and enter its original passphrase exactly, including spaces. The file format is unchanged; existing files remain supported. The setup now distinguishes invalid JSON, unsupported or damaged encryption fields, decryption failure, and failures storing a decrypted card in browser memory. A decryption authentication failure can mean either an incorrect passphrase or changed ciphertext; these cannot be distinguished reliably. Error messages contain no entered values or underlying browser error contents. JSON files with a UTF-8 byte-order mark are supported. The maintained suite has 50 passing tests.
+After an extension reload, close old card-setup tabs and reopen setup from the popup. Select the original `tennis-card.encrypted.json` and enter its original passphrase exactly, including spaces. The file format is unchanged; existing files remain supported. The setup now distinguishes invalid JSON, unsupported or damaged encryption fields, decryption failure, and failures storing a decrypted card in browser memory. A decryption authentication failure can mean either an incorrect passphrase or changed ciphertext; these cannot be distinguished reliably. Error messages contain no entered values or underlying browser error contents. JSON files with a UTF-8 byte-order mark are supported. The maintained suite has 53 passing tests.
 
 
 Before payment submission, a reloaded checkout may issue a new provisional reference. The extension accepts that replacement only after re-verifying the exact basket and amount, and records the prior reference with a timestamp. Once payment dispatch is journalled, its persistent submission marker prevents another payment even if other phase metadata changes. Checkout preparation cannot erase that marker or a legacy uncertain-payment phase; only a matching paid receipt can confirm the record. Unknown phases stop for inspection.

@@ -2,6 +2,7 @@ import test from 'node:test';import assert from 'node:assert/strict';import vm f
 import {reconcilePaid,recoveryIdentity} from './reconciliation.js';
 import {payCheckout} from './payment.js';
 import {PAYMENT_TEST_SLOT,confirmCheckout} from './checkout.js';
+import {slotKey} from './core.js';
 const slot=PAYMENT_TEST_SLOT,key=JSON.stringify([slot.venue,slot.date,slot.court,slot.start,slot.hours]);
 const record={slot,test:true,key,reference:'100001',status:'pending',phase:'payment-uncertain',paymentDispatchedAt:'2026-10-13T00:00:00Z'};
 const source=fs.readFileSync(new URL('./checkout-content.js',import.meta.url),'utf8');
@@ -17,6 +18,12 @@ function purchase(rows=[row],headers=['Date','Ref','State','Info','Value',''],pa
 test('account purchase confirms exact PT reference and amount after cancellation without claiming active booking',()=>{
  const result=purchase().send();assert.equal(result.ok,true);assert.equal(result.value.reference,'100001');assert.equal(result.value.bookingState,'unknown');assert.equal(result.value.source,'account-purchase');
  const confirmed=confirmCheckout(record,result.value);assert.equal(confirmed.status,'confirmed');assert.equal(confirmed.paymentDispatchedAt,record.paymentDispatchedAt);assert.equal(confirmed.bookingState,'unknown');
+});
+test('mixed-court paid history binds the complete hourly-court key and supports historical recovery',()=>{
+ const mixed={venue:'victoria-park',date:'2026-10-20',court:2,courts:[2,3],start:'20:00',hours:2,totalGBP:'10.00'},mixedKey=slotKey(mixed);
+ const read=purchase([[row[0],row[1],row[2],'','£10.00',row[5]]]).send({slot:mixed,key:mixedKey});assert.equal(read.ok,true);
+ assert.equal(recoveryIdentity({...record,test:false,slot:mixed,key:mixedKey}).key,mixedKey);
+ assert.equal(purchase().send({slot:mixed,key}).ok,false);
 });
 test('account history rejects ambiguous, unpaid, mismatched and unknown layouts',()=>{
  for(const rows of [[row,row],[[...row.slice(0,4),'£7.00',row[5]]],[[...row.slice(0,5),'Unpaid']],[[row[0],row[1],'Pending',...row.slice(3)]],[[row[0],'PT100002',...row.slice(2)]],[]])assert.equal(purchase(rows).send().ok,false);

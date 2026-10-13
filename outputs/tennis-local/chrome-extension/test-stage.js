@@ -1,4 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';import {verifyBasket} from './stage-rules.js';
+import {slotKey} from './core.js';
 import vm from 'node:vm';import fs from 'node:fs';
 import {navigateLoaded} from './navigation.js';
 import {retryTab} from './retry.js';
@@ -40,6 +41,13 @@ test('two-hour verification requires adjacent same-court identities and exact to
  assert.equal(verifyBasket(b,s),true);
  for(const changed of [{...b,items:[b.items[0],{...b.items[1],court:3}]},{...b,totalGBP:'15.00'},{...b,items:[b.items[0],{...b.items[1],hour:22}]}])assert.throws(()=>verifyBasket(changed,s));
 });
+test('mixed basket verifies each hourly court, while keys distinguish court order and preserve legacy identity',()=>{
+ const s={...slot,start:'20:00',hours:2,totalGBP:'14.00',courts:[2,3]};
+ const b={...basket,items:[{...basket.items[0],hour:20,priceGBP:'7.00'},{...basket.items[0],hour:21,court:3,priceGBP:'7.00'}],totalGBP:'14.00'};
+ assert.equal(verifyBasket(b,s),true);assert.throws(()=>verifyBasket({...b,items:[b.items[0],{...b.items[1],court:2}]},s),/mismatch/);
+ assert.notEqual(slotKey(s),slotKey({...s,court:3,courts:[3,2]}));assert.equal(slotKey(slot),JSON.stringify([slot.venue,slot.date,slot.court,slot.start,slot.hours]));
+ for(const courts of [[2],[2,5],[3,2]])assert.throws(()=>slotKey({...s,courts}),/hourly court/);
+});
 test('page selection rechecks all adjacent hours before first click; duplicate checked cell stops',async()=>{
  const code=fs.readFileSync(new URL('./stage-content.js',import.meta.url),'utf8');let listener,clicks=0;
  const boxes=[{disabled:false,checked:false,labels:[{textContent:'Court 2£7'}],click(){clicks++;this.checked=true;}},
@@ -52,6 +60,7 @@ test('page selection rechecks all adjacent hours before first click; duplicate c
  let response=await invoke({...slot,start:'20:00',hours:2,totalGBP:'14.00'});assert.equal(response.ok,false);assert.match(response.error,/Slot unavailable/);assert.equal(clicks,0);
  boxes[1].disabled=false;response=await invoke({...slot,start:'20:00',hours:2,totalGBP:'14.00'});assert.equal(response.ok,true);assert.equal(clicks,2);
  response=await invoke({...slot,start:'20:00',hours:2,totalGBP:'14.00'});assert.equal(response.ok,false);assert.match(response.error,/Slot already selected/);assert.equal(clicks,2);
+ boxes.forEach(b=>b.checked=false);boxes[1].labels[0].textContent='Court 3£7';response=await invoke({...slot,start:'20:00',hours:2,totalGBP:'14.00',courts:[2,3]});assert.equal(response.ok,true);assert.equal(clicks,4);
 });
 
 test('CSS data-items acknowledgement survives async badge replacement without replay',async()=>{
