@@ -23,12 +23,15 @@ Create or unlock the encrypted card file through the extension's card setup page
 
 ## Booking rules and execution
 
+- The popup defaults the playing-date field to London’s current date plus eight days. This is a suggested date, not an automatic weekday adjustment; choose a Monday–Thursday date before arming. Opening the popup does not change an existing armed job.
 - Playing dates: Monday–Thursday; starts at 20:00 or 21:00.
 - Bethnal Green Gardens before Victoria Park; two hours before one; consecutive hours may use different courts in the same venue. Same-court options are tried first.
 - Maximum £14 for two hours or £7 for one; re-verify the exact item prices and total before payment.
 - One confirmed booking per playing date. Other bookings in the same week do not block a new date; there is no weekly skip rule.
 - Release is London midnight seven days before the playing date, with a preflight five minutes earlier. Date conversion accounts for GMT/BST.
 - Each armed job runs once. Chrome must be open and the laptop awake; Chrome alarms do not wake a sleeping laptop. A check over a minute late stops. Startup restores future alarms and stops a missed release.
+
+An `armed` response with `mode:payment` and `paymentAutomatic:true` confirms the saved date and automatic payment mode, not a completed preflight or booking. The response's release timestamp is UTC; London midnight during BST appears as 23:00Z on the preceding date. Preflight runs five minutes before that release. Source updates take effect after extension reload; saved jobs survive, but the unlocked card session does not. Unlock again after the final reload and avoid further reloads before the run. The paid-test launch control has been removed; its historical payment journal and receipt-only recovery remain intact.
 
 At release the service worker checks the account, reads availability, selects an exact candidate, verifies the basket, opens card checkout, verifies the provisional reference and price, fills Stripe, journals submission, clicks Pay once, and attempts receipt reconciliation. A pending checkout blocks another checkout. Human verification or bank approval can still stop an unattended run.
 

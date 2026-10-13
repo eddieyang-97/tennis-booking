@@ -8,6 +8,10 @@ Runs in normal Chrome using your Courtside sign-in. It checks and books at Londo
 2. Open **Set up or unlock card file**. Enter card number, expiry, CVC and billing postcode locally; choose a passphrase of at least 12 characters. Creation downloads `tennis-card.encrypted.json` and unlocks it for the current Chrome session.
 3. Close setup, choose a future playing date, and use **Arm midnight booking and payment**. Unlock the existing file before subsequent sessions. Keep Chrome open and the laptop awake. Chrome restart or extension reload locks the card.
 
+The playing-date field defaults to London’s today plus eight days. It does not skip weekends automatically or change an already armed job; choose a Monday–Thursday date before arming. The armed response shows the saved date and release in UTC. During BST, 23:00Z means midnight London on the next calendar day. Preflight runs five minutes before release. An armed response does not mean preflight has passed or a booking has succeeded.
+
+After a source update, reload the extension once, then unlock the card again. The saved schedule survives reload, but the unlocked card does not. Keep the card unlocked and avoid another reload before the run.
+
 The file uses AES-GCM encryption with PBKDF2-SHA256 and a random salt and IV. Card details stay only in trusted extension session storage while unlocked; they are not written to project files, persistent extension storage, logs or results. Store the encrypted file separately from the extension source.
 
 Payments require an unlocked local card and fill Stripe's card form directly. There is no Link fallback. The popup shows whether the card is unlocked, and enables the test only when ready (or when reconciling a previously submitted payment). Unlock verifies the session-storage write. Arming, preflight and release check card availability before proceeding. Human verification and bank approval can still require intervention.
