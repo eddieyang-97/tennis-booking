@@ -1,1 +1,1 @@
-{"private":true,"type":"module","scripts":{"test":"node --test test-core.js test-stops.js test-stage.js test-checkout.js test-payment.js test-link.js test-card-vault.js test-reconciliation.js test-mvp.js"}}
+{"private":true,"type":"module","scripts":{"test":"node --test test-core.js test-stops.js test-stage.js test-checkout.js test-payment.js test-link.js test-card-vault.js test-reconciliation.js test-mvp.js test-readiness.js"}}

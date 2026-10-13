@@ -311,7 +311,7 @@ chrome.runtime.onMessage.addListener((message,sender,respond)=>{
     if(message.kind==='status') {
      const status=await chrome.storage.local.get(['result','job','running','basketTest','basketTestResult','runHistory','checkoutRecords','checkoutResult']);
      let localCardUnlocked=false;try{localCardUnlocked=!!(await chrome.storage.session.get('localPaymentCard')).localPaymentCard;}catch{}
-     return {...status,localCardUnlocked};
+     return {...status,localCardUnlocked,version:chrome.runtime.getManifest().version};
     }
     throw Error('Unknown action');
   })().then(respond,e=>respond({status:'stopped',error:e.message,booked:false,paid:false})); return true;

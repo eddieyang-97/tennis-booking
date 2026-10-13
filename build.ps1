@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 $taskSource = Join-Path $PSScriptRoot 'outputs/tennis-local/chrome-extension'
 $taskManifest = Get-Content -LiteralPath (Join-Path $taskSource 'manifest.json') -Raw | ConvertFrom-Json
-$taskRuntime = @('manifest.json','background.js','core.js','stage-rules.js','navigation.js','retry.js','run-log.js','checkout.js','payment.js','reconciliation.js','link-frames.js','content.js','stage-content.js','checkout-content.js','payment-content.js','link-content.js','card-content.js','card-vault-core.js','card-vault.html','card-vault.js','popup.html','popup.js','notification.png','README.md')
+$taskRuntime = @('manifest.json','background.js','core.js','stage-rules.js','navigation.js','retry.js','run-log.js','checkout.js','payment.js','reconciliation.js','readiness.js','link-frames.js','content.js','stage-content.js','checkout-content.js','payment-content.js','link-content.js','card-content.js','card-vault-core.js','card-vault.html','card-vault.js','popup.html','popup.js','notification.png','README.md')
 $taskOutput = Join-Path $PSScriptRoot 'artifacts'
 New-Item -ItemType Directory -Path $taskOutput -Force | Out-Null
 $taskZip = Join-Path $taskOutput ('tennis-booking-v' + $taskManifest.version + '.zip')
