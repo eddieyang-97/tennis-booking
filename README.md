@@ -1,6 +1,6 @@
 # Tennis booking — developer reference
 
-Normal-Chrome Manifest V3 extension for Tower Hamlets Courtside bookings. The active source is [outputs/tennis-local/chrome-extension](outputs/tennis-local/chrome-extension/). Current source version: **0.5.2 MVP** (paid-test control removed). The readiness enhancement remains separate on its v0.5.1 development branch. This repository preserves the working source, regression tests and payment-system findings so future development can continue without repeating the investigation.
+Normal-Chrome Manifest V3 extension for Tower Hamlets Courtside bookings. The active source is [outputs/tennis-local/chrome-extension](outputs/tennis-local/chrome-extension/). Current source version: **0.5.3 MVP** (mixed-court consecutive hours supported). The readiness enhancement remains separate on its v0.5.1 development branch. This repository preserves the working source, regression tests and payment-system findings so future development can continue without repeating the investigation.
 
 **Verified on 13 October 2026:** the extension filled Stripe's card form and submitted the authorised £2.50 Victoria Park test payment. The merchant's account purchase history showed the matching reference as **Confirmed / Paid ✔ / £2.50**. The owner subsequently cancelled the court booking manually. Cancellation does not establish a refund.
 
@@ -15,7 +15,7 @@ cd outputs/tennis-local/chrome-extension
 npm test
 ```
 
-The extension has no npm dependencies; tests use Node's built-in test runner (verified with Node 24.18). The current suite has 50 passing tests. Load this directory as an unpacked extension in Chrome's extension manager. After changing source, reload the extension and relevant court/checkout tabs. **Reload before unlocking the card**: extension reload and browser restart clear the unlocked session.
+The extension has no npm dependencies; tests use Node's built-in test runner (verified with Node 24.18). The current suite has 53 passing tests. Load this directory as an unpacked extension in Chrome's extension manager. After changing source, reload the extension and relevant court/checkout tabs. **Reload before unlocking the card**: extension reload and browser restart clear the unlocked session.
 
 Build the runtime ZIP with `powershell -ExecutionPolicy Bypass -File .\build.ps1` from the repository root. It checks an explicit 24-file runtime allowlist and prints the SHA256. The artifact is written under `artifacts/`, excluded from Git; release assets are published separately.
 
@@ -24,7 +24,7 @@ Create or unlock the encrypted card file through the extension's card setup page
 ## Booking rules and execution
 
 - Playing dates: Monday–Thursday; starts at 20:00 or 21:00.
-- Bethnal Green Gardens before Victoria Park; two hours before one; consecutive hours on the same court.
+- Bethnal Green Gardens before Victoria Park; two hours before one; consecutive hours may use different courts in the same venue. Same-court options are tried first.
 - Maximum £14 for two hours or £7 for one; re-verify the exact item prices and total before payment.
 - One confirmed booking per playing date. Other bookings in the same week do not block a new date; there is no weekly skip rule.
 - Release is London midnight seven days before the playing date, with a preflight five minutes earlier. Date conversion accounts for GMT/BST.
@@ -49,13 +49,13 @@ At release the service worker checks the account, reads availability, selects an
 | `popup.html`, `popup.js` | Scheduling, card readiness, test and recovery controls |
 | `test-*.js` | Regression fixtures; these do not prove live merchant behaviour |
 
-Persistent Chrome local storage includes `job`, `checkoutRecords`, `checkoutResult`, availability results and timestamped `runHistory`. The unlocked card lives only in trusted Chrome session storage as `localPaymentCard`. Checkout identity binds venue, date, court, start, hours and exact price. `paymentDispatchedAt` is persisted **before** submission and is sticky across later phases. After that point, recovery may inspect receipts but must never submit again automatically.
+Persistent Chrome local storage includes `job`, `checkoutRecords`, `checkoutResult`, availability results and timestamped `runHistory`. The unlocked card lives only in trusted Chrome session storage as `localPaymentCard`. Checkout identity binds venue, date, hourly court assignments, start, hours and exact price. Mixed slots add a courts array; legacy single-court keys remain unchanged. `paymentDispatchedAt` is persisted **before** submission and is sticky across later phases. After that point, recovery may inspect receipts but must never submit again automatically.
 
 ## Evidence and next work
 
 | Check | Status |
 | --- | --- |
-| Regression suite | 50 passing tests, including worker recovery and two-hour simulated flow |
+| Regression suite | 53 passing tests, including worker recovery and mixed-court two-hour simulated flow |
 | Live one-hour Victoria Park basket selection and cleanup | Passed on 12 October UTC / 13 October London |
 | Live local-card autofill and £2.50 submission | Paid merchant purchase independently verified on 13 October |
 | Test booking cancellation | Manually performed and confirmed by owner |

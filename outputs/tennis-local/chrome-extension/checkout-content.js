@@ -1,5 +1,6 @@
 // Read-only receipt inspection. Never accesses Stripe frames or input values.
 function checkoutReceipt(slot,key) {
+ if(slot.courts?.some(c=>c!==slot.court))throw Error('Mixed-court booking requires purchase-history reconciliation');
  if(location.origin!=='https://tennistowerhamlets.com' || !location.pathname.startsWith('/basket'))throw Error('Open the resulting Courtside receipt page');
  const heading=document.querySelector('h1')?.textContent.trim()||'';
  const text=document.querySelector('main')?.innerText || document.body.innerText;
@@ -23,7 +24,7 @@ function checkoutReceipt(slot,key) {
 function checkoutPurchase(slot,key,reference,paymentDispatchedAt) {
  if(location.origin!=='https://tennistowerhamlets.com'||location.pathname!=='/account')throw Error('Open the Courtside account page');
  if(!/^Welcome back,/.test(document.querySelector('h1')?.textContent.trim()||''))throw Error('Account login or human verification required');
- if(!/^\d+$/.test(reference||'')||!Number.isFinite(Date.parse(paymentDispatchedAt))||key!==JSON.stringify([slot.venue,slot.date,slot.court,slot.start,slot.hours]))throw Error('Dispatched checkout identity required');
+ if(!/^\d+$/.test(reference||'')||!Number.isFinite(Date.parse(paymentDispatchedAt))||key!==JSON.stringify([slot.venue,slot.date,slot.courts||slot.court,slot.start,slot.hours]))throw Error('Dispatched checkout identity required');
  const tables=[...document.querySelectorAll('table')].filter(table=>{
   const headers=[...table.querySelectorAll('th')].map(e=>e.textContent.trim());
   return headers.length===6&&headers.slice(0,5).join('|')==='Date|Ref|State|Info|Value'&&headers[5]==='';

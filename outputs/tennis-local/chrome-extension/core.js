@@ -1,5 +1,13 @@
 export const VENUES = ['bethnal-green-gardens', 'victoria-park'];
 export const NAMES = {'bethnal-green-gardens':'Bethnal Green Gardens','victoria-park':'Victoria Park'};
+// Preserve legacy single-court keys and journals. Mixed bookings add an
+// explicit court per hour; the first court remains available for old displays.
+export function slotCourts(slot) {
+ const courts=Object.hasOwn(slot,'courts')?slot.courts:Array(slot.hours).fill(slot.court);
+ if(!Array.isArray(courts)||courts.length!==slot.hours||courts[0]!==slot.court||!courts.every(c=>[1,2,3,4].includes(c)))throw Error('Invalid hourly court identity');
+ return courts;
+}
+export function slotKey(slot) {slotCourts(slot);return JSON.stringify([slot.venue,slot.date,slot.courts||slot.court,slot.start,slot.hours]);}
 export function londonDay(ms = Date.now()) {
   const p = new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/London',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(ms);
   const get = k => p.find(x=>x.type===k).value;
@@ -40,9 +48,13 @@ export function candidates(rows, venue, day) {
     }
   }
   const found=[];
-  for (const hours of [2,1]) for (const hour of [20,21]) for (let court=1;court<=4;court++) {
-    const prices=Array.from({length:hours},(_,i)=>available.get(`${hour+i}:${court}`));
-    if (prices.every(p=>p!==undefined)) found.push({venue:NAMES[venue],date:day,court,start:`${hour}:00`,hours,totalGBP:(prices.reduce((a,b)=>a+b,0)/100).toFixed(2)});
+  for (const hours of [2,1]) for (const hour of [20,21]) {
+    const choices=[1,2,3,4].map(court=>Array(hours).fill(court));
+    if(hours===2)for(let first=1;first<=4;first++)for(let second=1;second<=4;second++)if(first!==second)choices.push([first,second]);
+    for(const courts of choices) {
+     const prices=courts.map((court,i)=>available.get(`${hour+i}:${court}`));
+     if(prices.every(p=>p!==undefined))found.push({venue:NAMES[venue],date:day,court:courts[0],...(courts.some(c=>c!==courts[0])?{courts}:{}),start:`${hour}:00`,hours,totalGBP:(prices.reduce((a,b)=>a+b,0)/100).toFixed(2)});
+    }
   }
   return found;
 }
