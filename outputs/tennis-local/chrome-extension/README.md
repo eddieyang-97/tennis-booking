@@ -14,9 +14,9 @@ After a source update, reload the extension once, then unlock the card again. Th
 
 The file uses AES-GCM encryption with PBKDF2-SHA256 and a random salt and IV. Card details stay only in trusted extension session storage while unlocked; they are not written to project files, persistent extension storage, logs or results. Store the encrypted file separately from the extension source.
 
-Payments require an unlocked local card and fill Stripe's card form directly. There is no Link fallback. The popup shows whether the card is unlocked, and enables the test only when ready (or when reconciling a previously submitted payment). Unlock verifies the session-storage write. Arming, preflight and release check card availability before proceeding. Human verification and bank approval can still require intervention.
+Payments require an unlocked local card and fill Stripe's card form directly. There is no Link fallback. The popup shows whether the card is unlocked. Unlock verifies the session-storage write. Arming, preflight and release check card availability before proceeding. Receipt-only recovery does not require an unlocked card. Human verification and bank approval can still require intervention.
 
-## Recovery and the current payment test
+## Recovery and historical payment test
 
 **Check and recover** contains availability checks, site-verification resume, checkout preparation, payment reconciliation and paid-receipt verification. The availability reset does not erase payment uncertainty. The legacy basket reconciliation control only verifies an explicitly empty basket; it removes nothing and exists for unresolved records from older versions.
 
