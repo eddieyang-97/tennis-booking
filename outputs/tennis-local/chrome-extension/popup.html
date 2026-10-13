@@ -1,0 +1,17 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><title>Tennis booking</title>
+<body><h2>Tennis booking</h2>
+<p id="cardStatus" role="status">Checking local card…</p>
+<p><button id="openCardVault">Set up or unlock card file</button></p>
+<p><button id="payTest" disabled>Run £2.50 checkout test</button></p>
+<p>Test booking: Victoria Park court 2, Saturday 17 October 2026, 07:00–07:59. Open its existing basket or checkout and unlock your card before running this real payment test.</p>
+<label>Playing date <input id="day" type="date"></label>
+<p><button id="armPayment">Arm midnight booking and payment</button> <button id="cancel">Cancel scheduled run</button></p>
+<p>Monday–Thursday, 20:00 or 21:00. Bethnal Green Gardens first, then Victoria Park. Prefer 2 hours over 1, on the same court. Maximum £14 for 2 hours or £7 for 1 hour; one booking per playing date.</p>
+<p>Unlock the card file before the run and keep Chrome open and the laptop awake. Payments use the local card directly; a locked card stops the run. Human verification or bank approval can stop a run. Uncertain payments are never submitted again.</p>
+<details><summary>Check and recover</summary>
+<p><button id="check">Check availability now</button> <button id="resume">Resume after site verification</button></p>
+<p><button id="prepareCheckout">Prepare or resume checkout</button> <button id="payCheckout">Pay or reconcile checkout</button> <button id="verifyPayment">Verify paid receipt</button></p>
+<p><button id="reset">Reset interrupted availability check</button> <button id="reconcileBasket">Verify cleared legacy test basket</button></p>
+</details>
+<p>Live card-file payment and midnight completion remain unverified.</p>
+<pre id="result" aria-live="polite"></pre><script type="module" src="popup.js"></script></body></html>

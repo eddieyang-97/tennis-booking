@@ -1,0 +1,13 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><title>Local tennis payment card</title>
+<body><h1>Local tennis payment card</h1>
+<p>Enter your details here on your laptop. The downloaded file is encrypted with your passphrase. Unlock it before the midnight run; the card stays in this extension's browser memory until you lock it or Chrome restarts. No passphrase or card data is saved in logs.</p>
+<form id="create"><p><label>Card number <input name="number" type="password" autocomplete="off" required></label></p>
+<p><label>Expiry MM/YY <input name="expiry" placeholder="MM/YY" autocomplete="off" required></label></p>
+<p><label>CVC <input name="cvc" type="password" autocomplete="off" required></label></p>
+<p><label>Billing postcode <input name="postcode" autocomplete="off" required></label></p>
+<p><label>File passphrase (12+ characters) <input name="passphrase" type="password" autocomplete="new-password" minlength="12" required></label></p>
+<button>Create encrypted file and unlock for this Chrome session</button></form>
+<h2>Use an existing card file</h2><form id="unlock"><p><label>Encrypted card file <input name="file" type="file" accept=".json" required></label></p>
+<p><label>Passphrase <input name="passphrase" type="password" autocomplete="off" required></label></p><button>Unlock for this Chrome session</button></form>
+<p><button id="lock">Lock card now</button></p><p>Payment uses the card form directly, without Link. Your bank can still require authentication. Only the authorised court booking and exact price limits can be paid.</p>
+<p id="status" role="status"></p><script type="module" src="card-vault.js"></script></body></html>

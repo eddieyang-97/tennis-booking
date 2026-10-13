@@ -1,0 +1,26 @@
+{
+  "timezone": "Europe/London",
+  "venue": "Bethnal Green Gardens",
+  "playing_weekdays": [
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday"
+  ],
+  "start_times": [
+    "20:00",
+    "21:00"
+  ],
+  "duration_hours": [
+    2,
+    1
+  ],
+  "week_definition": "Monday through Sunday containing the playing date",
+  "existing_booking_policy": "Other bookings in the same week do not block booking; reconcile the exact slot before any live submission",
+  "fallback_venues": ["Victoria Park"],
+  "price_policy": "Standard court rate; exact total must be verified before payment is enabled",
+  "release_days_ahead": 7,
+  "adapter_verified": false,
+  "automatic_payment_enabled": false,
+  "max_total_gbp": null
+}

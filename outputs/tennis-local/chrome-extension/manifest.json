@@ -1,0 +1,47 @@
+{
+  "manifest_version": 3,
+  "name": "Tennis booking",
+  "version": "0.4.6",
+  "description": "Book tennis at London midnight with an unlocked local card file, exact price limits and payment reconciliation.",
+  "permissions": [
+    "storage",
+    "alarms",
+    "notifications"
+  ],
+  "host_permissions": [
+    "https://tennistowerhamlets.com/*",
+    "https://js.stripe.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://tennistowerhamlets.com/*"
+      ],
+      "js": [
+        "content.js",
+        "stage-content.js",
+        "checkout-content.js",
+        "payment-content.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://js.stripe.com/v3/*"
+      ],
+      "js": [
+        "link-content.js",
+        "card-content.js"
+      ],
+      "all_frames": true,
+      "run_at": "document_idle"
+    }
+  ]
+}
