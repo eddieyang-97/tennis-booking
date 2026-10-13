@@ -1,4 +1,4 @@
-# Tennis booking extension — v0.5.0 MVP
+# Tennis booking extension — v0.5.2 MVP
 
 Runs in normal Chrome using your Courtside sign-in. It checks and books at London midnight, seven days before the selected playing date, then attempts payment. Monday–Thursday only; starts at 20:00 or 21:00. Bethnal Green Gardens precedes Victoria Park; two hours precede one, with consecutive hours on the same court. Limits are £14 for two hours and £7 for one. Confirmed dates and unresolved checkouts block duplicate bookings. Each armed job runs once.
 
@@ -16,7 +16,7 @@ Payments require an unlocked local card and fill Stripe's card form directly. Th
 
 **Check and recover** contains availability checks, site-verification resume, checkout preparation, payment reconciliation and paid-receipt verification. The availability reset does not erase payment uncertainty. The legacy basket reconciliation control only verifies an explicitly empty basket; it removes nothing and exists for unresolved records from older versions.
 
-**Run £2.50 checkout test** is the authorised Victoria Park court 2 booking on Saturday 17 October 2026, 07:00–07:59, £2.50. Run it from its existing basket or card checkout. Do not add another item or clear its pending record. Payment uses the extension's submission code; leave the site's Pay button untouched.
+The paid-test button and its launch action were removed in v0.5.2. The earlier £2.50 test remains in historical payment records; receipt reconciliation still supports that record without submitting another charge. Do not delete its submission marker. This update does not change saved jobs, but reloading the extension clears the unlocked card session; unlock again before an armed run.
 
 The extension verifies slot, total and provisional reference, commits its payment journal before submitting once, and requires matching paid evidence. It now reconciles the merchant account purchase history if the receipt tab is closed, stale or unrecognised, requiring the exact dispatched reference and amount in one Confirmed / Paid ✔ row. Account history confirms payment and leaves active booking state unknown. An interrupted or uncertain submission is never charged again automatically. Unknown layouts and mismatched details stop for inspection. Discovery and temporary read retries are bounded; run steps include timestamps. Arming, preflight and release reconcile an older dispatched payment before proceeding; unpaid unresolved baskets still stop.
 

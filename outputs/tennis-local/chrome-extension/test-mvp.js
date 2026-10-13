@@ -36,6 +36,6 @@ test('worker reconciles old paid journal with closed tab and locked card before 
   const locked=await send('armPayment');assert.equal(locked.error,'Local card is locked. Open card setup, unlock the encrypted file, then close setup and return to checkout. No Link payment was attempted.');assert.equal(alarms.length,0);
   globalThis.chrome.storage.session.get=async()=>({localPaymentCard:{number:'4242424242424242',expiry:'12/30',cvc:'123',postcode:'E1 1AA'}});
   const armed=await send('armPayment');assert.equal(armed.status,'armed');assert.equal(state.job.mode,'payment');assert.equal(alarms.length,2);assert.equal(mutations,0);
-  const again=await send('payTest');assert.match(again.error,/already confirmed/);assert.equal(mutations,0);
+  const again=await send('payTest');assert.match(again.error,/Unknown action/);assert.equal(mutations,0);
  }finally{globalThis.chrome=oldChrome;Date.now=oldNow;}
 });
