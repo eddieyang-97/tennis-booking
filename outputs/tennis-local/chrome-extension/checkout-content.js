@@ -18,9 +18,28 @@ function checkoutReceipt(slot,key) {
  const lastHour=hour+slot.hours-1;
  const end=new RegExp(`\\b${lastHour%12||12}:59\\s*${lastHour>=12?'pm':'am'}\\b`,'i');
  if(!duration.test(text) && !end.test(text))throw Error('Receipt duration not verified');
- return {status:'confirmed',key,reference};
+ return {status:'confirmed',key,reference,source:'booking-receipt',bookingState:'confirmed'};
+}
+function checkoutPurchase(slot,key,reference,paymentDispatchedAt) {
+ if(location.origin!=='https://tennistowerhamlets.com'||location.pathname!=='/account')throw Error('Open the Courtside account page');
+ if(!/^Welcome back,/.test(document.querySelector('h1')?.textContent.trim()||''))throw Error('Account login or human verification required');
+ if(!/^\d+$/.test(reference||'')||!Number.isFinite(Date.parse(paymentDispatchedAt))||key!==JSON.stringify([slot.venue,slot.date,slot.court,slot.start,slot.hours]))throw Error('Dispatched checkout identity required');
+ const tables=[...document.querySelectorAll('table')].filter(table=>{
+  const headers=[...table.querySelectorAll('th')].map(e=>e.textContent.trim());
+  return headers.length===6&&headers.slice(0,5).join('|')==='Date|Ref|State|Info|Value'&&headers[5]==='';
+ });
+ if(tables.length!==1)throw Error('Purchase history layout not verified');
+ const rows=[...tables[0].querySelectorAll('tr')].map(row=>[...row.querySelectorAll('td')].map(e=>e.textContent.trim()));
+ const matches=rows.filter(cells=>cells.length===6 && /^(?:PT)?\d+$/.test(cells[1]) && cells[1].replace(/^PT/,'')===reference);
+ if(matches.length!==1)throw Error('Unique matching purchase not found; no payment retry');
+ const cells=matches[0];
+ if(cells[2]!=='Confirmed'||cells[4]!==`£${slot.totalGBP}`||!/^Paid\s*✔$/.test(cells[5]))throw Error('Matching purchase is not confirmed paid at the expected amount');
+ // A cancelled booking can still have a paid purchase. The purchase row
+ // establishes transaction payment, never active court/cancellation/refund.
+ return {status:'confirmed',key,reference,source:'account-purchase',bookingState:'unknown'};
 }
 chrome.runtime.onMessage.addListener((request,sender,respond)=>{
- if(sender.id!==chrome.runtime.id || request.kind!=='receipt-read')return;
- try{respond({ok:true,value:checkoutReceipt(request.slot,request.key)});}catch(e){respond({ok:false,error:e.message});}
+ if(sender.id!==chrome.runtime.id || !['receipt-read','purchase-read'].includes(request.kind))return;
+ if(request.kind==='purchase-read' && /\/(?:verify-human|sign-in|login)(?:\/|$)/.test(location.pathname)){respond({ok:false,error:'Account login or human verification required',humanRequired:true,page:'account-verification'});return;}
+ try{respond({ok:true,value:request.kind==='purchase-read'?checkoutPurchase(request.slot,request.key,request.reference,request.paymentDispatchedAt):checkoutReceipt(request.slot,request.key)});}catch(e){respond({ok:false,error:e.message});}
 });

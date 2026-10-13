@@ -1,6 +1,7 @@
-import test from 'node:test';import assert from 'node:assert/strict';
+import test,{before,after} from 'node:test';import assert from 'node:assert/strict';
 import {payCheckout} from './payment.js';import {checkoutKey,PAYMENT_TEST_SLOT} from './checkout.js';
 import vm from 'node:vm';import fs from 'node:fs';
+const originalNow=Date.now;before(()=>{Date.now=()=>Date.parse('2026-10-13T00:00:00Z');});after(()=>{Date.now=originalNow;});
 function fixture(){let record={slot:PAYMENT_TEST_SLOT,test:true,key:checkoutKey(PAYMENT_TEST_SLOT,true),status:'pending',phase:'basket-adopted'},submits=0,links=0;const page={totalGBP:'2.50',reference:'100001',enabled:true};return {get record(){return record;},get submits(){return submits;},get links(){return links;},page,deps:{save:async r=>record=r,verifyBasket:async()=>{},open:async()=>{},state:async()=>page,link:async()=>links++,waitReady:async()=>page,submit:async()=>{assert.equal(record.phase,'payment-dispatched');submits++;},receipt:async()=>({status:'confirmed',key:record.key,reference:'100001'})}};}
 test('Chrome storage key reordering preserves exact test authorization on resume',async()=>{
  const f=fixture(),slot=Object.fromEntries(Object.entries(PAYMENT_TEST_SLOT).sort(([a],[b])=>a.localeCompare(b)));

@@ -7,6 +7,7 @@ async function send(kind) {output.textContent='Checking…';try {
   const pending=result.checkoutRecords?.find(r=>r.status!=='confirmed');
   const reconcile=pending && (pending.paymentDispatchedAt||['payment-dispatched','payment-uncertain'].includes(pending.phase));
   document.querySelector('#payTest').disabled=!result.localCardUnlocked&&!reconcile;
+  if(result.checkoutRecords?.some(r=>r.test&&r.status==='confirmed')){document.querySelector('#payTest').disabled=true;document.querySelector('#payTest').textContent='Paid test already confirmed';}
  }
  }catch(e){output.textContent=e.message;}}
 for(const kind of ['openCardVault','payTest','payCheckout','armPayment','check','resume','prepareCheckout','verifyPayment','cancel','reset','reconcileBasket'])document.querySelector('#'+kind).addEventListener('click',()=>send(kind));

@@ -8,6 +8,7 @@ import {payCheckout} from './payment.js';
 import {checkoutKey} from './checkout.js';
 import {createLinkFrames} from './link-frames.js';
 import {paymentCard} from './card-vault-core.js';
+import {reconcilePaid} from './reconciliation.js';
 const linkFrames=createLinkFrames(chrome.tabs,{step:(name,detail)=>step(name,detail)});
 const BASE='https://tennistowerhamlets.com';
 let busy=false;
@@ -16,6 +17,10 @@ let trace=null;
 async function step(name,detail={}){if(trace)await trace.step(name,detail);}
 async function readTab(operation){return retryTab(operation,{onRetry:attempt=>step('temporary-tab-retry',{attempt})});}
 async function save(result) { await chrome.storage.local.set({result}); await chrome.action.setBadgeText({text:result.status==='complete'?'OK':'!'}); }
+async function notifyPaymentResult(result) {
+ try {await chrome.notifications.create('tennis-payment-result',{type:'basic',iconUrl:chrome.runtime.getURL('notification.png'),title:result.paid===true?'Tennis payment confirmed':'Tennis booking needs attention',message:result.paid===true?`${result.slot.date} ${result.slot.start}, £${result.slot.totalGBP}. Payment verified; open the account to check the active booking.`:'Open the extension for the stopped run. An uncertain payment will not be charged again.'});}
+ catch {await step('notification-unavailable');}
+}
 async function readPage(url, request) {
   await step('page-navigation',{page:request.kind});
   const reused=resumedTab!==null;
@@ -78,7 +83,7 @@ async function arm(day,mode='availability') {
   if(!eligible(day)) throw Error('Choose Monday–Thursday');
   const when=releaseAt(day);
   if(when<=Date.now()) throw Error('This date has already released; use Check now');
-  if(mode==='payment')await paymentCard(chrome.storage,null);
+  if(mode==='payment'){await resolvePendingPayment();await paymentCard(chrome.storage,null);}
   await chrome.alarms.clear('prepare'); await chrome.alarms.clear('release');
   if(!['availability','checkout','payment'].includes(mode))throw Error('Unknown release mode');
   await chrome.storage.local.set({job:{day,when,prepared:false,mode}});
@@ -94,6 +99,11 @@ async function automaticPayment(test=false) {
   let {checkoutRecords=[]}=await chrome.storage.local.get('checkoutRecords');
   record=checkoutRecords.find(r=>r.status!=='confirmed');
   if(test && record && record.key!==checkoutKey(PAYMENT_TEST_SLOT,true))throw Error('Another checkout requires reconciliation');
+  if(record?.paymentDispatchedAt || ['payment-dispatched','payment-uncertain'].includes(record?.phase)) {
+   trace=startRun(chrome.storage.local,'payment-reconciliation',record.slot.date);await step('started');
+   return await finishPaidRecord(record);
+  }
+  if(test && checkoutRecords.some(r=>r.test&&r.status==='confirmed'))throw Error('This paid test is already confirmed; it cannot be charged again');
   if(test){tab=(await readTab(()=>chrome.tabs.query({active:true,currentWindow:true})))[0];if(![BASE+'/basket',BASE+'/basket/pay/card'].includes(tab?.url))throw Error('Open the £2.50 test basket or card checkout');}
   else if(record?.tabId)tab=await readTab(()=>chrome.tabs.get(record.tabId));
   if(!tab)throw Error('No checkout tab');
@@ -114,12 +124,12 @@ async function automaticPayment(test=false) {
     waitCardReady:async()=>{for(let i=0;i<30;i++){const current=await state();if(current.enabled)return current;await new Promise(r=>setTimeout(r,500));}throw Error('Card fields did not enable payment; inspect checkout');}
    }:{}),
    submit:(totalGBP,reference)=>command({kind:'payment-submit',totalGBP,reference}),
-   receipt:async()=>{for(let i=0;i<40;i++){try{const response=await readTab(()=>command({kind:'receipt-read',slot:record.slot,key:record.key}));if(response.status==='confirmed')return response;}catch{}await new Promise(r=>setTimeout(r,500));}throw Error('Paid receipt not verified; inspect retained checkout');}
+   receipt:()=>readPaidEvidence(record,tab.id,true)
   });
   if(output.status==='confirmed'){await store({...output,tabId:tab.id});await chrome.action.setBadgeText({text:'PAID'});}
   await trace.finish(output.status);
-  const result=output.status==='confirmed'?{status:'confirmed',slot:record.slot,reference:output.reference,booked:true,paid:true}:{status:output.status,slot:record.slot,booked:false,paid:false};
-  await chrome.storage.local.set({checkoutResult:{...result,runId:trace.record.id,finishedAt:trace.record.finishedAt}});return result;
+  const result=output.status==='confirmed'?paidResult(output):{status:output.status,slot:record.slot,booked:false,paid:false};
+  await chrome.storage.local.set({checkoutResult:{...result,runId:trace.record.id,finishedAt:trace.record.finishedAt}});await notifyPaymentResult(result);return result;
  }catch(e){
   let linkDiagnostic;
   if(tab && /Saved Link frame/.test(e.message)) {
@@ -129,7 +139,7 @@ async function automaticPayment(test=false) {
    await step('link-discovery-diagnostic',linkDiagnostic);
   }
   if(trace){await step('stopped');await trace.finish('stopped');}
-  const output={status:'stopped',error:e.message,...(e.code?{errorCode:e.code}:{}),tabId:tab?.id,phase:record?.phase,booked:false,paid:false,...(linkDiagnostic?{linkDiagnostic}:{}),runId:trace?.record.id,finishedAt:trace?.record.finishedAt||new Date().toISOString()};await chrome.storage.local.set({checkoutResult:output});await chrome.action.setBadgeText({text:'!'});return output;
+  const output={status:'stopped',error:e.message,...(e.code?{errorCode:e.code}:{}),tabId:tab?.id,phase:record?.phase,booked:record?.paymentDispatchedAt?null:false,paid:record?.paymentDispatchedAt?null:false,...(linkDiagnostic?{linkDiagnostic}:{}),runId:trace?.record.id,finishedAt:trace?.record.finishedAt||new Date().toISOString()};await chrome.storage.local.set({checkoutResult:output});await chrome.action.setBadgeText({text:'!'});await notifyPaymentResult(output);return output;
  }
  finally{busy=false;trace=null;resumedTab=null;}
 }
@@ -178,21 +188,60 @@ async function checkout(expectedDay=null) {
   return output;
  } finally {resumedTab=null;busy=false;trace=null;}
 }
+function paidResult(record) {
+ return {status:'confirmed',slot:record.slot,reference:record.reference,confirmedAt:record.confirmedAt,receiptSource:record.receiptSource,bookingState:record.bookingState,booked:record.bookingState==='confirmed'?true:null,paid:true};
+}
+async function readPaidEvidence(record,tabId=record.tabId,wait=false) {
+ return reconcilePaid(record,{
+  currentReceipt:async()=>{
+   for(let i=0;i<(wait?10:1);i++) {
+    try {
+     const current=await readTab(()=>chrome.tabs.get(tabId));
+     if(new URL(current.url).origin!==BASE||!new URL(current.url).pathname.startsWith('/basket'))return null;
+     const response=await readTab(()=>chrome.tabs.sendMessage(tabId,{kind:'receipt-read',slot:record.slot,key:record.key}));
+     if(response?.ok&&response.value.status==='confirmed')return response.value;
+    }catch{ return null; }
+    if(wait)await new Promise(r=>setTimeout(r,500));
+   }
+   return null;
+  },
+  accountReceipt:async()=>{
+   await step('purchase-history-reconciliation');resumedTab=null;
+   for(let attempt=1;attempt<=3;attempt++) {
+    const response=await readPage(BASE+'/account',{kind:'purchase-read',slot:record.slot,key:record.key,reference:record.reference,paymentDispatchedAt:record.paymentDispatchedAt});
+    if(response?.ok)return response.value;
+    if(response?.humanRequired || !/Unique matching purchase not found/.test(response?.error||''))throw Error(response?.error||'Purchase history unavailable');
+    if(attempt<3)await new Promise(r=>setTimeout(r,1000));
+   }
+   throw Error('Paid purchase not verified; payment remains unresolved and will not be repeated');
+  }
+ });
+}
+async function finishPaidRecord(record) {
+ const receipt=await readPaidEvidence(record),confirmed=confirmCheckout(record,receipt);
+ const {checkoutRecords=[]}=await chrome.storage.local.get('checkoutRecords');
+ await step('paid-purchase-verified',{source:confirmed.receiptSource});await trace.finish('confirmed');
+ const output={...paidResult(confirmed),runId:trace.record.id,finishedAt:trace.record.finishedAt};
+ await chrome.storage.local.set({checkoutRecords:checkoutRecords.map(r=>r.key===record.key?confirmed:r),checkoutResult:output});
+ await chrome.action.setBadgeText({text:'PAID'});await notifyPaymentResult(output);return output;
+}
+async function resolvePendingPayment() {
+ const {checkoutRecords=[]}=await chrome.storage.local.get('checkoutRecords');
+ if(checkoutRecords.some(r=>r.status!=='confirmed'))await verifyPayment();
+}
 async function verifyPayment() {
  if(busy)throw Error('Another run is active');
  busy=true;
  try {
  const {checkoutRecords=[]}=await chrome.storage.local.get('checkoutRecords');
  const record=checkoutRecords.find(r=>r.status!=='confirmed');if(!record)throw Error('No pending checkout record');
- const tabs=await readTab(()=>chrome.tabs.query({active:true,currentWindow:true}));const tab=tabs[0];
- if(!tab?.url?.startsWith(BASE+'/basket'))throw Error('Open the resulting Courtside receipt tab first');
- const response=await readTab(()=>chrome.tabs.sendMessage(tab.id,{kind:'receipt-read',slot:record.slot,key:record.key}));
- if(!response?.ok)throw Error(response?.error||'Receipt unavailable');
- if(response.value.status!=='confirmed')return {status:'awaiting-payment',booked:false,paid:false};
- const confirmed={...confirmCheckout(record,response.value),tabId:tab.id};
- await chrome.storage.local.set({checkoutRecords:checkoutRecords.map(r=>r.key===record.key?confirmed:r),checkoutResult:{status:'confirmed',slot:record.slot,reference:confirmed.reference,confirmedAt:confirmed.confirmedAt,booked:true,paid:true}});
- await chrome.action.setBadgeText({text:'PAID'});return {status:'confirmed',reference:confirmed.reference,booked:true,paid:true};
- }finally{busy=false;}
+ trace=startRun(chrome.storage.local,'payment-reconciliation',record.slot.date);await step('started');
+ return await finishPaidRecord(record);
+ }catch(e){
+  if(trace){await step('stopped');await trace.finish('stopped');}
+  const output={status:'stopped',error:e.message,booked:null,paid:null,runId:trace?.record.id,finishedAt:trace?.record.finishedAt||new Date().toISOString()};
+  await chrome.storage.local.set({checkoutResult:output});throw e;
+ }finally{busy=false;trace=null;resumedTab=null;}
 }
 chrome.notifications?.onClicked.addListener(async id=>{
  if(id!=='tennis-checkout')return;
@@ -216,6 +265,7 @@ chrome.alarms.onAlarm.addListener(async alarm=>{
   const {job}=await chrome.storage.local.get('job'); if(!job) return;
   try {
     if(alarm.name==='prepare') {
+     if(job.mode==='payment')await resolvePendingPayment();
      if(busy)throw Error('Another run is active; preflight stopped');
      busy=true;trace=startRun(chrome.storage.local,'release-preflight',job.day);
      try {await step('started');if(job.mode==='payment'){await step('local-card-preflight');await paymentCard(chrome.storage,null);}await account();await chrome.storage.local.set({job:{...job,prepared:true,preparedAt:new Date().toISOString()}});await trace.finish('complete');}
@@ -224,12 +274,12 @@ chrome.alarms.onAlarm.addListener(async alarm=>{
     }
     if(alarm.name==='release') {
       if(!job.prepared) throw Error('Preflight did not complete; check stopped');
-      if(job.mode==='payment')await paymentCard(chrome.storage,null);
+      if(job.mode==='payment'){await resolvePendingPayment();await paymentCard(chrome.storage,null);}
       await check(job.day,true);
       if(['checkout','payment'].includes(job.mode)){const prepared=await checkout(job.day);if(job.mode==='payment' && prepared.status==='awaiting-payment')await automaticPayment();}
       await chrome.storage.local.remove('job');
     }
-  } catch(e) {if(!e.recorded)await save({status:'stopped',day:job.day,checkedAt:new Date().toISOString(),step:alarm.name,error:e.message,booked:false,paid:false});}
+  } catch(e) {if(!e.recorded)await save({status:'stopped',day:job.day,checkedAt:new Date().toISOString(),step:alarm.name,error:e.message,booked:false,paid:false});await notifyPaymentResult({status:'stopped'});}
 });
 chrome.runtime.onMessage.addListener((message,sender,respond)=>{
   if(message.kind==='link-frame' && sender.id===chrome.runtime.id) {

@@ -41,6 +41,7 @@ export async function prepareCheckout(slot,deps,{test=false,adopt=false}={}) {
   }
   basket=await deps.read();verifyBasket(basket,slot);
  }
+ record={...record,basketVerifiedAt:new Date().toISOString()};
  await persist('awaiting-payment');
  const tabId=await deps.retain();
  record={...record,tabId};await deps.save([...records.filter(r=>r.key!==key),record]);
@@ -49,5 +50,5 @@ export async function prepareCheckout(slot,deps,{test=false,adopt=false}={}) {
 }
 export function confirmCheckout(record,receipt) {
  if(!record || receipt?.status!=='confirmed' || receipt.key!==record.key || !/^\d+$/.test(receipt.reference||'') || (record.reference && receipt.reference!==record.reference))throw Error('A matching paid receipt has not been verified');
- return {...record,status:'confirmed',phase:'receipt-verified',reference:receipt.reference,confirmedAt:new Date().toISOString()};
+ return {...record,status:'confirmed',phase:'receipt-verified',reference:receipt.reference,receiptSource:receipt.source||'booking-receipt',bookingState:receipt.bookingState||'confirmed',confirmedAt:new Date().toISOString()};
 }

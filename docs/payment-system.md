@@ -2,6 +2,8 @@
 
 Recorded 13 October 2026 against extension v0.4.6. This document describes observed behaviour and source contracts; unknowns remain explicitly unknown. It intentionally omits card values, passphrases, authentication codes, account access codes, personal purchase history and actual merchant references.
 
+**v0.5.0 MVP follow-up:** the historical gaps below are now implemented in source: account purchase matching with PT normalization, recovery independent of stale checkout tabs and expired booking windows, persistent basket-verification timestamps, timestamped reconciliation, duplicate-test prevention and pending-payment recovery before scheduling. The new parser recognised the actual paid test against the live account DOM. Fifty local tests pass, including worker recovery with a closed tab and locked card and a simulated two-hour checkout. The installed extension must still be reloaded and its recovery run; midnight completion remains unverified. Earlier sections describe the investigation as it happened, rather than v0.5.0's complete current behaviour. See [MVP release notes](mvp-release.md).
+
 ## Live evidence and what it establishes
 
 1. The installed extension passed a one-hour basket test at Victoria Park, court 2, Monday 19 October 2026, 08:00, £5.00. Its exported result reported both `basketVerified:true` and `basketCleared:true`, with `booked:false` and `paid:false`. The empty basket was also checked independently. This tested the extension's own selection and cleanup code, rather than merely manual browser clicks.

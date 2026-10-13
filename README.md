@@ -1,10 +1,10 @@
 # Tennis booking — developer reference
 
-Normal-Chrome Manifest V3 extension for Tower Hamlets Courtside bookings. The active source is [outputs/tennis-local/chrome-extension](outputs/tennis-local/chrome-extension/). Current version: **0.4.6**. This repository preserves the working source, regression tests and payment-system findings so future development can continue without repeating the investigation.
+Normal-Chrome Manifest V3 extension for Tower Hamlets Courtside bookings. The active source is [outputs/tennis-local/chrome-extension](outputs/tennis-local/chrome-extension/). Current version: **0.5.0 MVP**. This repository preserves the working source, regression tests and payment-system findings so future development can continue without repeating the investigation.
 
 **Verified on 13 October 2026:** the extension filled Stripe's card form and submitted the authorised £2.50 Victoria Park test payment. The merchant's account purchase history showed the matching reference as **Confirmed / Paid ✔ / £2.50**. The owner subsequently cancelled the court booking manually. Cancellation does not establish a refund.
 
-**Remaining gap:** the extension reported `payment-uncertain` because its receipt parser did not recognise the merchant's result. Its durable submission marker correctly prevents another charge. Automatic receipt reconciliation and unattended midnight completion are not yet verified. Do not delete that marker or treat `paid:false` in a stopped result as proof that no charge occurred.
+**MVP update:** v0.5.0 adds purchase-history reconciliation, stale-tab recovery and recovery before payment arming/preflight/release. The new parser recognised the real paid transaction on the live account DOM; worker integration tests cover journal confirmation with a closed checkout tab and locked card. The installed extension still needs reloading and running its reconciliation control. An actual midnight run and two-hour live payment remain unverified. Do not delete submission markers or treat an error result as proof that no charge occurred.
 
 Read [Payment system findings](docs/payment-system.md) before changing checkout, recovery or the vault. That document contains the live evidence, failed approaches, DOM contracts and next implementation priorities.
 
@@ -15,7 +15,9 @@ cd outputs/tennis-local/chrome-extension
 npm test
 ```
 
-The extension has no npm dependencies; tests use Node's built-in test runner (verified with Node 24.18). The current suite has 43 passing tests. Load this directory as an unpacked extension in Chrome's extension manager. After changing source, reload the extension and relevant court/checkout tabs. **Reload before unlocking the card**: extension reload and browser restart clear the unlocked session.
+The extension has no npm dependencies; tests use Node's built-in test runner (verified with Node 24.18). The current suite has 50 passing tests. Load this directory as an unpacked extension in Chrome's extension manager. After changing source, reload the extension and relevant court/checkout tabs. **Reload before unlocking the card**: extension reload and browser restart clear the unlocked session.
+
+Build the runtime ZIP with `powershell -ExecutionPolicy Bypass -File .\build.ps1` from the repository root. It checks an explicit 24-file runtime allowlist and prints the SHA256. The artifact is written under `artifacts/`, excluded from Git; release assets are published separately.
 
 Create or unlock the encrypted card file through the extension's card setup page. Keep the downloaded file outside the repository. Card setup, passphrase entry and any bank/site authentication happen locally. See the [extension usage guide](outputs/tennis-local/chrome-extension/README.md).
 
@@ -38,6 +40,7 @@ At release the service worker checks the account, reads availability, selects an
 | `core.js`, `stage-rules.js` | London dates, candidate ordering, strict slot/basket checks |
 | `content.js`, `stage-content.js` | Account/grid reads and court selection/basket inspection |
 | `checkout.js`, `payment.js` | Checkout identity, durable journal and single-submission payment state machine |
+| `reconciliation.js` | Historical dispatched-record validation and receipt/account fallback |
 | `payment-content.js`, `checkout-content.js` | Merchant checkout and receipt DOM adapters |
 | `card-content.js` | Staged card filling inside Stripe's cross-origin frame |
 | `card-vault-core.js`, `card-vault.js`, `card-vault.html` | Encryption, local setup/unlock and trusted session storage |
@@ -52,14 +55,15 @@ Persistent Chrome local storage includes `job`, `checkoutRecords`, `checkoutResu
 
 | Check | Status |
 | --- | --- |
-| Regression suite | 43 passing tests |
+| Regression suite | 50 passing tests, including worker recovery and two-hour simulated flow |
 | Live one-hour Victoria Park basket selection and cleanup | Passed on 12 October UTC / 13 October London |
 | Live local-card autofill and £2.50 submission | Paid merchant purchase independently verified on 13 October |
 | Test booking cancellation | Manually performed and confirmed by owner |
-| Automatic paid-receipt recognition | Failed; pending journal remains unresolved |
+| Account purchase parser | Recognised the actual paid transaction using current source against live DOM |
+| Worker journal reconciliation | Passed integration fixtures; installed-extension run still required |
 | Two-hour live payment; midnight end-to-end run | Not verified |
 
-Next work should reconcile the dispatched test through the account purchase history, normalise the `PT` reference prefix, handle stale tab IDs, and preserve separate transaction and active-booking/cancellation states. Strengthen stored basket evidence before adding an account fallback: a purchase row supplies reference, amount and paid state, but can lose the court details after cancellation. Never infer payment from an empty basket or missing upcoming booking. See the detailed [recovery requirements](docs/payment-system.md#next-implementation-work).
+To finish live acceptance, reload the extension, use **Verify paid receipt** to reconcile the existing test without another payment, then unlock the card and arm the desired playing date. A matching purchase confirms payment but reports active booking state as unknown; cancellation and refunds remain distinct. Keep Chrome open and awake for the release. Optional work is tracked in [the enhancement roadmap](docs/mvp-release.md). Never infer payment from an empty basket or missing upcoming booking.
 
 ## Repository boundaries
 

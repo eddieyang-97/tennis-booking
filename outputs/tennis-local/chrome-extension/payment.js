@@ -1,16 +1,19 @@
 import {checkoutKey,confirmCheckout} from './checkout.js';
+import {recoveryIdentity} from './reconciliation.js';
 // The journal is committed before any payment submission. An interrupted or
 // unanswered submit is reconciled, never retried.
 export async function payCheckout(record,deps) {
  if(!record || record.status==='confirmed')throw Error('No pending checkout');
- if(checkoutKey(record.slot,record.test) !== record.key)throw Error('Checkout identity changed');
  const persist=async phase=>{const at=new Date().toISOString();record={...record,phase,updatedAt:at,...(phase==='payment-dispatched'?{paymentDispatchedAt:record.paymentDispatchedAt||at}:{})};await deps.save(record);};
  const confirm=receipt=>{if(record.reference && receipt.reference!==record.reference)throw Error('Paid receipt reference differs from provisional booking');return confirmCheckout(record,receipt);};
  if(record.paymentDispatchedAt || record.phase==='payment-dispatched' || record.phase==='payment-uncertain') {
+  recoveryIdentity(record);
   const receipt=await deps.receipt();return confirm(receipt);
  }
+ if(checkoutKey(record.slot,record.test) !== record.key)throw Error('Checkout identity changed');
  if(!['selection-dispatched','basket-adopted','awaiting-payment','checkout-opening','link-opening','authentication-required','card-filling','provisional-reference-renewed'].includes(record.phase))throw Error('Unknown checkout phase; inspect payment status before continuing');
  await deps.verifyBasket(record.slot);
+ record={...record,basketVerifiedAt:new Date().toISOString()};
  await persist('checkout-opening');await deps.open();
  let page=await deps.state();
  if(page.totalGBP!==record.slot.totalGBP || !/^\d+$/.test(page.reference||''))throw Error('Payment amount or provisional reference not verified');

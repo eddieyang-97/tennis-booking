@@ -2,6 +2,7 @@
 /*
 !/.gitignore
 !/.gitattributes
+!/build.ps1
 !/README.md
 !/docs/
 !/outputs/
