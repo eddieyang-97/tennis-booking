@@ -9,6 +9,7 @@ import {checkoutKey} from './checkout.js';
 import {createLinkFrames} from './link-frames.js';
 import {paymentCard} from './card-vault-core.js';
 import {reconcilePaid} from './reconciliation.js';
+import {readGrid} from './grid-read.js';
 const linkFrames=createLinkFrames(chrome.tabs,{step:(name,detail)=>step(name,detail)});
 const BASE='https://tennistowerhamlets.com';
 let busy=false;
@@ -22,6 +23,7 @@ async function notifyPaymentResult(result) {
  catch {await step('notification-unavailable');}
 }
 async function readPage(url, request) {
+  if(request.kind==='grid')return readGrid(chrome.tabs,url,request,{tabId:resumedTab,step});
   await step('page-navigation',{page:request.kind});
   const reused=resumedTab!==null;
   const tab=reused ? await navigateLoaded(chrome.tabs,resumedTab,url,globalThis,attempt=>step('temporary-navigation-retry',{attempt})) : await retryTab(()=>chrome.tabs.create({url,active:false}),{navigation:true,onRetry:attempt=>step('temporary-tab-retry',{attempt})});

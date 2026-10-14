@@ -14,14 +14,14 @@ test('normal signed-in account succeeds and missing marker stops',()=>{
  assert.equal(probe('/account/login-help').error,'Unexpected account page');
 });
 test('handled stop clears owned dry-run lock and retains diagnostic tab',async()=>{
- const state={};let listener,updatedListener,alarmListener;const removed=[];let created=0, ready=false,checkoutEnabled=false,selections=0,currentBasket={empty:true,items:[]};const updated=[];
+ const state={};let listener,updatedListener,alarmListener,tabUrl='https://tennistowerhamlets.com/account';const removed=[];let created=0, ready=false,checkoutEnabled=false,selections=0,currentBasket={empty:true,items:[]};const updated=[];
  globalThis.chrome={
  storage:{local:{get:async key=>key==='running'?{running:state.running}:state,set:async x=>Object.assign(state,x),remove:async key=>{delete state[key];}}},
  action:{setBadgeText:async()=>{},setTitle:async()=>{}},
  notifications:{create:async()=>{},onClicked:{addListener:()=>{}}},
- tabs:{create:async()=>{created++;return {id:42};},get:async()=>({id:42,status:'complete',url:'https://tennistowerhamlets.com/account'}),
+ tabs:{create:async({url})=>{created++;tabUrl=url;return {id:42};},get:async()=>({id:42,status:'complete',url:tabUrl}),
  onUpdated:{addListener:f=>updatedListener=f,removeListener:()=>{updatedListener=undefined;}},
- update:async(id,options)=>{updated.push({id,...options});if(options.url){updatedListener?.(id,{status:'loading'});updatedListener?.(id,{status:'complete'});}return {id};},
+ update:async(id,options)=>{updated.push({id,...options});if(options.url){tabUrl=options.url;updatedListener?.(id,{status:'loading'});updatedListener?.(id,{status:'complete'});}return {id};},
  sendMessage:async(id,request)=>{
   if(!ready)return {ok:false,humanRequired:true,page:'verification',error:'Stopped on verification page'};
   if(request.kind==='grid')return {ok:true,rows:[{time:'8pm',inputs:checkoutEnabled?[{disabled:false,label:'Tennis court 2£7'}]:[]}]};

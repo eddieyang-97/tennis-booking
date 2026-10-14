@@ -1,8 +1,10 @@
-# Tennis booking extension — v0.5.3 MVP
+# Tennis booking extension — v0.5.5 MVP
 
 Runs in normal Chrome using your Courtside sign-in. It checks and books at London midnight, seven days before the selected playing date, then attempts payment. Monday–Thursday only; starts at 20:00 or 21:00. Bethnal Green Gardens precedes Victoria Park; two hours precede one, with consecutive hours in the same venue; switching courts is allowed, with same-court options tried first. Limits are £14 for two hours and £7 for one. Confirmed dates and unresolved checkouts block duplicate bookings. Each armed job runs once.
 
 ## Setup and scheduling
+
+v0.5.5 hardens read-only court loading: it can read a ready grid before the tab's overall load completes, and retries a readiness timeout with one fresh navigation. Sign-in/human verification and changed layouts stop without retries. Final failure retains a diagnostic tab and reports availability as unknown; no payment or selection is retried.
 
 1. Load this directory as an unpacked Chrome extension, or reload after updating. Reload any existing checkout tab to attach its scripts.
 2. Open **Set up or unlock card file**. Enter card number, expiry, CVC and billing postcode locally; choose a passphrase of at least 12 characters. Creation downloads `tennis-card.encrypted.json` and unlocks it for the current Chrome session.
@@ -34,7 +36,7 @@ Run `npm test` in this directory for the maintained regression suite. Runtime ar
 
 ## Card file troubleshooting
 
-After an extension reload, close old card-setup tabs and reopen setup from the popup. Select the original `tennis-card.encrypted.json` and enter its original passphrase exactly, including spaces. The file format is unchanged; existing files remain supported. The setup now distinguishes invalid JSON, unsupported or damaged encryption fields, decryption failure, and failures storing a decrypted card in browser memory. A decryption authentication failure can mean either an incorrect passphrase or changed ciphertext; these cannot be distinguished reliably. Error messages contain no entered values or underlying browser error contents. JSON files with a UTF-8 byte-order mark are supported. The maintained suite has 53 passing tests.
+After an extension reload, close old card-setup tabs and reopen setup from the popup. Select the original `tennis-card.encrypted.json` and enter its original passphrase exactly, including spaces. The file format is unchanged; existing files remain supported. The setup now distinguishes invalid JSON, unsupported or damaged encryption fields, decryption failure, and failures storing a decrypted card in browser memory. A decryption authentication failure can mean either an incorrect passphrase or changed ciphertext; these cannot be distinguished reliably. Error messages contain no entered values or underlying browser error contents. JSON files with a UTF-8 byte-order mark are supported. The maintained suite has 59 passing tests.
 
 
 Before payment submission, a reloaded checkout may issue a new provisional reference. The extension accepts that replacement only after re-verifying the exact basket and amount, and records the prior reference with a timestamp. Once payment dispatch is journalled, its persistent submission marker prevents another payment even if other phase metadata changes. Checkout preparation cannot erase that marker or a legacy uncertain-payment phase; only a matching paid receipt can confirm the record. Unknown phases stop for inspection.
