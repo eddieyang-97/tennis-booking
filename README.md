@@ -4,7 +4,7 @@ Normal-Chrome Manifest V3 extension for Tower Hamlets Courtside bookings. The ac
 
 **Verified on 13 October 2026:** the extension filled Stripe's card form and submitted the authorised £2.50 Victoria Park test payment. The merchant's account purchase history showed the matching reference as **Confirmed / Paid ✔ / £2.50**. The owner subsequently cancelled the court booking manually. Cancellation does not establish a refund.
 
-**MVP update:** v0.5.0 adds purchase-history reconciliation, stale-tab recovery and recovery before payment arming/preflight/release. The new parser recognised the real paid transaction on the live account DOM; worker integration tests cover journal confirmation with a closed checkout tab and locked card. The installed extension still needs reloading and running its reconciliation control. An actual midnight run and two-hour live payment remain unverified. Do not delete submission markers or treat an error result as proof that no charge occurred.
+**Live evidence update:** the exported installed-extension journal confirms that purchase-history reconciliation succeeded on 13 October 2026 at 00:58:44 UTC. The first midnight release for 21 October began on time at 23:00:00.005 UTC on 13 October (00:00 London, 14 October), read the account successfully, then stopped at the first court-grid readiness timeout before selection/payment. This verifies alarm timing and live recovery, but not completed midnight booking. The v0.5.5 grid fix still needs a new live run; two-hour live payment remains unverified. Do not delete submission markers or treat an error result as proof that no charge occurred.
 
 Read [Payment system findings](docs/payment-system.md) before changing checkout, recovery or the vault. That document contains the live evidence, failed approaches, DOM contracts and next implementation priorities.
 
@@ -65,10 +65,11 @@ Persistent Chrome local storage includes `job`, `checkoutRecords`, `checkoutResu
 | Live local-card autofill and £2.50 submission | Paid merchant purchase independently verified on 13 October |
 | Test booking cancellation | Manually performed and confirmed by owner |
 | Account purchase parser | Recognised the actual paid transaction using current source against live DOM |
-| Worker journal reconciliation | Passed integration fixtures; installed-extension run still required |
-| Two-hour live payment; midnight end-to-end run | Not verified |
+| Installed-extension purchase reconciliation | Confirmed in exported journal on 13 October; original paid test remains manually cancelled |
+| Midnight alarm/account read | Ran on time on 14 October London; first grid timed out before selection |
+| Two-hour live payment; completed midnight booking; v0.5.5 live grid recovery | Not verified |
 
-To finish live acceptance, reload the extension, use **Verify paid receipt** to reconcile the existing test without another payment, then unlock the card and arm the desired playing date. A matching purchase confirms payment but reports active booking state as unknown; cancellation and refunds remain distinct. Keep Chrome open and awake for the release. Optional work is tracked in [the enhancement roadmap](docs/mvp-release.md). Never infer payment from an empty basket or missing upcoming booking.
+To finish live acceptance, reload the grid-readiness fix and unlock the card again. The historical paid test is already reconciled; do not charge it again. A matching purchase confirms payment but reports active booking state as unknown; cancellation and refunds remain distinct. An expired job left after the failed release will not rerun automatically; use a manual availability check for an already released playing date, or arm a future release. Keep Chrome open and awake for the release. Optional work is tracked in [the enhancement roadmap](docs/mvp-release.md). Never infer payment from an empty basket or missing upcoming booking.
 
 ## Repository boundaries
 
