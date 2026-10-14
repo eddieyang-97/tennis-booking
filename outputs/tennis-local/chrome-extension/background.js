@@ -9,7 +9,7 @@ import {checkoutKey} from './checkout.js';
 import {createLinkFrames} from './link-frames.js';
 import {paymentCard} from './card-vault-core.js';
 import {reconcilePaid} from './reconciliation.js';
-import {readGrid} from './grid-read.js';
+import {readGrid,gridReadPolicy} from './grid-read.js';
 const linkFrames=createLinkFrames(chrome.tabs,{step:(name,detail)=>step(name,detail)});
 const BASE='https://tennistowerhamlets.com';
 let busy=false;
@@ -22,8 +22,8 @@ async function notifyPaymentResult(result) {
  try {await chrome.notifications.create('tennis-payment-result',{type:'basic',iconUrl:chrome.runtime.getURL('notification.png'),title:result.paid===true?'Tennis payment confirmed':'Tennis booking needs attention',message:result.paid===true?`${result.slot.date} ${result.slot.start}, £${result.slot.totalGBP}. Payment verified; open the account to check the active booking.`:'Open the extension for the stopped run. An uncertain payment will not be charged again.'});}
  catch {await step('notification-unavailable');}
 }
-async function readPage(url, request) {
-  if(request.kind==='grid')return readGrid(chrome.tabs,url,request,{tabId:resumedTab,step});
+async function readPage(url, request,{scheduled=false}={}) {
+  if(request.kind==='grid')return readGrid(chrome.tabs,url,request,{tabId:resumedTab,step,...gridReadPolicy(scheduled)});
   await step('page-navigation',{page:request.kind});
   const reused=resumedTab!==null;
   const tab=reused ? await navigateLoaded(chrome.tabs,resumedTab,url,globalThis,attempt=>step('temporary-navigation-retry',{attempt})) : await retryTab(()=>chrome.tabs.create({url,active:false}),{navigation:true,onRetry:attempt=>step('temporary-tab-retry',{attempt})});
@@ -65,9 +65,12 @@ async function check(day, scheduled=false) {
     await account();
     const results=[];
     for(const venue of VENUES) {
-      const response=await readPage(`${BASE}/book/courts/${venue}/${day}#book`,{kind:'grid',venue,day});
+      const response=await readPage(`${BASE}/book/courts/${venue}/${day}#book`,{kind:'grid',venue,day},{scheduled});
       if(!response.ok) throw Object.assign(Error(response.error),{diagnostic:{page:response.page,retainedTabId:response.retainedTabId}});
       results.push({venue,candidates:candidates(response.rows,venue,day)});
+      // The scheduled flow chooses this venue first anyway. Do not delay an
+      // eligible preferred candidate behind a slow fallback-venue request.
+      if(scheduled) {try{checkoutCandidate(results);await step('preferred-candidate-found',{venue});break;}catch{}}
     }
     await step('availability-complete');await trace.finish('complete');
     await save({status:'complete',day,checkedAt:new Date().toISOString(),runId:trace.record.id,results,booked:false,paid:false});
@@ -152,7 +155,7 @@ async function notifyCheckout(slot) {
  try {await chrome.notifications.create('tennis-checkout',{type:'basic',iconUrl:chrome.runtime.getURL('notification.png'),title:'Tennis checkout ready',message:`${slot.date} ${slot.start}, £${slot.totalGBP}. Verified basket ready; inspect the extension for payment status.`});}
  catch {await step('notification-unavailable');}
 }
-async function checkout(expectedDay=null) {
+async function checkout(expectedDay=null,scheduled=false) {
  if(busy)throw Error('Another run is active');
  busy=true;
  let tab,slot;
@@ -175,7 +178,7 @@ async function checkout(expectedDay=null) {
    load:async()=> (await chrome.storage.local.get('checkoutRecords')).checkoutRecords||[],
    save:async records=>{await chrome.storage.local.set({checkoutRecords:records});await step(records.at(-1).phase);},
    read,select:async s=>{
-    const grid=await readPage(`${BASE}/book/courts/${s.venue}/${s.date}#book`,{kind:'grid',venue:s.venue,day:s.date});if(!grid.ok)throw Error(grid.error);
+    const grid=await readPage(`${BASE}/book/courts/${s.venue}/${s.date}#book`,{kind:'grid',venue:s.venue,day:s.date},{scheduled});if(!grid.ok)throw Error(grid.error);
     // One mutation dispatch. Reconciliation occurs in prepareCheckout, never replay.
     const response=await chrome.tabs.sendMessage(tab.id,{kind:'select-slot',slot:s});if(!response?.ok)throw Error(response?.error||'Selection response uncertain');
    },
@@ -278,7 +281,7 @@ chrome.alarms.onAlarm.addListener(async alarm=>{
       if(!job.prepared) throw Error('Preflight did not complete; check stopped');
       if(job.mode==='payment'){await resolvePendingPayment();await paymentCard(chrome.storage,null);}
       await check(job.day,true);
-      if(['checkout','payment'].includes(job.mode)){const prepared=await checkout(job.day);if(job.mode==='payment' && prepared.status==='awaiting-payment')await automaticPayment();}
+      if(['checkout','payment'].includes(job.mode)){const prepared=await checkout(job.day,true);if(job.mode==='payment' && prepared.status==='awaiting-payment')await automaticPayment();}
       await chrome.storage.local.remove('job');
     }
   } catch(e) {if(!e.recorded)await save({status:'stopped',day:job.day,checkedAt:new Date().toISOString(),step:alarm.name,error:e.message,booked:false,paid:false});await notifyPaymentResult({status:'stopped'});}
