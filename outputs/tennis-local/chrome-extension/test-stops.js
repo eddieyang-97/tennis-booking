@@ -51,6 +51,6 @@ test('handled stop clears owned dry-run lock and retains diagnostic tab',async()
  state.job={day:'2026-10-20',prepared:true};await alarmListener({name:'release'});assert.equal(selections,0);assert.equal(state.result.status,'complete');
  // Only the explicitly chosen checkout mode retains one verified basket.
  state.job={day:'2026-10-20',prepared:true,mode:'checkout'};await alarmListener({name:'release'});assert.equal(selections,1);assert.equal(state.checkoutResult.status,'awaiting-payment');assert.equal(state.checkoutResult.paid,false);assert.equal(state.checkoutRecords[0].phase,'awaiting-payment');assert.equal(state.job,undefined);
- for(const kind of ['release-check','checkout-preparation']){const run=state.runHistory.findLast(r=>r.kind===kind);const grids=run.steps.filter(s=>s.name==='grid-navigation');assert.equal(grids.length,1);assert.equal(grids[0].timeoutMs,60000);assert.equal(grids[0].retryDelayMs,5000);}
+ for(const kind of ['release-check','checkout-preparation']){const run=state.runHistory.findLast(r=>r.kind===kind);const grids=run.steps.filter(s=>s.name==='grid-navigation');assert.equal(grids.length,1);assert.equal(grids[0].timeoutMs,60000);assert.equal(grids[0].retryDelayMs,5000);assert.ok(run.steps.filter(s=>s.name==='page-navigation').every(s=>s.timeoutMs===60000));}
  }finally{Date.now=originalNow;delete globalThis.chrome;}
 });

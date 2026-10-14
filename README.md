@@ -1,6 +1,6 @@
 # Tennis booking — developer reference
 
-Normal-Chrome Manifest V3 extension for Tower Hamlets Courtside bookings. The active source is [outputs/tennis-local/chrome-extension](outputs/tennis-local/chrome-extension/). Current source version: **0.5.7 MVP** (read-only grid readiness hardening). The readiness-panel enhancement remains separate in PR #1. This repository preserves the working source, regression tests and payment-system findings so future development can continue without repeating the investigation.
+Normal-Chrome Manifest V3 extension for Tower Hamlets Courtside bookings. The active source is [outputs/tennis-local/chrome-extension](outputs/tennis-local/chrome-extension/). Current source version: **0.5.9 MVP** (read-only grid readiness hardening). The readiness-panel enhancement remains separate in PR #1. This repository preserves the working source, regression tests and payment-system findings so future development can continue without repeating the investigation.
 
 **Verified on 13 October 2026:** the extension filled Stripe's card form and submitted the authorised £2.50 Victoria Park test payment. The merchant's account purchase history showed the matching reference as **Confirmed / Paid ✔ / £2.50**. The owner subsequently cancelled the court booking manually. Cancellation does not establish a refund.
 
@@ -15,9 +15,9 @@ cd outputs/tennis-local/chrome-extension
 npm test
 ```
 
-The extension has no npm dependencies; tests use Node's built-in test runner (verified with Node 24.18). The current suite has 61 passing tests. Load this directory as an unpacked extension in Chrome's extension manager. After changing source, reload the extension and relevant court/checkout tabs. **Reload before unlocking the card**: extension reload and browser restart clear the unlocked session.
+The extension has no npm dependencies; tests use Node's built-in test runner (verified with Node 24.18). The current suite has 67 passing tests. Load this directory as an unpacked extension in Chrome's extension manager. After changing source, reload the extension and relevant court/checkout tabs. **Reload before unlocking the card**: extension reload and browser restart clear the unlocked session.
 
-Build the runtime ZIP with `powershell -ExecutionPolicy Bypass -File .\build.ps1` from the repository root. It checks an explicit 25-file runtime allowlist and prints the SHA256. The artifact is written under `artifacts/`, excluded from Git; release assets are published separately.
+Build the runtime ZIP with `powershell -ExecutionPolicy Bypass -File .\build.ps1` from the repository root. It checks an explicit 26-file runtime allowlist and prints the SHA256. The artifact is written under `artifacts/`, excluded from Git; release assets are published separately.
 
 Create or unlock the encrypted card file through the extension's card setup page. Keep the downloaded file outside the repository. Card setup, passphrase entry and any bank/site authentication happen locally. See the [extension usage guide](outputs/tennis-local/chrome-extension/README.md).
 
@@ -25,7 +25,9 @@ Create or unlock the encrypted card file through the extension's card setup page
 
 Grid reads probe the content script even while Chrome reports the tab as loading. Manual checks get 20 seconds per navigation and a 500 ms retry pause. Scheduled release checks and their pre-selection grid read get 60 seconds per navigation and a five-second pause before one retry (two attempts total, approximately 125 seconds of readiness/retry waiting per grid, plus Chrome overhead). Individual read responses remain bounded to two seconds. Local DOM probing does not reload the page or poll the server. A signed-out/verification route, closed tab, untrusted origin or rejected layout stops immediately. Final failures retain the tab and timestamped safe route/load/read-state diagnostics, including the active timeout policy, without page text, input values or private URLs. A timeout means availability is unknown; a valid grid with no eligible cells means no availability. This retry helper cannot dispatch selection or payment messages.
 
-The scheduled availability scan proceeds as soon as the preferred venue has an eligible candidate within the price cap; it does not delay that candidate to inspect the fallback venue. Manual availability checks still inspect both venues. The one-minute late-release guard applies when the scheduled check starts, not to time spent waiting for a slow grid after an on-time start. Other account/basket/card-page timeouts remain unchanged. No surge-traffic or midnight success is claimed from simulated tests.
+The scheduled availability scan proceeds as soon as the preferred venue has an eligible candidate within the price cap; it does not delay that candidate to inspect the fallback venue. Manual availability checks still inspect both venues. The one-minute late-release guard applies when the scheduled check starts, not to time spent waiting for a slow grid after an on-time start.
+
+v0.5.9 also allows 60 seconds for scheduled account, basket and purchase-history page reads, including preflight and pending-payment recovery. Manual reads retain 15 seconds. These read-only adapters can acknowledge a ready DOM while the tab is loading, use a single navigation, bound individual responses to two seconds and retain failed tabs with safe diagnostics. A blank, still-loading account is treated as not ready; a real sign-in/verification requirement still stops. Scheduled card-page and post-fill readiness waits also allow 60 seconds; unknown/closed destinations or changed amount/reference stop. Card filling, checkout-opening and Pay are dispatched once and never replayed by these wait helpers. Status exports include the installed version. No surge-traffic or midnight success is claimed from simulated tests.
 
 - The popup defaults the playing-date field to London’s current date plus eight days. This is a suggested date, not an automatic weekday adjustment; choose a Monday–Thursday date before arming. Opening the popup does not change an existing armed job.
 - Playing dates: Monday–Thursday; starts at 20:00 or 21:00.
@@ -62,7 +64,7 @@ Persistent Chrome local storage includes `job`, `checkoutRecords`, `checkoutResu
 
 | Check | Status |
 | --- | --- |
-| Regression suite | 61 passing tests, including worker recovery and mixed-court two-hour simulated flow |
+| Regression suite | 67 passing tests, including worker recovery and mixed-court two-hour simulated flow |
 | Live one-hour Victoria Park basket selection and cleanup | Passed on 12 October UTC / 13 October London |
 | Live local-card autofill and £2.50 submission | Paid merchant purchase independently verified on 13 October |
 | Test booking cancellation | Manually performed and confirmed by owner |

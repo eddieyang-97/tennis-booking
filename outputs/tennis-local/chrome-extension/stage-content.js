@@ -53,5 +53,5 @@ chrome.runtime.onMessage.addListener((request,sender,respond)=>{
    await new Promise(r=>setTimeout(r,250));
   }
   throw Error('Selection acknowledgement uncertain; do not retry');
- })().then(value=>respond({ok:true,value}),e=>respond({ok:false,error:e.message,selectionAttempted}));return true;
+ })().then(value=>respond({ok:true,value}),e=>respond(request.kind==='basket-read'&&document.readyState&&document.readyState!=='complete'&&/Unknown basket|Basket item layout/.test(e.message)?{ok:false,notReady:true,error:'Basket DOM not ready'}:{ok:false,error:e.message,selectionAttempted}));return true;
 });

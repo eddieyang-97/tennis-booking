@@ -19,6 +19,7 @@ chrome.runtime.onMessage.addListener((request, sender, respond) => {
     if (request.kind==='account') {
       if (location.pathname!=='/account') throw Error('Unexpected account page');
       const heading=document.querySelector('h1')?.textContent.trim() || '';
+      if(!heading && document.readyState && document.readyState!=='complete'){respond({ok:false,notReady:true,error:'Account DOM not ready'});return;}
       if (!/^Welcome back,/.test(heading)) {respond({ok:false,error:'Account login marker missing; inspect the retained tab',humanRequired:true,page:'account'});return;}
       respond({ok:true,signedIn:true}); return;
     }
