@@ -1,4 +1,4 @@
-import test from 'node:test';import assert from 'node:assert/strict';import {readGrid} from './grid-read.js';
+import test from 'node:test';import assert from 'node:assert/strict';import {readGrid,gridReadPolicy} from './grid-read.js';
 const request={kind:'grid',venue:'victoria-park',day:'2026-10-21'},url='https://tennistowerhamlets.com/book/courts/victoria-park/2026-10-21#book';
 function fixture(){let clock=0,created=0,reads=0;const removed=[],steps=[];const f={get created(){return created;},get reads(){return reads;},removed,steps,options:{timeoutMs:1000,now:()=>clock,delay:async ms=>clock+=ms,step:async(name,detail)=>steps.push({name,...detail})},tabs:{create:async()=>({id:++created}),get:async id=>({id,url,status:'loading'}),sendMessage:async()=>{reads++;return {ok:true,rows:[{time:'8pm',inputs:[]}]};},remove:async id=>removed.push(id),update:async id=>({id})}};return f;}
 test('ready DOM is read while tab load remains pending; empty availability is not retried',async()=>{
@@ -31,4 +31,18 @@ test('authentication, closed tab and rejected grid layout stop without retries o
 test('hung grid response is bounded, and checkout/mutation requests cannot enter this reader',async()=>{
  const f=fixture();f.tabs.sendMessage=async()=>new Promise(()=>{});await assert.rejects(readGrid(f.tabs,url,request,{...f.options,attempts:1,messageTimeoutMs:1}),e=>e.diagnostic.errorCode==='GRID_READY_TIMEOUT'&&e.diagnostic.readState==='response-timeout');
  await assert.rejects(readGrid(f.tabs,url,{...request,kind:'select-slot'},f.options),/read-only/);assert.equal(f.created,1);
+});
+test('midnight policy tolerates a 45-second grid delay that exceeds manual-read budgets',async()=>{
+ assert.deepEqual(gridReadPolicy(false),{timeoutMs:20000,retryDelayMs:500});assert.deepEqual(gridReadPolicy(true),{timeoutMs:60000,retryDelayMs:5000});
+ for(const scheduled of [false,true]) {
+  const f=fixture();f.tabs.sendMessage=async(_,message)=>{assert.equal(message.kind,'grid');if(f.options.now()<45000)throw Error('Receiving end does not exist');return {ok:true,rows:[]};};
+  const read=readGrid(f.tabs,url,request,{...f.options,...gridReadPolicy(scheduled)});
+  if(scheduled){assert.equal((await read).ok,true);assert.equal(f.created,1);assert.equal(f.options.now(),45000);}
+  else{await assert.rejects(read,e=>e.diagnostic.errorCode==='GRID_READY_TIMEOUT');assert.equal(f.created,2);assert.equal(f.options.now(),40500);}
+ }
+});
+test('midnight retries once after five seconds, with total waiting bounded to 125 seconds',async()=>{
+ const f=fixture();f.tabs.sendMessage=async id=>{if(id===1)throw Error('Receiving end does not exist');return {ok:true,rows:[]};};
+ assert.equal((await readGrid(f.tabs,url,request,{...f.options,...gridReadPolicy(true)})).ok,true);assert.equal(f.options.now(),65000);assert.equal(f.created,2);assert.ok(f.steps.some(s=>s.name==='grid-navigation-retry'&&s.retryDelayMs===5000));
+ const g=fixture();g.tabs.sendMessage=async()=>{throw Error('Receiving end does not exist');};await assert.rejects(readGrid(g.tabs,url,request,{...g.options,...gridReadPolicy(true)}),e=>e.diagnostic.timeoutMs===60000&&e.diagnostic.attempt===2);assert.equal(g.created,2);assert.equal(g.options.now(),125000);assert.deepEqual(g.removed,[1]);
 });

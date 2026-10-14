@@ -44,11 +44,13 @@ test('handled stop clears owned dry-run lock and retains diagnostic tab',async()
  await invoke();const before=created;
  const stopped=await invoke('resume');assert.equal(stopped.status,'stopped');assert.equal(created,before);assert.equal(updated.length,0);
  ready=true;const resumed=await invoke('resume');assert.equal(resumed.status,'complete');assert.equal(created,before);assert.equal(updated.length,3);assert.ok(updated.every(x=>x.id===42));assert.deepEqual(removed,[]);
+ assert.equal(resumed.results.length,2);assert.ok(state.runHistory.at(-1).steps.filter(s=>s.name==='grid-navigation').every(s=>s.timeoutMs===20000));
  assert.equal((await invoke('resume')).status,'stopped');assert.equal(created,before);
  // Existing saved alarms keep read-only behavior, even when slots are available.
  Date.now=()=>Date.parse('2026-10-12T23:00:00Z');checkoutEnabled=true;
  state.job={day:'2026-10-20',prepared:true};await alarmListener({name:'release'});assert.equal(selections,0);assert.equal(state.result.status,'complete');
  // Only the explicitly chosen checkout mode retains one verified basket.
  state.job={day:'2026-10-20',prepared:true,mode:'checkout'};await alarmListener({name:'release'});assert.equal(selections,1);assert.equal(state.checkoutResult.status,'awaiting-payment');assert.equal(state.checkoutResult.paid,false);assert.equal(state.checkoutRecords[0].phase,'awaiting-payment');assert.equal(state.job,undefined);
+ for(const kind of ['release-check','checkout-preparation']){const run=state.runHistory.findLast(r=>r.kind===kind);const grids=run.steps.filter(s=>s.name==='grid-navigation');assert.equal(grids.length,1);assert.equal(grids[0].timeoutMs,60000);assert.equal(grids[0].retryDelayMs,5000);}
  }finally{Date.now=originalNow;delete globalThis.chrome;}
 });
