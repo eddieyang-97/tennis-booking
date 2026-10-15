@@ -1,11 +1,33 @@
 import test from 'node:test';import assert from 'node:assert/strict';import vm from 'node:vm';import fs from 'node:fs';
 import {readPageState,pageReadBudget,waitPaymentState} from './page-read.js';
+import {tabErrorReason} from './retry.js';
 function fixture(kind='account'){
  let clock=0,created=0,reads=0;const url='https://tennistowerhamlets.com'+(kind==='basket-read'?'/basket':'/account'),removed=[],steps=[];
  return {url,get clock(){return clock;},get created(){return created;},get reads(){return reads;},removed,steps,options:{now:()=>clock,delay:async ms=>clock+=ms,step:async(name,detail)=>steps.push({name,...detail})},tabs:{create:async()=>({id:++created}),update:async id=>({id}),get:async id=>({id,url,status:'loading'}),sendMessage:async()=>{reads++;return {ok:true};},remove:async id=>removed.push(id)}};
 }
 test('account, basket and paid-history reads accept ready DOM before full page load',async()=>{
  for(const kind of ['account','basket-read','purchase-read']){const f=fixture(kind);assert.equal((await readPageState(f.tabs,f.url,{kind},f.options)).ok,true);assert.equal(f.created,1);assert.equal(f.reads,1);assert.deepEqual(f.removed,[1]);}
+});
+test('navigation-time channel and frame disconnections retry only the read on the same basket tab',async()=>{
+ for(const message of ['A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received','The message port closed before a response was received','Frame with ID 0 was removed.']) {
+  const f=fixture('basket-read');let calls=0;
+  f.tabs.sendMessage=async()=>{if(++calls<3)throw Error(message);return {ok:true,value:{empty:true,items:[]}};};
+  assert.equal((await readPageState(f.tabs,f.url,{kind:'basket-read'},f.options)).ok,true);
+  assert.equal(calls,3);assert.equal(f.created,1);assert.equal(f.clock,1000);
+ }
+});
+test('basket read errors report operation and safe reason, while closed or denied tabs stop immediately',async()=>{
+ for(const [message,reason] of [['No tab with id: 42.','tab-closed'],['Cannot access contents of url https://example.com/?SECRET. Extension manifest must request permission','access-denied'],['Extension context invalidated.','extension-context-invalidated']]) {
+  const f=fixture('basket-read');let calls=0;f.tabs.sendMessage=async()=>{calls++;throw Error(message);};
+  await assert.rejects(readPageState(f.tabs,f.url,{kind:'basket-read'},f.options),e=>e.diagnostic.operation==='message-read'&&e.diagnostic.reason===reason&&e.diagnostic.readState===reason&&!JSON.stringify(e).includes('SECRET'));
+  assert.equal(calls,1);assert.deepEqual(f.removed,[]);
+ }
+ assert.equal(tabErrorReason(Error('Unexpected private URL https://secret.example')),'unclassified-tab-error');
+});
+test('persistent message disconnects are bounded by the read deadline',async()=>{
+ const f=fixture('basket-read');let calls=0;f.tabs.sendMessage=async()=>{calls++;throw Error('The message channel closed before a response was received');};
+ await assert.rejects(readPageState(f.tabs,f.url,{kind:'basket-read'},{...f.options,timeoutMs:1500}),e=>e.diagnostic.errorCode==='PAGE_READY_TIMEOUT'&&e.diagnostic.readState==='message-channel-closed');
+ assert.equal(f.clock,1500);assert.equal(calls,3);assert.equal(f.created,1);assert.deepEqual(f.removed,[]);
 });
 test('scheduled account and basket reads survive 45-second readiness delay without a navigation retry',async()=>{
  for(const kind of ['account','basket-read'])for(const scheduled of [true,false]){
