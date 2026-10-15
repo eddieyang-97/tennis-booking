@@ -8,7 +8,7 @@ export async function payCheckout(record,deps) {
  if(!record || record.status==='confirmed')throw Error('No pending checkout');
  const persist=async phase=>{const at=new Date().toISOString();record={...record,phase,updatedAt:at,...(phase==='payment-dispatched'?{paymentDispatchedAt:record.paymentDispatchedAt||at}:{})};await deps.save(record);};
  const confirm=receipt=>{if(record.reference && receipt.reference!==record.reference)throw Error('Paid receipt reference differs from provisional booking');return confirmCheckout(record,receipt);};
- if(record.paymentDispatchedAt || record.phase==='payment-dispatched' || record.phase==='payment-uncertain') {
+ if(record.manualPaymentReportedAt || record.paymentDispatchedAt || record.phase==='payment-dispatched' || record.phase==='payment-uncertain') {
   recoveryIdentity(record);
   const receipt=await deps.receipt();return confirm(receipt);
  }

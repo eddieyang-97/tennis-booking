@@ -31,7 +31,7 @@ export async function unlockCardSession(storage,runtime,card) {
 }
 export async function paymentCard(storage,record) {
  // Receipt reconciliation does not need card access and must never refill.
- if(record?.paymentDispatchedAt || ['payment-dispatched','payment-uncertain'].includes(record?.phase))return null;
+ if(record?.manualPaymentReportedAt || record?.paymentDispatchedAt || ['payment-dispatched','payment-uncertain'].includes(record?.phase))return null;
  let card;try{card=(await storage.session.get('localPaymentCard')).localPaymentCard;}catch{throw new VaultError('card_session_unavailable');}
  if(!card)throw new VaultError('card_locked');
  try{return validateCard(card);}catch{throw new VaultError('invalid_card');}

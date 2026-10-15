@@ -48,7 +48,7 @@ export async function prepareCheckout(slot,deps,{test=false,adopt=false,basketOn
  let key=basketOnly?basketTestKey(slot):checkoutKey(slot,test,settings);
  const originalKey=key;
  let record=records.find(r=>r.key===key);
- if(record && (record.paymentDispatchedAt || ['payment-dispatched','payment-uncertain'].includes(record.phase)))throw Error('Payment requires receipt reconciliation; checkout preparation cannot reset it');
+ if(record && (record.manualPaymentReportedAt || record.paymentDispatchedAt || ['payment-dispatched','payment-uncertain'].includes(record.phase)))throw Error('Payment requires receipt reconciliation; checkout preparation cannot reset it');
  if(records.some(r=>r.status==='confirmed' && r.slot.date===slot.date))throw Error('A booking for this date is already confirmed');
  if(records.some(r=>r.key!==key && r.status!=='confirmed'))throw Error('Another checkout requires reconciliation');
  const persist=async phase=>{

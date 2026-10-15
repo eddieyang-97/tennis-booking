@@ -21,10 +21,10 @@ function checkoutReceipt(slot,key) {
  if(!duration.test(text) && !end.test(text))throw Error('Receipt duration not verified');
  return {status:'confirmed',key,reference,source:'booking-receipt',bookingState:'confirmed'};
 }
-function checkoutPurchase(slot,key,reference,paymentDispatchedAt) {
+function checkoutPurchase(slot,key,reference,paymentDispatchedAt,manualPaymentReportedAt) {
  if(location.origin!=='https://tennistowerhamlets.com'||location.pathname!=='/account')throw Error('Open the Courtside account page');
  if(!/^Welcome back,/.test(document.querySelector('h1')?.textContent.trim()||''))throw Error('Account login or human verification required');
- if(!/^\d+$/.test(reference||'')||!Number.isFinite(Date.parse(paymentDispatchedAt))||key!==JSON.stringify([slot.venue,slot.date,slot.courts||slot.court,slot.start,slot.hours]))throw Error('Dispatched checkout identity required');
+ if(!/^\d+$/.test(reference||'')||(!Number.isFinite(Date.parse(paymentDispatchedAt))&&!Number.isFinite(Date.parse(manualPaymentReportedAt)))||key!==JSON.stringify([slot.venue,slot.date,slot.courts||slot.court,slot.start,slot.hours]))throw Error('Dispatched or manually reported checkout identity required');
  const tables=[...document.querySelectorAll('table')].filter(table=>{
   const headers=[...table.querySelectorAll('th')].map(e=>e.textContent.trim());
   return headers.length===6&&headers.slice(0,5).join('|')==='Date|Ref|State|Info|Value'&&headers[5]==='';
@@ -43,5 +43,5 @@ chrome.runtime.onMessage.addListener((request,sender,respond)=>{
  if(sender.id!==chrome.runtime.id || !['receipt-read','purchase-read'].includes(request.kind))return;
  if(request.kind==='purchase-read' && /\/(?:verify-human|sign-in|login)(?:\/|$)/.test(location.pathname)){respond({ok:false,error:'Account login or human verification required',humanRequired:true,page:'account-verification'});return;}
  if(request.kind==='purchase-read'&&location.pathname==='/account'&&document.readyState&&document.readyState!=='complete'&&!document.querySelector('h1')?.textContent.trim()){respond({ok:false,notReady:true,error:'Account DOM not ready'});return;}
- try{respond({ok:true,value:request.kind==='purchase-read'?checkoutPurchase(request.slot,request.key,request.reference,request.paymentDispatchedAt):checkoutReceipt(request.slot,request.key)});}catch(e){respond({ok:false,error:e.message});}
+ try{respond({ok:true,value:request.kind==='purchase-read'?checkoutPurchase(request.slot,request.key,request.reference,request.paymentDispatchedAt,request.manualPaymentReportedAt):checkoutReceipt(request.slot,request.key)});}catch(e){respond({ok:false,error:e.message});}
 });

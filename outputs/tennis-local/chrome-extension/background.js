@@ -7,7 +7,7 @@ import {payCheckout} from './payment.js';
 import {checkoutKey} from './checkout.js';
 import {createLinkFrames} from './link-frames.js';
 import {paymentCard} from './card-vault-core.js';
-import {reconcilePaid} from './reconciliation.js';
+import {reconcilePaid,reportManualPayment} from './reconciliation.js';
 import {readGrid,gridReadPolicy} from './grid-read.js';
 import {readPageState,pageReadBudget,waitPaymentState} from './page-read.js';
 import {normalizeDiscount,ensureDiscount,payableSlot} from './discount.js';
@@ -93,7 +93,7 @@ async function automaticPayment(test=false,scheduled=false) {
   record=checkoutRecords.find(r=>r.status!=='confirmed');
   if(record?.basketOnly)throw Error('Daytime basket test cannot submit payment; clear and reconcile its basket');
   if(test && record && record.key!==checkoutKey(PAYMENT_TEST_SLOT,true))throw Error('Another checkout requires reconciliation');
-  if(record?.paymentDispatchedAt || ['payment-dispatched','payment-uncertain'].includes(record?.phase)) {
+  if(record?.manualPaymentReportedAt || record?.paymentDispatchedAt || ['payment-dispatched','payment-uncertain'].includes(record?.phase)) {
    trace=newRun('payment-reconciliation',record.slot.date);await step('started');
    return await finishPaidRecord(record,scheduled);
   }
@@ -225,7 +225,7 @@ async function checkout(expectedDay=null,scheduled=false,basketOnly=false,discou
  } finally {resumedTab=null;busy=false;trace=null;}
 }
 function paidResult(record) {
- return {status:'confirmed',slot:record.slot,totalPaidGBP:payableSlot(record).totalGBP,discountApplied:!!record.discount,reference:record.reference,confirmedAt:record.confirmedAt,receiptSource:record.receiptSource,bookingState:record.bookingState,booked:record.bookingState==='confirmed'?true:null,paid:true};
+ return {status:'confirmed',slot:record.slot,totalPaidGBP:payableSlot(record).totalGBP,discountApplied:!!record.discount,manualPayment:!!record.manualPaymentReportedAt,reference:record.reference,confirmedAt:record.confirmedAt,receiptSource:record.receiptSource,bookingState:record.bookingState,booked:record.bookingState==='confirmed'?true:null,paid:true};
 }
 async function readPaidEvidence(record,tabId=record.tabId,wait=false,scheduled=false) {
  return reconcilePaid(record,{
@@ -244,7 +244,7 @@ async function readPaidEvidence(record,tabId=record.tabId,wait=false,scheduled=f
   accountReceipt:async()=>{
    await step('purchase-history-reconciliation');resumedTab=null;
    for(let attempt=1;attempt<=3;attempt++) {
-    const response=await readPage(BASE+'/account',{kind:'purchase-read',slot:payableSlot(record),key:record.key,reference:record.reference,paymentDispatchedAt:record.paymentDispatchedAt},{scheduled});
+    const response=await readPage(BASE+'/account',{kind:'purchase-read',slot:payableSlot(record),key:record.key,reference:record.reference,paymentDispatchedAt:record.paymentDispatchedAt,manualPaymentReportedAt:record.manualPaymentReportedAt},{scheduled});
     if(response?.ok)return response.value;
     if(response?.humanRequired || !/Unique matching purchase not found/.test(response?.error||''))throw Error(response?.error||'Purchase history unavailable');
     if(attempt<3)await new Promise(r=>setTimeout(r,1000));
@@ -265,13 +265,19 @@ async function resolvePendingPayment(scheduled=false) {
  const {checkoutRecords=[]}=await chrome.storage.local.get('checkoutRecords');
  if(checkoutRecords.some(r=>r.status!=='confirmed'))await verifyPayment(scheduled);
 }
-async function verifyPayment(scheduled=false) {
+async function verifyPayment(scheduled=false,manualReference=null) {
  if(busy)throw Error('Another run is active');
  busy=true;
  try {
  const {checkoutRecords=[]}=await chrome.storage.local.get('checkoutRecords');
- const record=checkoutRecords.find(r=>r.status!=='confirmed');if(!record)throw Error('No pending checkout record');
- trace=newRun('payment-reconciliation',record.slot.date);await step('started');
+ let record=checkoutRecords.find(r=>r.status!=='confirmed');if(!record)throw Error('No pending checkout record');
+ trace=newRun(manualReference!==null?'manual-payment-reconciliation':'payment-reconciliation',record.slot.date);await step('started');
+ if(manualReference!==null){
+  record=reportManualPayment(record,manualReference);
+  await chrome.storage.local.set({checkoutRecords:checkoutRecords.map(r=>r.key===record.key?record:r)});
+  await step('manual-payment-reported',{key:record.key});
+ }
+ if(!record.reference&&!record.paymentDispatchedAt)throw Error('No recorded payment reference. If you paid manually, enter its booking reference and use Verify manual payment');
  return await finishPaidRecord(record,scheduled);
  }catch(e){
   if(trace){await step('stopped');await trace.finish('stopped');}
@@ -329,6 +335,7 @@ chrome.runtime.onMessage.addListener((message,sender,respond)=>{
     if(message.kind==='prepareCheckout')return checkout();
     if(message.kind==='daytimeBasketTest')return checkout(message.day,false,true);
     if(message.kind==='verifyPayment')return verifyPayment();
+    if(message.kind==='reconcileManualPayment')return verifyPayment(false,message.reference||'');
     if(message.kind==='openCardVault'){await chrome.tabs.create({url:chrome.runtime.getURL('card-vault.html'),active:true});return {status:'local-card-setup-opened'};}
     if(message.kind==='payCheckout')return automaticPayment();
     if(message.kind==='armPayment')return arm(message.day,'payment',message.discountCode,message.settings);
@@ -361,7 +368,7 @@ chrome.runtime.onMessage.addListener((message,sender,respond)=>{
      return {...status,localCardUnlocked,version:chrome.runtime.getManifest().version};
     }
     throw Error('Unknown action');
-  })().then(respond,e=>respond({status:'stopped',error:e.message,booked:false,paid:false})); return true;
+  })().then(respond,e=>{const uncertain=['verifyPayment','reconcileManualPayment','armPayment','payCheckout'].includes(message.kind);respond({status:'stopped',error:e.message,booked:uncertain?null:false,paid:uncertain?null:false});}); return true;
 });
 // Recreate one-shot alarms after restart without starting a missed release.
 async function restoreReleaseJob() {

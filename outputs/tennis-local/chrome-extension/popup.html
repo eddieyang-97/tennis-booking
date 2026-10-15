@@ -28,6 +28,8 @@
 <p><button id="daytimeBasketTest">Test 09:00–11:00 basket (no payment)</button> Uses the playing date above, including weekends, within the released booking window. Searches both venues for two hours, up to £14. Inspect the basket, remove both items manually, then reconcile the cleared selection.</p>
 <p><button id="check">Check availability now</button> <button id="resume">Resume after site verification</button></p>
 <p><button id="prepareCheckout">Prepare or resume checkout</button> <button id="payCheckout">Pay or reconcile checkout</button> <button id="verifyPayment">Verify paid receipt</button></p>
+<label>Manually paid booking reference <input id="manualReference" type="text" maxlength="22" autocomplete="off" placeholder="Reference from your confirmation"></label>
+<p><button id="reconcileManualPayment">Verify manual payment</button> For the pending checkout shown above only. Checks the reference and expected amount in purchase history; never opens checkout or charges your card. It cannot establish that a paid reservation remains active.</p>
 <p><button id="reset">Reset interrupted availability check</button> <button id="reconcileBasket">Verify cleared legacy test basket</button></p>
 <p><button id="reconcileSelection">Reconcile cleared selection</button> After removing an incomplete selection from the site basket, reconcile it here before another booking. Submitted payment records remain protected.</p>
 <p><button id="showStatus">Show diagnostic JSON</button> Contains private local job and checkout data; omit personal codes before sharing publicly.</p>

@@ -1,8 +1,9 @@
 import test from 'node:test';import assert from 'node:assert/strict';import vm from 'node:vm';import fs from 'node:fs';
-import {reconcilePaid,recoveryIdentity} from './reconciliation.js';
+import {reconcilePaid,recoveryIdentity,reportManualPayment} from './reconciliation.js';
 import {payCheckout} from './payment.js';
 import {PAYMENT_TEST_SLOT,confirmCheckout} from './checkout.js';
 import {slotKey} from './core.js';
+import {paymentCard} from './card-vault-core.js';
 const slot=PAYMENT_TEST_SLOT,key=JSON.stringify([slot.venue,slot.date,slot.court,slot.start,slot.hours]);
 const record={slot,test:true,key,reference:'100001',status:'pending',phase:'payment-uncertain',paymentDispatchedAt:'2026-10-13T00:00:00Z'};
 const source=fs.readFileSync(new URL('./checkout-content.js',import.meta.url),'utf8');
@@ -46,4 +47,32 @@ test('historical payment recovery works after booking window expires; corrupt jo
 });
 test('unverified purchase remains unresolved and never reopens or refills checkout',async()=>{
  let mutations=0;await assert.rejects(payCheckout(record,{receipt:()=>reconcilePaid(record,{currentReceipt:async()=>null,accountReceipt:async()=>{throw Error('Unpaid');}}),open:async()=>mutations++,fillCard:async()=>mutations++,submit:async()=>mutations++}),/Unpaid/);assert.equal(mutations,0);
+});
+function normalPending(){const s={venue:'victoria-park',date:'2026-10-20',court:2,start:'20:00',hours:1,totalGBP:'2.50'};return {slot:s,key:slotKey(s),test:false,status:'pending',phase:'checkout-opening',tabId:42};}
+test('manual report records a distinct durable hold and only matching paid history can confirm it',async()=>{
+ const pending=normalPending(),reported=reportManualPayment(pending,' PT100001 ');
+ assert.equal(reported.phase,'manual-payment-reported');assert.ok(reported.manualPaymentReportedAt);assert.equal(reported.paymentDispatchedAt,undefined);assert.equal(pending.reference,undefined);assert.equal(reported.reference,'100001');
+ const receipt=purchase().send({slot:reported.slot,key:reported.key,paymentDispatchedAt:undefined,manualPaymentReportedAt:reported.manualPaymentReportedAt});assert.equal(receipt.ok,true);
+ let mutations=0;const result=await payCheckout(reported,{receipt:()=>reconcilePaid(reported,{currentReceipt:async()=>null,accountReceipt:async()=>receipt.value}),open:async()=>mutations++,fillCard:async()=>mutations++,submit:async()=>mutations++});
+ assert.equal(result.status,'confirmed');assert.equal(result.paymentDispatchedAt,undefined);assert.ok(result.manualPaymentReportedAt);assert.equal(mutations,0);
+ assert.equal(await paymentCard({session:{get:async()=>{throw Error('Must not read card');}}},reported),null);
+ assert.throws(()=>reportManualPayment(reported,'100002'),/differs/);
+ assert.equal(reportManualPayment(reported,'100001').manualPaymentReportedAt,reported.manualPaymentReportedAt);
+ for(const change of [{test:true},{basketOnly:true},{status:'confirmed'},{paymentDispatchedAt:'timestamp'},{key:'wrong'}])assert.throws(()=>reportManualPayment({...pending,...change},'100001'));
+ for(const reference of ['', 'text','123 456',null])assert.throws(()=>reportManualPayment(pending,reference));
+});
+test('failed manual reconciliation remains protected and never opens or submits checkout',async()=>{
+ const reported=reportManualPayment(normalPending(),'100001');let mutations=0;
+ await assert.rejects(payCheckout(reported,{receipt:()=>reconcilePaid(reported,{currentReceipt:async()=>null,accountReceipt:async()=>{throw Error('No matching paid purchase');}}),open:async()=>mutations++,submit:async()=>mutations++}),/No matching/);assert.equal(mutations,0);
+ const wrong=purchase().send({slot:reported.slot,key:reported.key,reference:'100002',paymentDispatchedAt:undefined,manualPaymentReportedAt:reported.manualPaymentReportedAt});assert.equal(wrong.ok,false);
+ assert.equal(purchase().send({paymentDispatchedAt:undefined,manualPaymentReportedAt:'invalid'}).ok,false);
+});
+test('manual recovery endpoint reads account only, confirms without card access, and preserves the original journal',async()=>{
+ const pending=normalPending(),state={checkoutRecords:[pending]};let listener,created=0;
+ globalThis.chrome={storage:{local:{get:async()=>structuredClone(state),set:async value=>Object.assign(state,structuredClone(value))},session:{get:async()=>{throw Error('Card access forbidden');}}},action:{setBadgeText:async()=>{}},notifications:{create:async()=>{},onClicked:{addListener:()=>{}}},alarms:{onAlarm:{addListener:()=>{}}},runtime:{id:'test',getURL:path=>'chrome-extension://test/'+path,getManifest:()=>({version:'0.8.1'}),onMessage:{addListener:fn=>listener=fn},onStartup:{addListener:()=>{}},onInstalled:{addListener:()=>{}}},tabs:{get:async id=>{if(id===42)throw Error('No tab with id');return {id,url:'https://tennistowerhamlets.com/account',status:'complete'};},create:async({url})=>{assert.equal(url,'https://tennistowerhamlets.com/account');created++;return {id:43};},remove:async()=>{},sendMessage:async(id,request)=>{assert.equal(id,43);assert.equal(request.kind,'purchase-read');assert.ok(request.manualPaymentReportedAt);assert.equal(request.paymentDispatchedAt,undefined);return purchase().send(request);}}};
+ try{
+  await import('./background.js');const send=message=>new Promise(resolve=>listener(message,{id:'test',url:'chrome-extension://test/popup.html'},resolve));
+  const old=await send({kind:'verifyPayment'});assert.equal(old.status,'stopped');assert.match(old.error,/paid manually/);assert.equal(old.paid,null);assert.equal(created,0);
+  const result=await send({kind:'reconcileManualPayment',reference:'100001'});assert.equal(result.status,'confirmed');assert.equal(result.paid,true);assert.equal(result.manualPayment,true);assert.equal(result.booked,null);assert.equal(created,1);assert.equal(state.checkoutRecords[0].paymentDispatchedAt,undefined);assert.equal(state.checkoutRecords[0].phase,'receipt-verified');
+ }finally{delete globalThis.chrome;}
 });

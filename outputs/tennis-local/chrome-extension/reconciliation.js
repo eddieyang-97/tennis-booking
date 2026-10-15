@@ -14,8 +14,17 @@ export function recoveryIdentity(record) {
  if(record.test ? !sameSlot(s,PAYMENT_TEST_SLOT) : record.settings?false:(!eligible(s.date)||!['20:00','21:00'].includes(s.start)||+s.totalGBP>(s.hours===2?14:7)))throw Error('Invalid recovery slot');
  if(!record.test&&record.settings)authorizeSettingsSlot(s,record.settings);
  if(record.key!==slotKey(s) || !/^\d+$/.test(record.reference||''))throw Error('Invalid recovery reference or key');
- if(!record.paymentDispatchedAt || !Number.isFinite(Date.parse(record.paymentDispatchedAt)))throw Error('No durable payment dispatch evidence; inspect manually');
+ const dispatched=Number.isFinite(Date.parse(record.paymentDispatchedAt)),manual=Number.isFinite(Date.parse(record.manualPaymentReportedAt));
+ if((record.paymentDispatchedAt&&!dispatched)||(record.manualPaymentReportedAt&&!manual)||(!dispatched&&!manual))throw Error('No durable payment dispatch or manual-payment report; inspect manually');
  return record;
+}
+export function reportManualPayment(record,value) {
+ if(!record||record.status!=='pending'||record.test||record.basketOnly||record.paymentDispatchedAt)throw Error('Choose the pending normal checkout; submitted payments use Verify paid receipt');
+ if(typeof value!=='string'||!/^\d{1,20}$/.test(value.trim().replace(/^PT/,'')))throw Error('Enter the booking reference from your manual payment confirmation');
+ const reference=value.trim().replace(/^PT/,'');
+ if(record.reference&&record.reference!==reference)throw Error('Reference differs from the pending checkout; inspect before changing it');
+ const reported={...record,reference,manualPaymentReportedAt:record.manualPaymentReportedAt||new Date().toISOString(),phase:'manual-payment-reported',updatedAt:new Date().toISOString()};
+ recoveryIdentity(reported);return reported;
 }
 
 export async function reconcilePaid(record,deps) {
