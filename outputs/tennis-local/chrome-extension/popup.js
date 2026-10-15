@@ -1,9 +1,11 @@
 import {londonDay,addDays} from './core.js';
 import {normalizeSettings,DEFAULT_SETTINGS} from './booking-settings.js';
-import {readiness} from './readiness.js';
+import {readiness,releasePreview} from './readiness.js';
 const field=id=>document.querySelector('#'+id),day=field('day'),output=field('result');
 let formEdited=false;
 day.value=addDays(londonDay(),8);
+field('releaseHelp').textContent=releasePreview(day.value);
+day.addEventListener('input',()=>field('releaseHelp').textContent=releasePreview(day.value));
 for(const [id,first,last] of [['earliestStart',0,23],['latestFinish',1,24]])for(let hour=first;hour<=last;hour++){
  const option=document.createElement('option');option.value=option.textContent=`${String(hour).padStart(2,'0')}:00`;field(id).append(option);
 }
@@ -13,6 +15,7 @@ writeSettings(DEFAULT_SETTINGS);
 async function refresh(initial=false,show=false){
  const status=await chrome.runtime.sendMessage({kind:'status'}),view=readiness(status);
  field('readiness').textContent=[view.summary,...view.lines].join('\n');
+ field('armBlocker').textContent=view.armBlocker||'';
  field('cardStatus').textContent=status.localCardUnlocked?'Local card: unlocked for this Chrome session.':'Local card: locked. Open card setup and unlock the file first.';
  if(initial&&!formEdited){writeSettings(status.job?.settings||status.bookingSettings||DEFAULT_SETTINGS);field('discountCode').value=status.job?.discountCode||'';}
  if(show)output.textContent=JSON.stringify(status,null,2);
@@ -22,7 +25,7 @@ async function send(kind){output.textContent='Checking…';try{
  if(['armPayment','check','saveSettings'].includes(kind))message.settings=readSettings();
  if(kind==='armPayment')message.discountCode=field('discountCode').value;
  if(kind==='reconcileManualPayment')message.reference=field('manualReference').value;
- const result=await chrome.runtime.sendMessage(message);output.textContent=JSON.stringify(result,null,2);
+ const result=await chrome.runtime.sendMessage(message);output.textContent=result.status==='stopped'?result.error:JSON.stringify(result,null,2);
  try{await refresh();}catch{/* Keep the completed action result visible. */}
 }catch(error){output.textContent=error.message;}}
 for(const kind of ['openCardVault','payCheckout','armPayment','check','resume','prepareCheckout','daytimeBasketTest','verifyPayment','cancel','reset','reconcileBasket','reconcileSelection','saveSettings','reconcileManualPayment'])field(kind).addEventListener('click',()=>send(kind));

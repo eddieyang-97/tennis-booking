@@ -5,6 +5,7 @@
 <p id="cardStatus" role="status">Checking local card…</p>
 <p><button id="openCardVault">Set up or unlock card file</button></p>
 <label>Playing date <input id="day" type="date"></label>
+<p id="releaseHelp" class="note"></p>
 <fieldset><legend>Booking preferences</legend>
 <label>First-choice venue <select id="firstVenue"><option value="bethnal-green-gardens">Bethnal Green Gardens</option><option value="victoria-park">Victoria Park</option></select></label>
 <label>Fallback venue <select id="secondVenue"><option value="">None</option><option value="bethnal-green-gardens">Bethnal Green Gardens</option><option value="victoria-park" selected>Victoria Park</option></select></label>
@@ -21,6 +22,7 @@
 <p><label>Discount code (optional) <input id="discountCode" type="text" maxlength="10" autocomplete="off" placeholder="Leave blank for no code"></label></p>
 <p>A supplied code is saved with this armed run. Checkout stops if its discount cannot be verified. Editing this field does not change an already armed run; arm again to update it.</p>
 <p><button id="armPayment">Arm midnight booking and payment</button> <button id="cancel">Cancel scheduled run</button></p>
+<p id="armBlocker" role="status"></p>
 <p class="note">Each arm saves a copy of these preferences. Editing the form does not change an armed run or a pending checkout. One booking per playing date; any playing day is supported.</p>
 <p>Unlock the card file before the run and keep Chrome open and the laptop awake. Payments use the local card directly; a locked card stops the run. Human verification or bank approval can stop a run. Uncertain payments are never submitted again.</p>
 <p class="note">A scheduled partial selection can proceed for one verified intended hour only when the saved minimum duration and one-hour cap permit it. Extra or mismatched items stop checkout.</p>

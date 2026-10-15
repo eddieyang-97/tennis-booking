@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';import vm from 'node:vm';import fs from 'node:fs';
-import {DEFAULT_SETTINGS,normalizeSettings,gbpPence} from './booking-settings.js';import {candidates,addDays} from './core.js';import {checkoutKey,prepareCheckout,singleHourFallback} from './checkout.js';import {payCheckout} from './payment.js';import {recoveryIdentity} from './reconciliation.js';import {readiness} from './readiness.js';
+import {DEFAULT_SETTINGS,normalizeSettings,gbpPence,pendingArmBlocker} from './booking-settings.js';import {candidates,addDays} from './core.js';import {checkoutKey,prepareCheckout,singleHourFallback} from './checkout.js';import {payCheckout} from './payment.js';import {recoveryIdentity} from './reconciliation.js';import {readiness,releasePreview} from './readiness.js';
 const preferences=()=>normalizeSettings({venues:['victoria-park'],earliestStart:'09:00',latestFinish:'12:00',preferredHours:2,minHours:1,maxTotalGBP:'20.00',maxOneHourGBP:'10.00',allowCourtSwitch:true});
 const slot={venue:'victoria-park',date:'2026-10-20',court:1,start:'09:00',hours:2,totalGBP:'18.00'};
 const basket={empty:false,items:[9,10].map(hour=>({venue:'Victoria Park',court:1,day:20,month:10,hour,priceGBP:'9.00'})),totalGBP:'18.00',paymentBoundary:true};
@@ -44,13 +44,19 @@ test('popup sends real settings, preserves edits across status refresh and expos
  const html=fs.readFileSync(new URL('./popup.html',import.meta.url),'utf8'),source=fs.readFileSync(new URL('./popup.js',import.meta.url),'utf8');
  const elements=Object.fromEntries([...html.matchAll(/id="([^"]+)"/g)].map(([,id])=>[id,{value:'',checked:false,textContent:'',listeners:{},append(){},addEventListener(event,fn){this.listeners[event]=fn;}}]));
  let state={localCardUnlocked:false,checkoutRecords:[],bookingSettings:preferences()},calls=[];
- const context={normalizeSettings,DEFAULT_SETTINGS,londonDay:()=> '2026-10-13',addDays,readiness,document:{querySelector:q=>elements[q.slice(1)],querySelectorAll:()=>Object.values(elements),createElement:()=>({})},chrome:{runtime:{sendMessage:async message=>{calls.push(structuredClone(message));return message.kind==='status'?structuredClone(state):{status:'preferences-saved'};}}}};
+ const context={normalizeSettings,DEFAULT_SETTINGS,londonDay:()=> '2026-10-13',addDays,readiness,releasePreview,document:{querySelector:q=>elements[q.slice(1)],querySelectorAll:()=>Object.values(elements),createElement:()=>({})},chrome:{runtime:{sendMessage:async message=>{calls.push(structuredClone(message));return message.kind==='status'?structuredClone(state):{status:'preferences-saved'};}}}};
  vm.createContext(context);vm.runInContext(source.replace(/^import .*;\r?\n/gm,''),context);await context.refresh(true);
  assert.equal(elements.earliestStart.value,'09:00');assert.equal(elements.day.value,'2026-10-21');assert.equal(elements.result.textContent,'');
  elements.earliestStart.value='08:00';elements.maxTotalGBP.value='22.00';await context.send('saveSettings');
  assert.equal(calls.at(-2).settings.earliestStart,'08:00');assert.equal(calls.at(-2).settings.maxTotalGBP,'22.00');assert.equal(elements.earliestStart.value,'08:00');assert.match(elements.result.textContent,/preferences-saved/);
  await context.refresh(false,true);assert.match(elements.result.textContent,/checkoutRecords/);
  elements.latestFinish.value='07:00';const count=calls.length;await context.send('armPayment');assert.equal(calls.length,count);assert.match(elements.result.textContent,/Time range/);
+});
+test('future-release guidance and prior-checkout blockers identify separate dates and recovery actions',()=>{
+ const now=Date.parse('2026-10-13T12:00:00Z');assert.match(releasePreview('2026-10-21',now),/14 Oct 2026, 00:00 London/);assert.match(releasePreview('2026-10-20',now),/already released/);assert.match(releasePreview('invalid',now),/valid playing date/);
+ const pending={status:'pending',phase:'checkout-opening',slot:{date:'2026-10-20',start:'20:00',hours:2}};
+ assert.match(pendingArmBlocker([pending]),/2026-10-20.*20:00.*Verify manual payment/);assert.match(pendingArmBlocker([{...pending,manualPaymentReportedAt:'timestamp'}]),/Verify paid receipt/);assert.equal(pendingArmBlocker([{...pending,status:'confirmed'}]),'');
+ assert.match(readiness({checkoutRecords:[pending]},now).summary,/earlier checkout/);
 });
 test('armed settings survive later preference edits and reach scheduled scanning and unpaid preparation',()=>fixed(async()=>{
  const state={checkoutRecords:[]},tabs=new Map(),visited=[],selected=[];let listener,alarm,nextTab=1,current={empty:true,items:[]};

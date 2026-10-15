@@ -25,6 +25,12 @@ export function normalizeSettings(value=DEFAULT_SETTINGS) {
  return s;
 }
 export function settingsCap(s,hours){return Math.min(gbpPence(s.maxTotalGBP),hours===1?gbpPence(s.maxOneHourGBP):Infinity);}
+export function pendingArmBlocker(records=[]) {
+ const pending=records.find(record=>record.status!=='confirmed');if(!pending)return '';
+ const slot=pending.slot,description=slot?`${slot.date} at ${slot.start} (${slot.hours}h)`:'an earlier date';
+ const recovery=pending.manualPaymentReportedAt||pending.paymentDispatchedAt||['payment-dispatched','payment-uncertain'].includes(pending.phase)?'Use Verify paid receipt to reconcile its payment.':'If you paid it manually, enter its confirmation reference and use Verify manual payment. Otherwise inspect or resume that earlier checkout.';
+ return `Arming is blocked by an unresolved checkout for ${description}. ${recovery}`;
+}
 // No current-date check here: historical paid journals still need recovery.
 export function authorizeSettingsSlot(slot,value) {
  const s=normalizeSettings(value),start=hourValue(slot.start);

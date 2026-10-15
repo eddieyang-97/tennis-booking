@@ -11,7 +11,7 @@ import {reconcilePaid,reportManualPayment} from './reconciliation.js';
 import {readGrid,gridReadPolicy} from './grid-read.js';
 import {readPageState,pageReadBudget,waitPaymentState} from './page-read.js';
 import {normalizeDiscount,ensureDiscount,payableSlot} from './discount.js';
-import {normalizeSettings} from './booking-settings.js';
+import {normalizeSettings,pendingArmBlocker} from './booking-settings.js';
 const linkFrames=createLinkFrames(chrome.tabs,{step:(name,detail)=>step(name,detail)});
 const BASE='https://tennistowerhamlets.com';
 let busy=false;
@@ -76,7 +76,14 @@ async function arm(day,mode='availability',code='',settings=null) {
   addDays(day,0);
   const when=releaseAt(day);
   if(when<=Date.now()) throw Error('This date has already released; use Check now');
-  if(mode==='payment'){await resolvePendingPayment();await paymentCard(chrome.storage,null);}
+  if(mode==='payment'){
+   try{await resolvePendingPayment();}catch(error){
+    const {checkoutRecords=[]}=await chrome.storage.local.get('checkoutRecords'),blocker=pendingArmBlocker(checkoutRecords);
+    if(blocker)throw Object.assign(Error(`The selected date ${day} has not released yet and can be scheduled. ${blocker}`),{code:'UNRESOLVED_CHECKOUT',attemptedDay:day});
+    throw error;
+   }
+   await paymentCard(chrome.storage,null);
+  }
   await chrome.alarms.clear('prepare'); await chrome.alarms.clear('release');
   if(!['availability','checkout','payment'].includes(mode))throw Error('Unknown release mode');
   await chrome.storage.local.set({job:{day,when,prepared:false,mode,settings,...(discountCode?{discountCode}:{})},bookingSettings:settings});
@@ -368,7 +375,7 @@ chrome.runtime.onMessage.addListener((message,sender,respond)=>{
      return {...status,localCardUnlocked,version:chrome.runtime.getManifest().version};
     }
     throw Error('Unknown action');
-  })().then(respond,e=>{const uncertain=['verifyPayment','reconcileManualPayment','armPayment','payCheckout'].includes(message.kind);respond({status:'stopped',error:e.message,booked:uncertain?null:false,paid:uncertain?null:false});}); return true;
+  })().then(respond,e=>{const uncertain=['verifyPayment','reconcileManualPayment','armPayment','payCheckout'].includes(message.kind);respond({status:'stopped',error:e.message,...(e.code?{errorCode:e.code}:{}),...(e.attemptedDay?{attemptedDay:e.attemptedDay}:{}),booked:uncertain?null:false,paid:uncertain?null:false});}); return true;
 });
 // Recreate one-shot alarms after restart without starting a missed release.
 async function restoreReleaseJob() {

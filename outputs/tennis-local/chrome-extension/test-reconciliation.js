@@ -68,11 +68,14 @@ test('failed manual reconciliation remains protected and never opens or submits 
  assert.equal(purchase().send({paymentDispatchedAt:undefined,manualPaymentReportedAt:'invalid'}).ok,false);
 });
 test('manual recovery endpoint reads account only, confirms without card access, and preserves the original journal',async()=>{
+ const originalNow=Date.now;Date.now=()=>Date.parse('2026-10-13T12:00:00Z');
  const pending=normalPending(),state={checkoutRecords:[pending]};let listener,created=0;
  globalThis.chrome={storage:{local:{get:async()=>structuredClone(state),set:async value=>Object.assign(state,structuredClone(value))},session:{get:async()=>{throw Error('Card access forbidden');}}},action:{setBadgeText:async()=>{}},notifications:{create:async()=>{},onClicked:{addListener:()=>{}}},alarms:{onAlarm:{addListener:()=>{}}},runtime:{id:'test',getURL:path=>'chrome-extension://test/'+path,getManifest:()=>({version:'0.8.1'}),onMessage:{addListener:fn=>listener=fn},onStartup:{addListener:()=>{}},onInstalled:{addListener:()=>{}}},tabs:{get:async id=>{if(id===42)throw Error('No tab with id');return {id,url:'https://tennistowerhamlets.com/account',status:'complete'};},create:async({url})=>{assert.equal(url,'https://tennistowerhamlets.com/account');created++;return {id:43};},remove:async()=>{},sendMessage:async(id,request)=>{assert.equal(id,43);assert.equal(request.kind,'purchase-read');assert.ok(request.manualPaymentReportedAt);assert.equal(request.paymentDispatchedAt,undefined);return purchase().send(request);}}};
  try{
   await import('./background.js');const send=message=>new Promise(resolve=>listener(message,{id:'test',url:'chrome-extension://test/popup.html'},resolve));
   const old=await send({kind:'verifyPayment'});assert.equal(old.status,'stopped');assert.match(old.error,/paid manually/);assert.equal(old.paid,null);assert.equal(created,0);
+  const future=await send({kind:'armPayment',day:'2026-10-24'});
+  assert.equal(future.status,'stopped');assert.equal(future.errorCode,'UNRESOLVED_CHECKOUT');assert.match(future.error,/2026-10-24 has not released yet/);assert.match(future.error,/checkout for 2026-10-20/);assert.match(future.error,/Verify manual payment/);assert.equal(state.job,undefined);assert.equal(created,0);
   const result=await send({kind:'reconcileManualPayment',reference:'100001'});assert.equal(result.status,'confirmed');assert.equal(result.paid,true);assert.equal(result.manualPayment,true);assert.equal(result.booked,null);assert.equal(created,1);assert.equal(state.checkoutRecords[0].paymentDispatchedAt,undefined);assert.equal(state.checkoutRecords[0].phase,'receipt-verified');
- }finally{delete globalThis.chrome;}
+ }finally{delete globalThis.chrome;Date.now=originalNow;}
 });

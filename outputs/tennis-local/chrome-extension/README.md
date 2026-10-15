@@ -1,4 +1,4 @@
-# Tennis booking extension — v0.8.1 MVP
+# Tennis booking extension — v0.8.2 MVP
 
 Runs in normal Chrome using your Courtside sign-in. It checks and books at London midnight, seven days before the selected playing date, then attempts payment. Any playing day; starts at 20:00 or 21:00. Bethnal Green Gardens precedes Victoria Park; two hours precede one, with consecutive hours in the same venue; switching courts is allowed, with same-court options tried first. Limits are £14 for two hours and £7 for one. Confirmed dates and unresolved checkouts block duplicate bookings. Each armed job runs once.
 
@@ -115,3 +115,7 @@ This path validates the existing normal checkout identity, saved authorization a
 Every payment entry point and card-access/preparation guard treats a manual report as reconciliation-only. Failed verification preserves the hold and prevents card filling, checkout opening or another payment. Confirmation preserves the original slot and history. Existing Verify paid receipt handles subsequent retries of the same manual report. Before a manual reference is supplied, verification now explains which control to use; recovery/arming errors return unknown payment state instead of incorrectly implying that a manual payment never happened.
 
 All 102 tests pass, including a mocked endpoint that confirms manual payment via account history with card access forbidden, wrong/invalid reference rejection, read-only retries, distinct journal provenance and no repeated payment. The owner's actual pending extension state still needs the new UI action after reload; source/build changes do not reconcile browser storage automatically. Never publish owner references or raw private journals in this repository.
+
+### v0.8.2: distinguish future arming from older checkout recovery
+
+Arm is intentionally for a playing date whose London release is still in the future. The reported recovery error came from an earlier pending checkout, not from the new date being unreleased. The popup now previews the selected date's release in London, displays the earlier checkout blocker beside Arm, and uses a recovery-specific readiness heading. Arming failures identify both the valid selected date and the older unresolved date/time, with the correct manual-payment or paid-receipt action; the structured response includes `UNRESOLVED_CHECKOUT` and `attemptedDay`. Action failures display their explanation rather than a generic JSON error. No pending payment guard is bypassed and a failed arm leaves saved jobs/alarms unchanged. All 103 tests pass, including a future-date arm blocked by an older checkout before any card access, and London release guidance.
