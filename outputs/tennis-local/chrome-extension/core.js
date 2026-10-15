@@ -28,8 +28,9 @@ export function releaseAt(day) {
   // London midnight is either UTC midnight or the prior UTC hour.
   return londonDay(nominal-3600000)===release ? nominal-3600000 : nominal;
 }
-export function candidates(rows, venue, day) {
-  if (!VENUES.includes(venue) || !eligible(day)) return [];
+export function candidates(rows, venue, day, {basketOnly=false}={}) {
+  if (!VENUES.includes(venue) || (!basketOnly && !eligible(day))) return [];
+  addDays(day,0);
   const available = new Map();
   for (const row of rows) {
     const m = /^(\d{1,2})(am|pm)$/.exec(row.time);
@@ -48,12 +49,12 @@ export function candidates(rows, venue, day) {
     }
   }
   const found=[];
-  for (const hours of [2,1]) for (const hour of [20,21]) {
+  for (const hours of (basketOnly?[2]:[2,1])) for (const hour of (basketOnly?[9]:[20,21])) {
     const choices=[1,2,3,4].map(court=>Array(hours).fill(court));
     if(hours===2)for(let first=1;first<=4;first++)for(let second=1;second<=4;second++)if(first!==second)choices.push([first,second]);
     for(const courts of choices) {
      const prices=courts.map((court,i)=>available.get(`${hour+i}:${court}`));
-     if(prices.every(p=>p!==undefined))found.push({venue:NAMES[venue],date:day,court:courts[0],...(courts.some(c=>c!==courts[0])?{courts}:{}),start:`${hour}:00`,hours,totalGBP:(prices.reduce((a,b)=>a+b,0)/100).toFixed(2)});
+     if(prices.every(p=>p!==undefined))found.push({venue:NAMES[venue],date:day,court:courts[0],...(courts.some(c=>c!==courts[0])?{courts}:{}),start:`${String(hour).padStart(2,'0')}:00`,hours,totalGBP:(prices.reduce((a,b)=>a+b,0)/100).toFixed(2)});
     }
   }
   return found;

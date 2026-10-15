@@ -2,7 +2,7 @@ import {VENUES, londonDay, addDays, eligible, releaseAt, candidates} from './cor
 import {verifyBasket,basketEvidence} from './stage-rules.js';
 import {retryTab} from './retry.js';
 import {startRun} from './run-log.js';
-import {prepareCheckout,checkoutCandidate,confirmCheckout,PAYMENT_TEST_SLOT,reconcileClearedSelection} from './checkout.js';
+import {prepareCheckout,checkoutCandidate,confirmCheckout,PAYMENT_TEST_SLOT,reconcileClearedSelection,basketTestKey} from './checkout.js';
 import {payCheckout} from './payment.js';
 import {checkoutKey} from './checkout.js';
 import {createLinkFrames} from './link-frames.js';
@@ -85,6 +85,7 @@ async function automaticPayment(test=false,scheduled=false) {
  try {
   let {checkoutRecords=[]}=await chrome.storage.local.get('checkoutRecords');
   record=checkoutRecords.find(r=>r.status!=='confirmed');
+  if(record?.basketOnly)throw Error('Daytime basket test cannot submit payment; clear and reconcile its basket');
   if(test && record && record.key!==checkoutKey(PAYMENT_TEST_SLOT,true))throw Error('Another checkout requires reconciliation');
   if(record?.paymentDispatchedAt || ['payment-dispatched','payment-uncertain'].includes(record?.phase)) {
    trace=startRun(chrome.storage.local,'payment-reconciliation',record.slot.date);await step('started');
@@ -137,7 +138,7 @@ async function notifyCheckout(slot) {
  try {await chrome.notifications.create('tennis-checkout',{type:'basic',iconUrl:chrome.runtime.getURL('notification.png'),title:'Tennis checkout ready',message:`${slot.date} ${slot.start}, £${slot.totalGBP}. Verified basket ready; inspect the extension for payment status.`});}
  catch {await step('notification-unavailable');}
 }
-async function checkout(expectedDay=null,scheduled=false) {
+async function checkout(expectedDay=null,scheduled=false,basketOnly=false) {
  if(busy)throw Error('Another run is active');
  busy=true;
  let tab,slot;
@@ -145,10 +146,24 @@ async function checkout(expectedDay=null,scheduled=false) {
  const {result,basketTest,checkoutRecords=[]}=await chrome.storage.local.get(['result','basketTest','checkoutRecords']);
  if(basketTest && basketTest.status!=='cleared')throw Error('Basket test needs reconciliation first');
  const pending=checkoutRecords.find(r=>r.status!=='confirmed');
+ if(pending && !!pending.basketOnly!==basketOnly)throw Error('Another checkout requires reconciliation');
  if(expectedDay && pending && pending.slot.date!==expectedDay)throw Error('Another date has an unresolved checkout; release preparation stopped');
- slot=pending?.slot || (result?.status==='complete'?checkoutCandidate(result.results):null);
+ slot=pending?.slot || (!basketOnly && result?.status==='complete'?checkoutCandidate(result.results):null);
+ if(basketOnly && !slot) {
+  addDays(expectedDay,0);
+  if(expectedDay<londonDay()||expectedDay>addDays(londonDay(),7))throw Error('Choose a released date within the next seven days');
+  trace=startRun(chrome.storage.local,'daytime-basket-test',expectedDay);await step('started');
+  await account();
+  for(const venue of VENUES) {
+   const grid=await readPage(`${BASE}/book/courts/${venue}/${expectedDay}#book`,{kind:'grid',venue,day:expectedDay});
+   if(!grid.ok)throw Error(grid.error);
+   slot=candidates(grid.rows,venue,expectedDay,{basketOnly:true}).map(candidate=>({...candidate,venue})).find(candidate=>{try{basketTestKey(candidate);return true;}catch{return false;}});
+   if(slot)break;
+  }
+  if(!slot)throw Error('No available 09:00–11:00 basket-test candidate within £14; choose another released date');
+ }
  if(!slot)throw Error('Check availability before preparing checkout');
- trace=startRun(chrome.storage.local,'checkout-preparation',slot.date);
+ trace=trace||startRun(chrome.storage.local,'checkout-preparation',slot.date);
   await step('started');
   if(pending?.tabId) {tab=await readTab(()=>chrome.tabs.get(pending.tabId));if(!tab.url?.startsWith(BASE+'/'))throw Error('Checkout tab left Courtside');}
   else tab=await retryTab(()=>chrome.tabs.create({url:BASE+'/basket',active:false}),{navigation:true});
@@ -168,9 +183,9 @@ async function checkout(expectedDay=null,scheduled=false) {
     if(!response?.ok)throw Object.assign(Error(response?.error||'Selection response uncertain'),{selectionDiagnostic});
     return response.value;
    },
-   retain:async()=>{await chrome.tabs.update(tab.id,{active:true});return tab.id;},notify:notifyCheckout
-  },{test:pending?.test===true});
-  await trace.finish('awaiting-payment');await chrome.storage.local.set({checkoutResult:{...output,runId:trace.record.id,finishedAt:trace.record.finishedAt}});return output;
+   retain:async()=>{await chrome.tabs.update(tab.id,{active:true});return tab.id;},notify:basketOnly?async()=>{await chrome.action.setBadgeText({text:'TEST'});}:notifyCheckout
+  },{test:pending?.test===true,basketOnly});
+  await trace.finish(output.status);await chrome.storage.local.set({checkoutResult:{...output,runId:trace.record.id,finishedAt:trace.record.finishedAt}});return output;
  } catch(e) {
   if(!trace)trace=startRun(chrome.storage.local,'checkout-preparation',slot?.date||londonDay());
   await step('checkout-stopped',{...(e.basketDiagnostic?{basketDiagnostic:e.basketDiagnostic}:{})});await trace.finish('stopped');const output={status:'stopped',error:e.message,...(e.basketDiagnostic?{basketDiagnostic:e.basketDiagnostic}:{}),tabId:tab?.id,booked:false,paid:false,runId:trace.record.id};await chrome.storage.local.set({checkoutResult:output});
@@ -281,6 +296,7 @@ chrome.runtime.onMessage.addListener((message,sender,respond)=>{
     if(message.kind==='check') {await check(message.day); return (await chrome.storage.local.get('result')).result;}
     if(message.kind==='resume') return resume(message.day);
     if(message.kind==='prepareCheckout')return checkout();
+    if(message.kind==='daytimeBasketTest')return checkout(message.day,false,true);
     if(message.kind==='verifyPayment')return verifyPayment();
     if(message.kind==='openCardVault'){await chrome.tabs.create({url:chrome.runtime.getURL('card-vault.html'),active:true});return {status:'local-card-setup-opened'};}
     if(message.kind==='payCheckout')return automaticPayment();

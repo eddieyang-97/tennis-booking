@@ -1,4 +1,4 @@
-# Tennis booking extension — v0.6.0 MVP
+# Tennis booking extension — v0.6.1 MVP
 
 Runs in normal Chrome using your Courtside sign-in. It checks and books at London midnight, seven days before the selected playing date, then attempts payment. Monday–Thursday only; starts at 20:00 or 21:00. Bethnal Green Gardens precedes Victoria Park; two hours precede one, with consecutive hours in the same venue; switching courts is allowed, with same-court options tried first. Limits are £14 for two hours and £7 for one. Confirmed dates and unresolved checkouts block duplicate bookings. Each armed job runs once.
 
@@ -51,3 +51,7 @@ Reload the extension before unlocking the card, not after. Once setup confirms t
 
 
 Stripe's empty Card Element initially contains number, expiry and CVC inputs but no postcode input. Autofill validates those primary fields, enters the number, then resolves each remaining visible input afresh and waits up to five seconds per field for it to appear. Missing, disabled, read-only or ambiguous fields stop without payment. Failure messages identify the stage without returning field values. The collapsed-form sequence and missing-postcode stop are covered by regression tests.
+
+### v0.6.1: unpaid morning acceptance test
+
+Use **Check and recover → Test 09:00–11:00 basket (no payment)** with a released playing date (today through seven days ahead, including weekends). It searches BGG then Victoria Park for exactly two hours, allows different courts, caps the total at £14, and uses the same serialized selection and strict basket validation as the evening flow. It does not change evening availability results, recurring preferences or the armed job. Success is `basket-test-ready`, `basketVerified: true`, `paymentBlocked: true`; this proves basket preparation only, not paid booking. Inspect both hourly items, remove them manually, and use **Reconcile cleared selection** before another run. A durable `basketOnly` record blocks payment at both background and payment-module boundaries, including after reload. Partial selection stays pending for inspection/reconciliation. Live acceptance is still required.

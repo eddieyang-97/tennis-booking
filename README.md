@@ -1,6 +1,6 @@
 # Tennis booking — developer reference
 
-Normal-Chrome Manifest V3 extension for Tower Hamlets Courtside bookings. The active source is [outputs/tennis-local/chrome-extension](outputs/tennis-local/chrome-extension/). Current source version: **0.6.0 MVP** (read-only grid readiness hardening). The readiness-panel enhancement remains separate in PR #1. This repository preserves the working source, regression tests and payment-system findings so future development can continue without repeating the investigation.
+Normal-Chrome Manifest V3 extension for Tower Hamlets Courtside bookings. The active source is [outputs/tennis-local/chrome-extension](outputs/tennis-local/chrome-extension/). Current source version: **0.6.1 MVP** (read-only grid readiness hardening). The readiness-panel enhancement remains separate in PR #1. This repository preserves the working source, regression tests and payment-system findings so future development can continue without repeating the investigation.
 
 **Verified on 13 October 2026:** the extension filled Stripe's card form and submitted the authorised £2.50 Victoria Park test payment. The merchant's account purchase history showed the matching reference as **Confirmed / Paid ✔ / £2.50**. The owner subsequently cancelled the court booking manually. Cancellation does not establish a refund.
 
@@ -86,3 +86,7 @@ To finish live acceptance, reload the grid-readiness fix and unlock the card aga
 The Python files under `outputs/tennis-local/` are an earlier, blocked Playwright prototype, retained for development history. They do not implement verified payment and are not the active scheduler. Their historical notes are not the current extension specification; do not enable `adapter_verified` manually. `work/` contains earlier local verification diagnostics.
 
 `.gitignore` uses an allowlist for source and documentation. Browser profiles, virtual environments, inspection captures, attachments, runtime ZIPs, encrypted card files, credentials and private run journals are excluded. Do not upload the entire working directory or exported Chrome storage. Runtime packages should be built from the extension's runtime files only, excluding tests, package metadata and private data.
+
+### v0.6.1: unpaid morning acceptance test
+
+Use **Check and recover → Test 09:00–11:00 basket (no payment)** with a released playing date (today through seven days ahead, including weekends). It searches BGG then Victoria Park for exactly two hours, allows different courts, caps the total at £14, and uses the same serialized selection and strict basket validation as the evening flow. It does not change evening availability results, recurring preferences or the armed job. Success is `basket-test-ready`, `basketVerified: true`, `paymentBlocked: true`; this proves basket preparation only, not paid booking. Inspect both hourly items, remove them manually, and use **Reconcile cleared selection** before another run. A durable `basketOnly` record blocks payment at both background and payment-module boundaries, including after reload. Partial selection stays pending for inspection/reconciliation. Live acceptance is still required.

@@ -13,14 +13,21 @@ export function checkoutCandidate(results) {
  }
  throw Error('No available candidate within authorized price limits');
 }
-export async function prepareCheckout(slot,deps,{test=false,adopt=false}={}) {
- const key=checkoutKey(slot,test),records=await deps.load();
+export function basketTestKey(slot) {
+ if(!['bethnal-green-gardens','victoria-park'].includes(slot.venue)||slot.start!=='09:00'||slot.hours!==2||!/^\d+\.\d{2}$/.test(slot.totalGBP)||+slot.totalGBP<=0||+slot.totalGBP>14)throw Error('Invalid daytime basket test');
+ addDays(slot.date,0);
+ if(slot.date<londonDay()||slot.date>addDays(londonDay(),7))throw Error('Basket test outside booking window');
+ return slotKey(slot);
+}
+export async function prepareCheckout(slot,deps,{test=false,adopt=false,basketOnly=false}={}) {
+ if(basketOnly&&(test||adopt))throw Error('Daytime test cannot adopt or pay');
+ const key=basketOnly?basketTestKey(slot):checkoutKey(slot,test),records=await deps.load();
  let record=records.find(r=>r.key===key);
  if(record && (record.paymentDispatchedAt || ['payment-dispatched','payment-uncertain'].includes(record.phase)))throw Error('Payment requires receipt reconciliation; checkout preparation cannot reset it');
  if(records.some(r=>r.status==='confirmed' && r.slot.date===slot.date))throw Error('A booking for this date is already confirmed');
  if(records.some(r=>r.key!==key && r.status!=='confirmed'))throw Error('Another checkout requires reconciliation');
  const persist=async phase=>{
-  record={...record,key,slot,test,phase,status:'pending',updatedAt:new Date().toISOString()};
+  record={...record,key,slot,test,...(basketOnly?{basketOnly:true}:{}),phase,status:'pending',updatedAt:new Date().toISOString()};
   await deps.save([...records.filter(r=>r.key!==key),record]);
  };
  try {
@@ -50,7 +57,7 @@ export async function prepareCheckout(slot,deps,{test=false,adopt=false}={}) {
  const tabId=await deps.retain();
  record={...record,tabId};await deps.save([...records.filter(r=>r.key!==key),record]);
  await deps.notify(slot);
- return {status:'awaiting-payment',slot,tabId,basketVerified:true,booked:false,paid:false,key};
+ return {status:basketOnly?'basket-test-ready':'awaiting-payment',slot,tabId,basketVerified:true,...(basketOnly?{paymentBlocked:true}:{}),booked:false,paid:false,key};
  }catch(error){
   if(record?.status==='pending'){
    record={...record,recoveryRequired:true,lastError:error.message,...(error.basketDiagnostic?{basketDiagnostic:error.basketDiagnostic}:{}),updatedAt:new Date().toISOString()};
