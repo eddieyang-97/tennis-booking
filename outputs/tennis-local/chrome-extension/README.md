@@ -1,6 +1,6 @@
-# Tennis booking extension — v0.6.4 MVP
+# Tennis booking extension — v0.6.5 MVP
 
-Runs in normal Chrome using your Courtside sign-in. It checks and books at London midnight, seven days before the selected playing date, then attempts payment. Monday–Thursday only; starts at 20:00 or 21:00. Bethnal Green Gardens precedes Victoria Park; two hours precede one, with consecutive hours in the same venue; switching courts is allowed, with same-court options tried first. Limits are £14 for two hours and £7 for one. Confirmed dates and unresolved checkouts block duplicate bookings. Each armed job runs once.
+Runs in normal Chrome using your Courtside sign-in. It checks and books at London midnight, seven days before the selected playing date, then attempts payment. Any playing day; starts at 20:00 or 21:00. Bethnal Green Gardens precedes Victoria Park; two hours precede one, with consecutive hours in the same venue; switching courts is allowed, with same-court options tried first. Limits are £14 for two hours and £7 for one. Confirmed dates and unresolved checkouts block duplicate bookings. Each armed job runs once.
 
 ## Setup and scheduling
 
@@ -14,7 +14,7 @@ The midnight grid policy uses a 60-second budget per attempt and waits five seco
 2. Open **Set up or unlock card file**. Enter card number, expiry, CVC and billing postcode locally; choose a passphrase of at least 12 characters. Creation downloads `tennis-card.encrypted.json` and unlocks it for the current Chrome session.
 3. Close setup, choose a future playing date, and use **Arm midnight booking and payment**. Unlock the existing file before subsequent sessions. Keep Chrome open and the laptop awake. Chrome restart or extension reload locks the card.
 
-The playing-date field defaults to London’s today plus eight days. It does not skip weekends automatically or change an already armed job; choose a Monday–Thursday date before arming. The armed response shows the saved date and release in UTC. During BST, 23:00Z means midnight London on the next calendar day. Preflight runs five minutes before release. An armed response does not mean preflight has passed or a booking has succeeded.
+The playing-date field defaults to London’s today plus eight days. It does not skip weekends automatically or change an already armed job; choose the desired playing date before arming. The armed response shows the saved date and release in UTC. During BST, 23:00Z means midnight London on the next calendar day. Preflight runs five minutes before release. An armed response does not mean preflight has passed or a booking has succeeded.
 
 After a source update, reload the extension once, then unlock the card again. The saved schedule survives reload, but the unlocked card does not. Keep the card unlocked and avoid another reload before the run.
 
@@ -71,3 +71,7 @@ Scheduled checkout can now downgrade an intended two-hour selection to one hour 
 The converted journal retains `fallbackFrom` (original slot/key, expected/actual basket evidence, timestamp); the new one-hour identity is committed before proceeding and survives restart. Runs now record extension version, retain 100 runs of up to 100 timestamped steps each, and checkout journals include `preparationRunId` for correlation with payment runs. This is bounded local logging, not remote monitoring or an indefinite audit archive; copy the status JSON after a failure before many later checks rotate it out. Logs omit card fields, passphrases and page HTML. The one-hour fallback has regression coverage including mixed courts, either intended hour, unsafe/overpriced baskets, no repeated selection and protected payment journals; live fallback remains unverified.
 
 Remaining robustness limits: only the first eligible candidate is prepared; automatic safe re-search before any selection dispatch is a future improvement. A human verification page, expired session, locked card, bank challenge, closed Chrome or sleeping laptop can still stop unattended operation. Paid receipt recovery establishes payment and does not necessarily prove an active reservation (the account purchase table can still show a canceled purchase). Do not retry Pay after an uncertain submission. A successful real midnight run is still outstanding.
+
+### v0.6.5: explicitly armed dates can be any weekday
+
+Removed the Monday–Thursday restriction for normal availability checks, arming, candidate selection, checkout and payment recovery. Friday, Saturday and Sunday now use the same 20:00/21:00 start preferences, duration/court rules and £14/£7 limits. Each job remains explicitly armed for one playing date and runs once at London midnight seven days before play; the popup still defaults to today plus eight days. Date validity, booking-window checks, future release requirement, pending journals and duplicate-date protection remain in force. Historical weekday-limited policy descriptions earlier in these notes are superseded by this update.

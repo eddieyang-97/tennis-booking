@@ -15,7 +15,7 @@ test('cross-court consecutive hours form a two-hour candidate; unknown prices st
  const rows=[{time:'8pm',inputs:[{label:'Court 1£7',disabled:false}]},{time:'9pm',inputs:[{label:'Court 2£7',disabled:false}]}];
  const result=candidates(rows,'victoria-park','2026-10-13');assert.equal(result[0].hours,2);assert.deepEqual(result[0].courts,[1,2]);assert.equal(result[0].totalGBP,'14.00');assert.ok(result.slice(1).every(x=>x.hours===1));
  assert.throws(()=>candidates([{time:'8pm',inputs:[{label:'Court 1free',disabled:false}]}],'victoria-park','2026-10-13'));
- assert.equal(eligible('2026-10-16'),false);assert.throws(()=>eligible('2026-02-30'));
+ for(const date of ['2026-10-16','2026-10-17','2026-10-18']){assert.equal(eligible(date),true);assert.equal(candidates(rows,'victoria-park',date)[0].hours,2);}assert.throws(()=>eligible('2026-02-30'));
 });
 test('same-court options precede mixed courts, and unavailable hours cannot form a pair',()=>{
  const rows=[{time:'8pm',inputs:[{label:'Court 1£5'},{label:'Court 2£5'}]},{time:'9pm',inputs:[{label:'Court 2£5'}]}];

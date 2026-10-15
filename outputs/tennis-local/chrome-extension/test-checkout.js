@@ -3,6 +3,7 @@ import {prepareCheckout,checkoutKey,checkoutCandidate,confirmCheckout,PAYMENT_TE
 import {basketTestKey,reconcileClearedSelection,recoverPreparationTab,singleHourFallback} from './checkout.js';
 import {candidates} from './core.js';
 import {payCheckout} from './payment.js';
+import {recoveryIdentity} from './reconciliation.js';
 const slot={venue:'bethnal-green-gardens',date:'2026-10-20',court:2,start:'20:00',hours:1,totalGBP:'7.00'};
 const basket={empty:false,items:[{venue:'Bethnal Green Gardens',court:2,day:20,month:10,hour:20,priceGBP:'7.00'}],totalGBP:'7.00',paymentBoundary:true};
 function fixture(){
@@ -10,6 +11,14 @@ function fixture(){
  return {get records(){return records;},set records(x){records=x;},set current(x){current=x;},get clicks(){return clicks;},get notices(){return notices;},deps:{load:async()=>structuredClone(records),save:async x=>records=structuredClone(x),read:async()=>current,select:async()=>{clicks++;assert.equal(records[0].phase,'selection-dispatched');current=basket;},retain:async()=>42,notify:async()=>notices++}};
 }
 async function fixed(fn){const now=Date.now;Date.now=()=>Date.parse('2026-10-13T12:00:00Z');try{return await fn();}finally{Date.now=now;}}
+test('Friday through Sunday evening slots permit checkout and historical payment recovery',()=>fixed(()=>{
+ for(const date of ['2026-10-16','2026-10-17','2026-10-18']){
+  const s={...slot,date},key=checkoutKey(s);
+  assert.doesNotThrow(()=>recoveryIdentity({slot:s,key,reference:'123',paymentDispatchedAt:'2026-10-13T12:00:00Z'}));
+  assert.throws(()=>checkoutKey({...s,start:'09:00'}),/preferences/);
+  assert.throws(()=>checkoutKey({...s,totalGBP:'7.01'}),/price limit/);
+ }
+}));
 test('scheduled fallback converts exactly one intended hour and preserves the original intent without another click',()=>fixed(async()=>{
  for(const hour of [20,21]){
   const original={...slot,hours:2,totalGBP:'14.00',courts:[2,3]},f=fixture();let selections=0;
@@ -53,7 +62,7 @@ test('daytime test searches exactly two morning hours including weekends; recurr
  const rows=[9,10,20,21].map(hour=>({time:`${hour>12?hour-12:hour}${hour>=12?'pm':'am'}`,inputs:[{disabled:false,label:'Court 2 £2.50'}]}));
  const morning=candidates(rows,'victoria-park','2026-10-17',{basketOnly:true});
  assert.equal(morning.length,1);assert.equal(morning[0].start,'09:00');assert.equal(morning[0].hours,2);assert.equal(morning[0].totalGBP,'5.00');
- assert.deepEqual(candidates(rows,'victoria-park','2026-10-17'),[]);
+ assert.ok(candidates(rows,'victoria-park','2026-10-17').every(candidate=>['20:00','21:00'].includes(candidate.start)));assert.ok(candidates(rows,'victoria-park','2026-10-17').length>0);
  assert.ok(candidates(rows,'victoria-park','2026-10-19').every(candidate=>['20:00','21:00'].includes(candidate.start)));
  const s={...morning[0],venue:'victoria-park'};
  assert.doesNotThrow(()=>basketTestKey(s));

@@ -20,7 +20,8 @@ export function addDays(day, n) {
   d.setUTCDate(d.getUTCDate()+n); return d.toISOString().slice(0,10);
 }
 export function eligible(day) {
-  addDays(day,0); return [1,2,3,4].includes(new Date(day+'T12:00:00Z').getUTCDay());
+  // Each job is armed explicitly; every valid calendar date is eligible.
+  addDays(day,0); return true;
 }
 export function releaseAt(day) {
   const release = addDays(day,-7);

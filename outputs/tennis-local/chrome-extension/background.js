@@ -1,4 +1,4 @@
-import {VENUES, londonDay, addDays, eligible, releaseAt, candidates} from './core.js';
+import {VENUES, londonDay, addDays, releaseAt, candidates} from './core.js';
 import {verifyBasket,basketEvidence} from './stage-rules.js';
 import {retryTab} from './retry.js';
 import {startRun} from './run-log.js';
@@ -38,7 +38,7 @@ async function check(day, scheduled=false) {
   let ownsRunning=false;
   try {
     await step('started');
-    if(!eligible(day)) throw Error('Choose Monday–Thursday');
+    addDays(day,0);
     if(day<londonDay() || day>addDays(londonDay(),7)) throw Error('Date is outside the current booking window');
     if(scheduled && Date.now()-releaseAt(day)>60000) throw Error('Release check was over one minute late; inspect manually');
     const prior=await chrome.storage.local.get('running');
@@ -68,7 +68,7 @@ async function check(day, scheduled=false) {
   }
 }
 async function arm(day,mode='availability') {
-  if(!eligible(day)) throw Error('Choose Monday–Thursday');
+  addDays(day,0);
   const when=releaseAt(day);
   if(when<=Date.now()) throw Error('This date has already released; use Check now');
   if(mode==='payment'){await resolvePendingPayment();await paymentCard(chrome.storage,null);}
