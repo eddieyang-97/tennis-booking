@@ -15,13 +15,14 @@ export async function waitPaymentState(read,{timeoutMs=15000,accept=()=>true,now
 }
 // Only known read-only adapters. No card, selection, checkout-opening or Pay
 // messages are accepted. A failed read retains its tab; navigation is once.
-export async function readPageState(tabs,url,request,{tabId=null,timeoutMs=15000,messageTimeoutMs=2000,now=Date.now,delay=ms=>new Promise(r=>setTimeout(r,ms)),timers=globalThis,step=async()=>{}}={}) {
+export async function readPageState(tabs,url,request,{tabId=null,navigate=true,timeoutMs=15000,messageTimeoutMs=2000,now=Date.now,delay=ms=>new Promise(r=>setTimeout(r,ms)),timers=globalThis,step=async()=>{}}={}) {
  const path={'account':'/account','purchase-read':'/account','basket-read':'/basket'}[request.kind];
  if(!path||url!==BASE+path)throw Error('Invalid read-only page request');
+ if(!navigate&&(tabId===null||request.kind!=='basket-read'))throw Error('Existing-tab reads require a basket tab');
  const reused=tabId!==null;let tab,retain=reused,operation='navigation',last={loadState:'unknown',routeCategory:'loading',readState:'not-probed'};
- await step('page-navigation',{page:request.kind,timeoutMs});
+ await step(navigate?'page-navigation':'existing-basket-read',{page:request.kind,timeoutMs, ...(navigate?{}:{tabId})});
  try {
-  tab=reused?await retryTab(()=>tabs.update(tabId,{url}),{navigation:true}):await retryTab(()=>tabs.create({url,active:false}),{navigation:true});
+  tab=!navigate?{id:tabId}:reused?await retryTab(()=>tabs.update(tabId,{url}),{navigation:true}):await retryTab(()=>tabs.create({url,active:false}),{navigation:true});
   const deadline=now()+timeoutMs;
   while(now()<deadline) {
    operation='tab-state';const current=await retryTab(()=>tabs.get(tab.id));let parsed;
@@ -29,6 +30,7 @@ export async function readPageState(tabs,url,request,{tabId=null,timeoutMs=15000
    last.loadState=current.status||'unknown';
    last.routeCategory=!parsed||parsed.href==='about:blank'?'loading':parsed.origin!==BASE?'other-origin':/\/(verify-human|login|sign-in)(\/|$)/.test(parsed.pathname)?'authentication':parsed.pathname===path?'requested-page':'other-page';
    if(['authentication','other-origin'].includes(last.routeCategory))throw Object.assign(Error(last.routeCategory==='authentication'?'Sign-in or human verification required':'Read-only page left the trusted site'),{pageCode:last.routeCategory==='authentication'?'PAGE_AUTHENTICATION_REQUIRED':'PAGE_UNEXPECTED_ORIGIN'});
+   if(!navigate&&last.routeCategory==='other-page')throw Object.assign(Error('Checkout tab is no longer the basket; no checkout click sent'),{pageCode:'PAGE_BASKET_ROUTE_CHANGED'});
    if(last.routeCategory==='requested-page') {
     try {
      operation='message-read';last.readState='probing';

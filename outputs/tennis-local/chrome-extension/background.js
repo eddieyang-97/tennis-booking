@@ -101,12 +101,20 @@ async function automaticPayment(test=false,scheduled=false) {
   const readBasket=async slot=>{resumedTab=null;const response=await readPage(BASE+'/basket',{kind:'basket-read'},{scheduled});if(!response.ok)throw Error(response.error);verifyBasket(response.value,slot);return response.value;};
   const store=async r=>{record=r;checkoutRecords=[...checkoutRecords.filter(x=>x.key!==r.key),r];await chrome.storage.local.set({checkoutRecords});await step(r.phase);};
   if(!record){await readBasket(PAYMENT_TEST_SLOT);record={key:checkoutKey(PAYMENT_TEST_SLOT,true),slot:PAYMENT_TEST_SLOT,test:true,tabId:tab.id,status:'pending',phase:'basket-adopted'};await store(record);}
-  const command=async request=>{const response=await chrome.tabs.sendMessage(tab.id,request);if(!response?.ok)throw Error(response?.error||'Checkout response unavailable');return response.value;};
+  const command=async request=>{const response=await chrome.tabs.sendMessage(tab.id,request);if(request.kind==='payment-open')await step('checkout-open-response',{tabId:tab.id,ok:response?.ok===true,...(response?.routeCategory?{routeCategory:response.routeCategory}:{})});if(!response?.ok)throw Error(response?.error||'Checkout response unavailable');return response.value;};
   const state=async()=>{const current=await readTab(()=>chrome.tabs.get(tab.id));const url=new URL(current.url);if(url.origin!==BASE||!['/basket','/basket/pay/card'].includes(url.pathname))throw Error('Checkout left supported payment pages; inspect retained tab');return readTab(()=>command({kind:'payment-state'}));};
   const frame=(type,kind)=>linkFrames.command(tab.id,type,kind,{attempts:kind==='link-state'?1:12});
   const output=await payCheckout(record,{
    save:store,verifyBasket:readBasket,
-   open:async()=>{const current=await readTab(()=>chrome.tabs.get(tab.id));if(current.url===BASE+'/basket/pay/card')return;if(current.url!==BASE+'/basket')throw Error('Checkout tab changed');const expected=await readBasket(record.slot);await command({kind:'payment-open',expected});await step('card-page-readiness',{timeoutMs:pageReadBudget(scheduled)});await waitPaymentState(state,{timeoutMs:pageReadBudget(scheduled)});},
+   open:async()=>{
+    const current=await readTab(()=>chrome.tabs.get(tab.id));if(current.url===BASE+'/basket/pay/card')return;if(current.url!==BASE+'/basket')throw Error('Checkout tab changed');
+    // Validate the exact tab that will receive the one checkout click. Do not
+    // create/navigate a second basket tab between this validation and dispatch.
+    const response=await readPageState(chrome.tabs,BASE+'/basket',{kind:'basket-read'},{tabId:tab.id,navigate:false,timeoutMs:pageReadBudget(scheduled),step});
+    if(!response.ok)throw Error(response.error);const expected=response.value;verifyBasket(expected,record.slot);
+    await step('checkout-basket-verified',{tabId:tab.id,...basketEvidence(expected,record.slot)});
+    await command({kind:'payment-open',expected});await step('card-page-readiness',{timeoutMs:pageReadBudget(scheduled)});await waitPaymentState(state,{timeoutMs:pageReadBudget(scheduled)});
+   },
    state,
    ...(localCard?{
     fillCard:async()=>{try{await frame('modal','link-close');}catch{}await linkFrames.command(tab.id,'card','card-fill',{payload:{card:localCard}});},

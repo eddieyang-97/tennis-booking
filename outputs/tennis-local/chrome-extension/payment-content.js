@@ -22,5 +22,5 @@ chrome.runtime.onMessage.addListener((request,sender,respond)=>{
   const state=paymentState();
   if(!state.enabled || state.totalGBP!==request.totalGBP || state.reference!==request.reference)throw Error('Payment changed before submission');
   document.querySelector('button#submit').click();respond({ok:true});
- }catch(e){respond({ok:false,error:e.message});}
+ }catch(e){respond({ok:false,error:e.message,...(request.kind==='payment-open'?{routeCategory:location.pathname==='/basket'?'basket':location.pathname==='/basket/pay/card'?'card':/\/(verify-human|sign-in|login)(\/|$)/.test(location.pathname)?'authentication':'other-page'}:{})});}
 });

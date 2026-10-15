@@ -8,6 +8,18 @@ function fixture(kind='account'){
 test('account, basket and paid-history reads accept ready DOM before full page load',async()=>{
  for(const kind of ['account','basket-read','purchase-read']){const f=fixture(kind);assert.equal((await readPageState(f.tabs,f.url,{kind},f.options)).ok,true);assert.equal(f.created,1);assert.equal(f.reads,1);assert.deepEqual(f.removed,[1]);}
 });
+test('checkout basket read stays on its exact existing tab without create, navigation or removal',async()=>{
+ const f=fixture('basket-read');let calls=0;
+ f.tabs.create=f.tabs.update=f.tabs.remove=async()=>{throw Error('Must not change tabs');};
+ f.tabs.get=async id=>{assert.equal(id,42);return {id,url:f.url,status:'loading'};};
+ f.tabs.sendMessage=async(id,request)=>{assert.equal(id,42);assert.equal(request.kind,'basket-read');return ++calls===1?{notReady:true}:{ok:true,value:{empty:false,items:[{}]}};};
+ assert.equal((await readPageState(f.tabs,f.url,{kind:'basket-read'},{...f.options,tabId:42,navigate:false})).ok,true);assert.equal(calls,2);
+ for(const url of ['https://tennistowerhamlets.com/basket/pay/card','https://tennistowerhamlets.com/book/courts/bethnal-green-gardens/2026-10-23']){
+  f.tabs.get=async()=>({url,status:'complete'});await assert.rejects(readPageState(f.tabs,f.url,{kind:'basket-read'},{...f.options,tabId:42,navigate:false}),e=>e.diagnostic.errorCode==='PAGE_BASKET_ROUTE_CHANGED');
+ }
+ assert.equal(calls,2);
+ await assert.rejects(readPageState(f.tabs,f.url,{kind:'basket-read'},{...f.options,navigate:false}),/require a basket tab/);
+});
 test('navigation-time channel and frame disconnections retry only the read on the same basket tab',async()=>{
  for(const message of ['A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received','The message port closed before a response was received','Frame with ID 0 was removed.']) {
   const f=fixture('basket-read');let calls=0;
