@@ -1,5 +1,7 @@
 # Tennis booking — developer reference
 
+Full-release UI requirements are tracked in [release settings](docs/release-settings.md): venue preference, London time range, desired/minimum hours, payment caps and an optional per-job discount code. These are requirements, not current MVP controls; discount application still needs inspection and testing against the merchant basket.
+
 Normal-Chrome Manifest V3 extension for Tower Hamlets Courtside bookings. The active source is [outputs/tennis-local/chrome-extension](outputs/tennis-local/chrome-extension/). Current source version: **0.6.6 MVP** (read-only grid readiness hardening). The readiness-panel enhancement remains separate in PR #1. This repository preserves the working source, regression tests and payment-system findings so future development can continue without repeating the investigation.
 
 **Verified on 13 October 2026:** the extension filled Stripe's card form and submitted the authorised £2.50 Victoria Park test payment. The merchant's account purchase history showed the matching reference as **Confirmed / Paid ✔ / £2.50**. The owner subsequently cancelled the court booking manually. Cancellation does not establish a refund.
