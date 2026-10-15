@@ -1,6 +1,6 @@
 import test from 'node:test';import assert from 'node:assert/strict';import vm from 'node:vm';import fs from 'node:fs';
 import {prepareCheckout,checkoutKey,checkoutCandidate,confirmCheckout,PAYMENT_TEST_SLOT} from './checkout.js';
-import {basketTestKey,reconcileClearedSelection,recoverPreparationTab} from './checkout.js';
+import {basketTestKey,reconcileClearedSelection,recoverPreparationTab,singleHourFallback} from './checkout.js';
 import {candidates} from './core.js';
 import {payCheckout} from './payment.js';
 const slot={venue:'bethnal-green-gardens',date:'2026-10-20',court:2,start:'20:00',hours:1,totalGBP:'7.00'};
@@ -10,6 +10,28 @@ function fixture(){
  return {get records(){return records;},set records(x){records=x;},set current(x){current=x;},get clicks(){return clicks;},get notices(){return notices;},deps:{load:async()=>structuredClone(records),save:async x=>records=structuredClone(x),read:async()=>current,select:async()=>{clicks++;assert.equal(records[0].phase,'selection-dispatched');current=basket;},retain:async()=>42,notify:async()=>notices++}};
 }
 async function fixed(fn){const now=Date.now;Date.now=()=>Date.parse('2026-10-13T12:00:00Z');try{return await fn();}finally{Date.now=now;}}
+test('scheduled fallback converts exactly one intended hour and preserves the original intent without another click',()=>fixed(async()=>{
+ for(const hour of [20,21]){
+  const original={...slot,hours:2,totalGBP:'14.00',courts:[2,3]},f=fixture();let selections=0;
+  f.deps.select=async()=>{selections++;f.current={...basket,items:[{...basket.items[0],hour,court:hour===20?2:3}]};throw Error('Second-hour acknowledgement lost');};
+  const output=await prepareCheckout(original,f.deps,{allowPartial:true});
+  assert.equal(output.status,'awaiting-payment');assert.equal(output.fallback,'single-hour');assert.equal(output.slot.hours,1);assert.equal(output.slot.start,`${hour}:00`);assert.equal(output.slot.totalGBP,'7.00');assert.equal(selections,1);
+  assert.equal(f.records.length,1);assert.equal(f.records[0].key,checkoutKey(output.slot));assert.deepEqual(f.records[0].fallbackFrom.slot,original);assert.equal(f.records[0].fallbackFrom.basketDiagnostic.actualItems,1);
+  await prepareCheckout(output.slot,f.deps,{allowPartial:true});assert.equal(selections,1);
+ }
+}));
+test('single-hour fallback rejects unrelated, extra, overpriced, out-of-preference and inconsistent basket items',()=>fixed(()=>{
+ const original={...slot,hours:2,totalGBP:'14.00'};
+ for(const changed of [{...basket,totalGBP:'8.00'},{...basket,items:[basket.items[0],basket.items[0]]},{...basket,paymentBoundary:false},...['court','day','month','venue','hour'].map(field=>({...basket,items:[{...basket.items[0],[field]:field==='venue'?'Victoria Park':99}]}))])assert.throws(()=>singleHourFallback(original,changed));
+ const late={...original,start:'21:00'};assert.throws(()=>singleHourFallback(late,{...basket,items:[{...basket.items[0],hour:22}]}),/preferences/);
+}));
+test('daytime tests and referenced journals cannot downgrade to one hour',()=>fixed(async()=>{
+ const s={venue:'victoria-park',date:'2026-10-17',court:2,start:'09:00',hours:2,totalGBP:'5.00'},f=fixture();
+ f.deps.select=async()=>{f.current={...basket,items:[{venue:'Victoria Park',court:2,day:17,month:10,hour:9,priceGBP:'2.50'}],totalGBP:'2.50'};};
+ await assert.rejects(prepareCheckout(s,f.deps,{basketOnly:true,allowPartial:true}),/expected 2/);
+ const original={...slot,hours:2,totalGBP:'14.00'},g=fixture();g.current=basket;g.records=[{key:checkoutKey(original),slot:original,status:'pending',phase:'selection-dispatched',reference:'123'}];
+ await assert.rejects(prepareCheckout(original,g.deps,{allowPartial:true}),/expected 2/);assert.equal(g.clicks,0);assert.equal(g.records[0].slot.hours,2);
+}));
 test('closed preparation tab reopens only an unsubmitted basket, never a referenced or dispatched checkout',async()=>{
  let created=0;const tabs={get:async()=>{throw Error('No tab with id: 42.');}},create=async()=>{created++;return {id:43,url:'https://tennistowerhamlets.com/basket'};};
  for(const phase of ['selection-dispatched','awaiting-payment'])assert.equal((await recoverPreparationTab({tabId:42,phase},tabs,create)).id,43);

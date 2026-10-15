@@ -18,8 +18,8 @@ test('temporary read errors retry three times; closed tabs and uncertain navigat
 
 test('run steps persist timestamps and retain bounded history across runs',async()=>{
  let data={runHistory:[]};const storage={get:async()=>data,set:async x=>Object.assign(data,x)};
- for(let i=0;i<21;i++){const run=startRun(storage,'basket-test','2026-10-19');await run.step('started');await run.step('basket-verified');await run.finish('complete');}
- assert.equal(data.runHistory.length,20);
+ for(let i=0;i<101;i++){const run=startRun(storage,'basket-test','2026-10-19',{version:'0.6.4'});await run.step('started');await run.step('basket-verified');await run.finish('complete');}
+ assert.equal(data.runHistory.length,100);assert.equal(data.runHistory[0].version,'0.6.4');
  const latest=data.runHistory.at(-1);assert.equal(latest.status,'complete');assert.ok(Date.parse(latest.startedAt)<=Date.parse(latest.finishedAt));assert.equal(latest.steps.length,3);assert.ok(latest.steps.every(s=>Number.isFinite(Date.parse(s.at))));
 });
 const slot={venue:'victoria-park',date:'2026-10-19',court:2,start:'08:00',hours:1,totalGBP:'5.00'};

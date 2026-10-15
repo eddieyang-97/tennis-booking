@@ -15,6 +15,7 @@ const BASE='https://tennistowerhamlets.com';
 let busy=false;
 let resumedTab=null;
 let trace=null;
+function newRun(kind,day){return startRun(chrome.storage.local,kind,day,{version:chrome.runtime.getManifest?.().version||'unknown'});}
 async function step(name,detail={}){if(trace)await trace.step(name,detail);}
 async function readTab(operation){return retryTab(operation,{onRetry:attempt=>step('temporary-tab-retry',{attempt})});}
 async function save(result) { await chrome.storage.local.set({result}); await chrome.action.setBadgeText({text:result.status==='complete'?'OK':'!'}); }
@@ -33,7 +34,7 @@ async function account(scheduled=false) {
 async function check(day, scheduled=false) {
   if(busy) throw Error('A check is already running');
   busy=true;
-  trace=startRun(chrome.storage.local,scheduled?'release-check':'manual-check',day);
+  trace=newRun(scheduled?'release-check':'manual-check',day);
   let ownsRunning=false;
   try {
     await step('started');
@@ -88,14 +89,14 @@ async function automaticPayment(test=false,scheduled=false) {
   if(record?.basketOnly)throw Error('Daytime basket test cannot submit payment; clear and reconcile its basket');
   if(test && record && record.key!==checkoutKey(PAYMENT_TEST_SLOT,true))throw Error('Another checkout requires reconciliation');
   if(record?.paymentDispatchedAt || ['payment-dispatched','payment-uncertain'].includes(record?.phase)) {
-   trace=startRun(chrome.storage.local,'payment-reconciliation',record.slot.date);await step('started');
+   trace=newRun('payment-reconciliation',record.slot.date);await step('started');
    return await finishPaidRecord(record,scheduled);
   }
   if(test && checkoutRecords.some(r=>r.test&&r.status==='confirmed'))throw Error('This paid test is already confirmed; it cannot be charged again');
   if(test){tab=(await readTab(()=>chrome.tabs.query({active:true,currentWindow:true})))[0];if(![BASE+'/basket',BASE+'/basket/pay/card'].includes(tab?.url))throw Error('Open the £2.50 test basket or card checkout');}
   else if(record?.tabId)tab=await readTab(()=>chrome.tabs.get(record.tabId));
   if(!tab)throw Error('No checkout tab');
-  trace=startRun(chrome.storage.local,'automatic-payment',record?.slot.date||PAYMENT_TEST_SLOT.date);await step('started');
+  trace=newRun('automatic-payment',record?.slot.date||PAYMENT_TEST_SLOT.date);await step('started',{key:record?.key,preparationRunId:record?.preparationRunId});
   await step('local-card-preflight');const localCard=await paymentCard(chrome.storage,record);await step('local-card-ready',{reconciliationOnly:!localCard});
   const readBasket=async slot=>{resumedTab=null;const response=await readPage(BASE+'/basket',{kind:'basket-read'},{scheduled});if(!response.ok)throw Error(response.error);verifyBasket(response.value,slot);return response.value;};
   const store=async r=>{record=r;checkoutRecords=[...checkoutRecords.filter(x=>x.key!==r.key),r];await chrome.storage.local.set({checkoutRecords});await step(r.phase);};
@@ -152,7 +153,7 @@ async function checkout(expectedDay=null,scheduled=false,basketOnly=false) {
  if(basketOnly && !slot) {
   addDays(expectedDay,0);
   if(expectedDay<londonDay()||expectedDay>addDays(londonDay(),7))throw Error('Choose a released date within the next seven days');
-  trace=startRun(chrome.storage.local,'daytime-basket-test',expectedDay);await step('started');
+  trace=newRun('daytime-basket-test',expectedDay);await step('started');
   await account();
   for(const venue of VENUES) {
    const grid=await readPage(`${BASE}/book/courts/${venue}/${expectedDay}#book`,{kind:'grid',venue,day:expectedDay});
@@ -163,8 +164,8 @@ async function checkout(expectedDay=null,scheduled=false,basketOnly=false) {
   if(!slot)throw Error('No available 09:00–11:00 basket-test candidate within £14; choose another released date');
  }
  if(!slot)throw Error('Check availability before preparing checkout');
- trace=trace||startRun(chrome.storage.local,'checkout-preparation',slot.date);
-  await step('started');
+ trace=trace||newRun('checkout-preparation',slot.date);
+  await step('started',{slot,scheduled,basketOnly});
   if(pending?.tabId) {
    tab=await recoverPreparationTab(pending,{get:id=>readTab(()=>chrome.tabs.get(id))},async()=>{
     await step('closed-selection-tab-recovery',{previousTabId:pending.tabId});
@@ -182,7 +183,7 @@ async function checkout(expectedDay=null,scheduled=false,basketOnly=false) {
   const output=await prepareCheckout(slot,{
    tabId:tab.id,
    load:async()=> (await chrome.storage.local.get('checkoutRecords')).checkoutRecords||[],
-   save:async records=>{await chrome.storage.local.set({checkoutRecords:records});await step(records.at(-1).phase);},
+   save:async records=>{const record={...records.at(-1),preparationRunId:trace.record.id};await chrome.storage.local.set({checkoutRecords:[...records.slice(0,-1),record]});await step(record.phase,{key:record.key,...(record.fallbackFrom?{fallbackFrom:record.fallbackFrom}:{})});},
    read,select:async s=>{
     const grid=await readPage(`${BASE}/book/courts/${s.venue}/${s.date}#book`,{kind:'grid',venue:s.venue,day:s.date},{scheduled});if(!grid.ok)throw Error(grid.error);
     // One mutation dispatch. Reconciliation occurs in prepareCheckout, never replay.
@@ -192,10 +193,10 @@ async function checkout(expectedDay=null,scheduled=false,basketOnly=false) {
     return response.value;
    },
    retain:async()=>{await chrome.tabs.update(tab.id,{active:true});return tab.id;},notify:basketOnly?async()=>{await chrome.action.setBadgeText({text:'TEST'});}:notifyCheckout
-  },{test:pending?.test===true,basketOnly});
+  },{test:pending?.test===true,basketOnly,allowPartial:scheduled&&!basketOnly});
   await trace.finish(output.status);await chrome.storage.local.set({checkoutResult:{...output,runId:trace.record.id,finishedAt:trace.record.finishedAt}});return output;
  } catch(e) {
-  if(!trace)trace=startRun(chrome.storage.local,'checkout-preparation',slot?.date||londonDay());
+  if(!trace)trace=newRun('checkout-preparation',slot?.date||londonDay());
   await step('checkout-stopped',{...(e.basketDiagnostic?{basketDiagnostic:e.basketDiagnostic}:{}),...(e.diagnostic?{diagnostic:e.diagnostic}:{})});await trace.finish('stopped');const output={status:'stopped',error:e.message,...(e.basketDiagnostic?{basketDiagnostic:e.basketDiagnostic}:{}),...(e.diagnostic?{diagnostic:e.diagnostic}:{}),tabId:tab?.id,booked:false,paid:false,runId:trace.record.id};await chrome.storage.local.set({checkoutResult:output});
   await chrome.action.setBadgeText({text:'!'});
   try{await chrome.notifications.create('tennis-checkout-stopped',{type:'basic',iconUrl:chrome.runtime.getURL('notification.png'),title:'Tennis checkout stopped',message:'Open the extension to inspect the result. No automatic payment was attempted.'});}catch{}
@@ -249,7 +250,7 @@ async function verifyPayment(scheduled=false) {
  try {
  const {checkoutRecords=[]}=await chrome.storage.local.get('checkoutRecords');
  const record=checkoutRecords.find(r=>r.status!=='confirmed');if(!record)throw Error('No pending checkout record');
- trace=startRun(chrome.storage.local,'payment-reconciliation',record.slot.date);await step('started');
+ trace=newRun('payment-reconciliation',record.slot.date);await step('started');
  return await finishPaidRecord(record,scheduled);
  }catch(e){
   if(trace){await step('stopped');await trace.finish('stopped');}
@@ -281,7 +282,7 @@ chrome.alarms.onAlarm.addListener(async alarm=>{
     if(alarm.name==='prepare') {
      if(job.mode==='payment')await resolvePendingPayment(true);
      if(busy)throw Error('Another run is active; preflight stopped');
-     busy=true;trace=startRun(chrome.storage.local,'release-preflight',job.day);
+     busy=true;trace=newRun('release-preflight',job.day);
      try {await step('started');if(job.mode==='payment'){await step('local-card-preflight');await paymentCard(chrome.storage,null);}await account(true);await chrome.storage.local.set({job:{...job,prepared:true,preparedAt:new Date().toISOString()}});await trace.finish('complete');}
      catch(e){await trace.finish('stopped');throw e;}
      finally{busy=false;trace=null;}
