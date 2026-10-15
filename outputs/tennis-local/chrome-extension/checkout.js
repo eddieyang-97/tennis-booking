@@ -1,5 +1,6 @@
 import {validateSlot,verifyBasket,sameSlot,basketEvidence} from './stage-rules.js';
 import {londonDay,addDays,slotKey,slotCourts} from './core.js';
+import {normalizeDiscount} from './discount.js';
 export const PAYMENT_TEST_SLOT={venue:'victoria-park',date:'2026-10-17',court:2,start:'07:00',hours:1,totalGBP:'2.50'};
 export function checkoutKey(slot,test=false) {
  if(test){if(!sameSlot(slot,PAYMENT_TEST_SLOT))throw Error('Unauthorized payment test');if(slot.date<londonDay() || slot.date>addDays(londonDay(),7))throw Error('Payment test outside booking window');}
@@ -36,7 +37,9 @@ export function singleHourFallback(slot,basket) {
  const fallback={venue:slot.venue,date:slot.date,court:item.court,start:`${item.hour}:00`,hours:1,totalGBP:basket.totalGBP};
  checkoutKey(fallback);verifyBasket(basket,fallback);return fallback;
 }
-export async function prepareCheckout(slot,deps,{test=false,adopt=false,basketOnly=false,allowPartial=false}={}) {
+export async function prepareCheckout(slot,deps,{test=false,adopt=false,basketOnly=false,allowPartial=false,discountCode=''}={}) {
+ discountCode=normalizeDiscount(discountCode);
+ if(discountCode&&(test||basketOnly))throw Error('Discount not supported in basket-only tests');
  if(basketOnly&&(test||adopt))throw Error('Daytime test cannot adopt or pay');
  let key=basketOnly?basketTestKey(slot):checkoutKey(slot,test);
  const originalKey=key,records=await deps.load();
@@ -45,7 +48,7 @@ export async function prepareCheckout(slot,deps,{test=false,adopt=false,basketOn
  if(records.some(r=>r.status==='confirmed' && r.slot.date===slot.date))throw Error('A booking for this date is already confirmed');
  if(records.some(r=>r.key!==key && r.status!=='confirmed'))throw Error('Another checkout requires reconciliation');
  const persist=async phase=>{
-  record={...record,key,slot,test,...(basketOnly?{basketOnly:true}:{}),phase,status:'pending',updatedAt:new Date().toISOString()};
+  record={...record,key,slot,test,...(!record?.discountCode&&discountCode?{discountCode}:{}),...(basketOnly?{basketOnly:true}:{}),phase,status:'pending',updatedAt:new Date().toISOString()};
   await deps.save([...records.filter(r=>r.key!==key&&r.key!==originalKey),record]);
  };
  const verifySelected=async basket=>{
@@ -94,7 +97,7 @@ export async function prepareCheckout(slot,deps,{test=false,adopt=false,basketOn
 }
 export function reconcileClearedSelection(records,basket) {
  const pending=records.filter(r=>r.status!=='confirmed');
- if(pending.length!==1||!['selection-dispatched','awaiting-payment'].includes(pending[0].phase)||pending[0].paymentDispatchedAt||Object.hasOwn(pending[0],'reference'))throw Error('Only an unsubmitted selection can be reconciled; preserve payment journals');
+ if(pending.length!==1||!['selection-dispatched','awaiting-payment','discount-dispatched'].includes(pending[0].phase)||pending[0].paymentDispatchedAt||Object.hasOwn(pending[0],'reference'))throw Error('Only an unsubmitted selection can be reconciled; preserve payment journals');
  if(basket?.empty!==true||!Array.isArray(basket.items)||basket.items.length!==0)throw Error('Remove the partial selection from the site basket first; no items were removed automatically');
  const abandoned={...pending[0],status:'abandoned',phase:'selection-cleared',abandonedAt:new Date().toISOString()};
  return {checkoutRecords:records.filter(r=>r!==pending[0]),abandoned};

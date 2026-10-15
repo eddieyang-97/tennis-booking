@@ -1,6 +1,6 @@
 # Extension settings required before full release
 
-Each explicitly armed job must contain a validated, immutable snapshot of its booking settings. Current MVP source still has fixed evening venue/time/duration/price rules. The controls below are release requirements, not implemented capabilities.
+Each explicitly armed job must contain a validated, immutable snapshot of its booking settings. Current MVP source still has fixed evening venue/time/duration/price rules. The optional discount field is implemented in v0.7.0; the other controls below are release requirements. Its automatic tennis checkout still needs live acceptance.
 
 | Setting | Required behavior |
 | --- | --- |

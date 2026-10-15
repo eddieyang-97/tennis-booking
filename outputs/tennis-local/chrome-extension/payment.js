@@ -1,5 +1,6 @@
 import {checkoutKey,confirmCheckout} from './checkout.js';
 import {recoveryIdentity} from './reconciliation.js';
+import {payableSlot} from './discount.js';
 // The journal is committed before any payment submission. An interrupted or
 // unanswered submit is reconciled, never retried.
 export async function payCheckout(record,deps) {
@@ -12,12 +13,14 @@ export async function payCheckout(record,deps) {
   const receipt=await deps.receipt();return confirm(receipt);
  }
  if(checkoutKey(record.slot,record.test) !== record.key)throw Error('Checkout identity changed');
+ if(record.discountCode&&!record.discount)throw Error('Discount must be verified before payment');
+ const amount=payableSlot(record).totalGBP;
  if(!['selection-dispatched','basket-adopted','awaiting-payment','checkout-opening','link-opening','authentication-required','card-filling','provisional-reference-renewed'].includes(record.phase))throw Error('Unknown checkout phase; inspect payment status before continuing');
  await deps.verifyBasket(record.slot);
  record={...record,basketVerifiedAt:new Date().toISOString()};
  await persist('checkout-opening');await deps.open();
  let page=await deps.state();
- if(page.totalGBP!==record.slot.totalGBP || !/^\d+$/.test(page.reference||''))throw Error('Payment amount or provisional reference not verified');
+ if(page.totalGBP!==amount || !/^\d+$/.test(page.reference||''))throw Error('Payment amount or provisional reference not verified');
  if(record.reference && record.reference!==page.reference) {
   // Only reached before any payment dispatch and after exact basket/price
   // verification. A normal reload can replace an unpaid provisional reference.
@@ -32,9 +35,9 @@ export async function payCheckout(record,deps) {
   page=await deps.waitReady();
   if(page.authenticationRequired){await persist('authentication-required');return {status:'authentication-required',record,booked:false,paid:false};}
  }
- if(!page.enabled || page.totalGBP!==record.slot.totalGBP || page.reference!==record.reference)throw Error('Saved payment is not ready or checkout changed');
+ if(!page.enabled || page.totalGBP!==amount || page.reference!==record.reference)throw Error('Saved payment is not ready or checkout changed');
  await persist('payment-dispatched');
- try{await deps.submit(record.slot.totalGBP,record.reference);}catch{ /* Outcome must be reconciled, not resubmitted. */ }
+ try{await deps.submit(amount,record.reference);}catch{ /* Outcome must be reconciled, not resubmitted. */ }
  try {return confirm(await deps.receipt());}
  catch(error){await persist('payment-uncertain');throw Error('Payment outcome unresolved; no repeat charge: '+error.message);}
 }

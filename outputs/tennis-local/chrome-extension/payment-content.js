@@ -8,9 +8,18 @@ function paymentState() {
  return {totalGBP:match[1],reference,enabled:!pay.disabled,linkFramePresent};
 }
 chrome.runtime.onMessage.addListener((request,sender,respond)=>{
- if(sender.id!==chrome.runtime.id || !['payment-state','payment-open','payment-submit'].includes(request.kind))return;
+ if(sender.id!==chrome.runtime.id || !['discount-apply','payment-state','payment-open','payment-submit'].includes(request.kind))return;
  try {
   if(request.kind==='payment-state')return respond({ok:true,value:paymentState()});
+  if(request.kind==='discount-apply') {
+   if(location.pathname!=='/basket'||JSON.stringify(basketSummary())!==JSON.stringify(request.expected))throw Error('Basket changed before discount');
+   if(typeof request.code!=='string'||!/^[A-Za-z0-9_-]{1,10}$/.test(request.code))throw Error('Invalid discount code');
+   const input=document.querySelector('#checkout-discount'),form=input?.form;
+   const buttons=form?[...form.querySelectorAll('button')].filter(b=>b.textContent.trim()==='Apply code'):[];
+   if(!input||input.disabled||form.getAttribute('action')!=='/basket/discount'||form.method.toLowerCase()!=='post'||buttons.length!==1||buttons[0].disabled)throw Error('Discount form unavailable');
+   input.value=request.code;input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));
+   buttons[0].click();return respond({ok:true});
+  }
   if(request.kind==='payment-open') {
    if(location.pathname!=='/basket')throw Error('Not the verified basket');
    const basket=basketSummary();

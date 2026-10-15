@@ -15,7 +15,16 @@ function basketSummary() {
  const totals=[...document.querySelectorAll('tr')].filter(r=>r.querySelector('td')?.textContent.trim()==='Total');
  const total=totals.length===1?/£\s*(\d+\.\d{2})/.exec(totals[0].innerText):null;
  if(!total||!items.length)throw Error('Unknown basket total/layout');
- return {empty:false,items,totalGBP:total[1],paymentBoundary:[...document.querySelectorAll('button')].some(b=>b.textContent.trim()==='Pay with card')};
+ const rows=[...document.querySelectorAll('tr')];
+ const subtotalRows=rows.filter(r=>r.querySelector('td')?.textContent.trim()==='Subtotal'),discountRows=rows.filter(r=>/^Discount(?:\s|$)/.test(r.querySelector('td')?.textContent.trim()||''));
+ let accounting={};
+ if(subtotalRows.length||discountRows.length){
+  const subtotal=subtotalRows.length===1?/£\s*(\d+\.\d{2})/.exec(subtotalRows[0].innerText):null;
+  const discount=discountRows.length===1?/-£\s*(\d+\.\d{2})/.exec(discountRows[0].innerText):null;
+  if(!subtotal||discountRows.length!==1||(!discount&&!/\s-\s*$/.test(discountRows[0].innerText)))throw Error('Unknown discount accounting');
+  accounting={subtotalGBP:subtotal[1],discountGBP:discount?.[1]||'0.00',discountApplied:!!discount&&!!discountRows[0].querySelector('a[href="/basket/discount-remove"]')};
+ }
+ return {empty:false,items,totalGBP:total[1],...accounting,paymentBoundary:[...document.querySelectorAll('button')].some(b=>b.textContent.trim()==='Pay with card')};
 }
 async function stableBasketSummary() {
  let previous,stable=0;
