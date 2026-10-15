@@ -1,8 +1,8 @@
 import {VENUES, londonDay, addDays, eligible, releaseAt, candidates} from './core.js';
-import {verifyBasket} from './stage-rules.js';
+import {verifyBasket,basketEvidence} from './stage-rules.js';
 import {retryTab} from './retry.js';
 import {startRun} from './run-log.js';
-import {prepareCheckout,checkoutCandidate,confirmCheckout,PAYMENT_TEST_SLOT} from './checkout.js';
+import {prepareCheckout,checkoutCandidate,confirmCheckout,PAYMENT_TEST_SLOT,reconcileClearedSelection} from './checkout.js';
 import {payCheckout} from './payment.js';
 import {checkoutKey} from './checkout.js';
 import {createLinkFrames} from './link-frames.js';
@@ -155,21 +155,25 @@ async function checkout(expectedDay=null,scheduled=false) {
   resumedTab=tab.id;
   // Never navigate away from a card form or bank challenge to "resume" selection.
   if(pending && tab.url!==BASE+'/basket')throw Error('Checkout/payment is in progress; use Verify payment confirmation');
-  const read=async()=>{const response=await readPage(BASE+'/basket',{kind:'basket-read'},{scheduled});if(!response.ok)throw Error(response.error);return response.value;};
+  const read=async()=>{const response=await readPage(BASE+'/basket',{kind:'basket-read'},{scheduled});if(!response.ok)throw Error(response.error);await step('basket-observed',basketEvidence(response.value,slot));return response.value;};
   const output=await prepareCheckout(slot,{
+   tabId:tab.id,
    load:async()=> (await chrome.storage.local.get('checkoutRecords')).checkoutRecords||[],
    save:async records=>{await chrome.storage.local.set({checkoutRecords:records});await step(records.at(-1).phase);},
    read,select:async s=>{
     const grid=await readPage(`${BASE}/book/courts/${s.venue}/${s.date}#book`,{kind:'grid',venue:s.venue,day:s.date},{scheduled});if(!grid.ok)throw Error(grid.error);
     // One mutation dispatch. Reconciliation occurs in prepareCheckout, never replay.
-    const response=await chrome.tabs.sendMessage(tab.id,{kind:'select-slot',slot:s});if(!response?.ok)throw Error(response?.error||'Selection response uncertain');
+    const response=await chrome.tabs.sendMessage(tab.id,{kind:'select-slot',slot:s,selectionTimeoutMs:pageReadBudget(scheduled)});const selectionDiagnostic=response?.selectionDiagnostic||response?.value?.selectionDiagnostic;
+    await step('selection-result',{ok:response?.ok===true,...(selectionDiagnostic?{selectionDiagnostic}:{})});
+    if(!response?.ok)throw Object.assign(Error(response?.error||'Selection response uncertain'),{selectionDiagnostic});
+    return response.value;
    },
    retain:async()=>{await chrome.tabs.update(tab.id,{active:true});return tab.id;},notify:notifyCheckout
   },{test:pending?.test===true});
   await trace.finish('awaiting-payment');await chrome.storage.local.set({checkoutResult:{...output,runId:trace.record.id,finishedAt:trace.record.finishedAt}});return output;
  } catch(e) {
   if(!trace)trace=startRun(chrome.storage.local,'checkout-preparation',slot?.date||londonDay());
-  await trace.finish('stopped');const output={status:'stopped',error:e.message,tabId:tab?.id,booked:false,paid:false,runId:trace.record.id};await chrome.storage.local.set({checkoutResult:output});
+  await step('checkout-stopped',{...(e.basketDiagnostic?{basketDiagnostic:e.basketDiagnostic}:{})});await trace.finish('stopped');const output={status:'stopped',error:e.message,...(e.basketDiagnostic?{basketDiagnostic:e.basketDiagnostic}:{}),tabId:tab?.id,booked:false,paid:false,runId:trace.record.id};await chrome.storage.local.set({checkoutResult:output});
   await chrome.action.setBadgeText({text:'!'});
   try{await chrome.notifications.create('tennis-checkout-stopped',{type:'basic',iconUrl:chrome.runtime.getURL('notification.png'),title:'Tennis checkout stopped',message:'Open the extension to inspect the result. No automatic payment was attempted.'});}catch{}
   return output;
@@ -281,6 +285,16 @@ chrome.runtime.onMessage.addListener((message,sender,respond)=>{
     if(message.kind==='openCardVault'){await chrome.tabs.create({url:chrome.runtime.getURL('card-vault.html'),active:true});return {status:'local-card-setup-opened'};}
     if(message.kind==='payCheckout')return automaticPayment();
     if(message.kind==='armPayment')return arm(message.day,'payment');
+    if(message.kind==='reconcileSelection') {
+     if(busy)throw Error('Another run is active');busy=true;
+     try {
+      const {checkoutRecords=[],abandonedCheckouts=[]}=await chrome.storage.local.get(['checkoutRecords','abandonedCheckouts']);
+      const response=await readPage(BASE+'/basket',{kind:'basket-read'});if(!response.ok)throw Error(response.error);
+      const reconciled=reconcileClearedSelection(checkoutRecords,response.value);
+      await chrome.storage.local.set({checkoutRecords:reconciled.checkoutRecords,abandonedCheckouts:[...abandonedCheckouts,reconciled.abandoned].slice(-20)});
+      return {status:'selection-reconciled-empty',booked:false,paid:false};
+     }finally{busy=false;}
+    }
     if(message.kind==='reconcileBasket') {
      if(busy)throw Error('A check is already running');
      busy=true;
@@ -295,7 +309,7 @@ chrome.runtime.onMessage.addListener((message,sender,respond)=>{
     if(message.kind==='cancel') {await chrome.alarms.clear('prepare');await chrome.alarms.clear('release');await chrome.storage.local.remove('job');return {status:'cancelled'};}
     if(message.kind==='reset' && !busy) {await chrome.storage.local.remove('running');return {status:'reset'};}
     if(message.kind==='status') {
-     const status=await chrome.storage.local.get(['result','job','running','basketTest','basketTestResult','runHistory','checkoutRecords','checkoutResult']);
+     const status=await chrome.storage.local.get(['result','job','running','basketTest','basketTestResult','runHistory','checkoutRecords','checkoutResult','abandonedCheckouts']);
      let localCardUnlocked=false;try{localCardUnlocked=!!(await chrome.storage.session.get('localPaymentCard')).localPaymentCard;}catch{}
      return {...status,localCardUnlocked,version:chrome.runtime.getManifest().version};
     }

@@ -1,8 +1,10 @@
-# Tennis booking extension — v0.5.9 MVP
+# Tennis booking extension — v0.6.0 MVP
 
 Runs in normal Chrome using your Courtside sign-in. It checks and books at London midnight, seven days before the selected playing date, then attempts payment. Monday–Thursday only; starts at 20:00 or 21:00. Bethnal Green Gardens precedes Victoria Park; two hours precede one, with consecutive hours in the same venue; switching courts is allowed, with same-court options tried first. Limits are £14 for two hours and £7 for one. Confirmed dates and unresolved checkouts block duplicate bookings. Each armed job runs once.
 
 ## Setup and scheduling
+
+v0.6.0 fixes the rapid two-hour selection sequence. It validates all requested hours, then clicks one hour at a time, waits for a stable checkbox and basket-count acknowledgement, and resolves the next checkbox afresh after site updates. It never repeats an uncertain click. Basket reads also require stable snapshots, and failures report expected versus actual items and per-hour identity. Live testing of this sequence is still required.
 
 v0.5.9 closes the remaining scheduled account/basket timeout gap: read-only account, basket and purchase-history checks wait up to 60 seconds and recognise ready DOMs without waiting for the whole tab to finish loading. Scheduled card-page/post-fill readiness also waits up to 60 seconds. Manual checks retain shorter budgets. Failed reads retain diagnostic tabs; changed payment identity, unexpected destinations and real authentication requirements stop. Nothing in this update retries card filling or payment. Exported status now includes the installed version.
 
@@ -22,6 +24,8 @@ Payments require an unlocked local card and fill Stripe's card form directly. Th
 
 ## Recovery and historical payment test
 
+A stopped selection remains pending deliberately, so a lost response cannot cause another selection/payment. Recovery records now include the observed basket and selection progress. To abandon an incomplete selection or an unpaid prepared basket, manually remove its items on the site, then use **Reconcile cleared selection**. The extension only archives a pre-checkout record after a stable empty-basket check; it removes no site items and cannot clear any provisional reference or dispatched payment. Historical archived selections appear in exported status as `abandonedCheckouts`.
+
 **Check and recover** contains availability checks, site-verification resume, checkout preparation, payment reconciliation and paid-receipt verification. The availability reset does not erase payment uncertainty. The legacy basket reconciliation control only verifies an explicitly empty basket; it removes nothing and exists for unresolved records from older versions.
 
 The paid-test button and its launch action were removed in v0.5.2. The earlier £2.50 test remains in historical payment records; receipt reconciliation still supports that record without submitting another charge. Do not delete its submission marker. This update does not change saved jobs, but reloading the extension clears the unlocked card session; unlock again before an armed run.
@@ -38,7 +42,7 @@ Run `npm test` in this directory for the maintained regression suite. Runtime ar
 
 ## Card file troubleshooting
 
-After an extension reload, close old card-setup tabs and reopen setup from the popup. Select the original `tennis-card.encrypted.json` and enter its original passphrase exactly, including spaces. The file format is unchanged; existing files remain supported. The setup now distinguishes invalid JSON, unsupported or damaged encryption fields, decryption failure, and failures storing a decrypted card in browser memory. A decryption authentication failure can mean either an incorrect passphrase or changed ciphertext; these cannot be distinguished reliably. Error messages contain no entered values or underlying browser error contents. JSON files with a UTF-8 byte-order mark are supported. The maintained suite has 67 passing tests.
+After an extension reload, close old card-setup tabs and reopen setup from the popup. Select the original `tennis-card.encrypted.json` and enter its original passphrase exactly, including spaces. The file format is unchanged; existing files remain supported. The setup now distinguishes invalid JSON, unsupported or damaged encryption fields, decryption failure, and failures storing a decrypted card in browser memory. A decryption authentication failure can mean either an incorrect passphrase or changed ciphertext; these cannot be distinguished reliably. Error messages contain no entered values or underlying browser error contents. JSON files with a UTF-8 byte-order mark are supported. The maintained suite has 72 passing tests.
 
 
 Before payment submission, a reloaded checkout may issue a new provisional reference. The extension accepts that replacement only after re-verifying the exact basket and amount, and records the prior reference with a timestamp. Once payment dispatch is journalled, its persistent submission marker prevents another payment even if other phase metadata changes. Checkout preparation cannot erase that marker or a legacy uncertain-payment phase; only a matching paid receipt can confirm the record. Unknown phases stop for inspection.

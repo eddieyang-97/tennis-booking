@@ -6,5 +6,5 @@ async function send(kind) {output.textContent='Checking…';try {
   document.querySelector('#cardStatus').textContent=result.localCardUnlocked?'Local card: unlocked for this Chrome session.':'Local card: locked. Open card setup and unlock the file first.';
  }
  }catch(e){output.textContent=e.message;}}
-for(const kind of ['openCardVault','payCheckout','armPayment','check','resume','prepareCheckout','verifyPayment','cancel','reset','reconcileBasket'])document.querySelector('#'+kind).addEventListener('click',()=>send(kind));
+for(const kind of ['openCardVault','payCheckout','armPayment','check','resume','prepareCheckout','verifyPayment','cancel','reset','reconcileBasket','reconcileSelection'])document.querySelector('#'+kind).addEventListener('click',()=>send(kind));
 send('status');

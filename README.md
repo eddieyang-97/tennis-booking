@@ -1,12 +1,14 @@
 # Tennis booking — developer reference
 
-Normal-Chrome Manifest V3 extension for Tower Hamlets Courtside bookings. The active source is [outputs/tennis-local/chrome-extension](outputs/tennis-local/chrome-extension/). Current source version: **0.5.9 MVP** (read-only grid readiness hardening). The readiness-panel enhancement remains separate in PR #1. This repository preserves the working source, regression tests and payment-system findings so future development can continue without repeating the investigation.
+Normal-Chrome Manifest V3 extension for Tower Hamlets Courtside bookings. The active source is [outputs/tennis-local/chrome-extension](outputs/tennis-local/chrome-extension/). Current source version: **0.6.0 MVP** (read-only grid readiness hardening). The readiness-panel enhancement remains separate in PR #1. This repository preserves the working source, regression tests and payment-system findings so future development can continue without repeating the investigation.
 
 **Verified on 13 October 2026:** the extension filled Stripe's card form and submitted the authorised £2.50 Victoria Park test payment. The merchant's account purchase history showed the matching reference as **Confirmed / Paid ✔ / £2.50**. The owner subsequently cancelled the court booking manually. Cancellation does not establish a refund.
 
 **Live evidence update:** the exported installed-extension journal confirms that purchase-history reconciliation succeeded on 13 October 2026 at 00:58:44 UTC. The first midnight release for 21 October began on time at 23:00:00.005 UTC on 13 October (00:00 London, 14 October), read the account successfully, then stopped at the first court-grid readiness timeout before selection/payment. This verifies alarm timing and live recovery, but not completed midnight booking. The v0.5.5 grid fix still needs a new live run; two-hour live payment remains unverified. Do not delete submission markers or treat an error result as proof that no charge occurred.
 
 Read [Payment system findings](docs/payment-system.md) before changing checkout, recovery or the vault. That document contains the live evidence, failed approaches, DOM contracts and next implementation priorities.
+
+**15 October update:** the v0.5.9 midnight search succeeded and found Bethnal Green Gardens court 4, 20:00–22:00 on 22 October, £14. Checkout stopped after selection because the basket item count differed from the expected two; no payment was attempted. The owner observed one selected hour becoming unselected. Overlapping per-hour basket updates are a plausible cause, reproduced in a regression fixture, but not yet verified against the site's implementation. v0.6.0 selects each hour once, waits for stable acknowledgement, resolves fresh grid nodes and validates the next hour before clicking. It also stabilises basket reads and stores safe expected/actual item diagnostics. Live two-hour acceptance remains blocked by site human verification in the inspection session.
 
 ## Development and installation
 
@@ -15,7 +17,7 @@ cd outputs/tennis-local/chrome-extension
 npm test
 ```
 
-The extension has no npm dependencies; tests use Node's built-in test runner (verified with Node 24.18). The current suite has 67 passing tests. Load this directory as an unpacked extension in Chrome's extension manager. After changing source, reload the extension and relevant court/checkout tabs. **Reload before unlocking the card**: extension reload and browser restart clear the unlocked session.
+The extension has no npm dependencies; tests use Node's built-in test runner (verified with Node 24.18). The current suite has 72 passing tests. Load this directory as an unpacked extension in Chrome's extension manager. After changing source, reload the extension and relevant court/checkout tabs. **Reload before unlocking the card**: extension reload and browser restart clear the unlocked session.
 
 Build the runtime ZIP with `powershell -ExecutionPolicy Bypass -File .\build.ps1` from the repository root. It checks an explicit 26-file runtime allowlist and prints the SHA256. The artifact is written under `artifacts/`, excluded from Git; release assets are published separately.
 
@@ -36,6 +38,10 @@ v0.5.9 also allows 60 seconds for scheduled account, basket and purchase-history
 - One confirmed booking per playing date. Other bookings in the same week do not block a new date; there is no weekly skip rule.
 - Release is London midnight seven days before the playing date, with a preflight five minutes earlier. Date conversion accounts for GMT/BST.
 - Each armed job runs once. Chrome must be open and the laptop awake; Chrome alarms do not wake a sleeping laptop. A check over a minute late stops. Startup restores future alarms and stops a missed release.
+
+For multiple hours, all cells and prices are checked before the first click. Then each hour is selected once and its checkbox/basket-count acknowledgement must remain consistent across three 250 ms observations before the next hour is resolved afresh. Prior acknowledgement loss, an unavailable next cell or timeout stops without replay. After navigation to the basket, three consistent snapshots are required; the HTML parser must have finished. Exact per-hour venue/court/date/time and the complete price remain mandatory before payment.
+
+Failed selection records intentionally stay pending and are marked `recoveryRequired`, with the last error, retained tab and safe basket/selection evidence. Do not erase these automatically. To abandon an unpaid partial or prepared basket, remove its items manually on the site, then use **Reconcile cleared selection**. This checks a stable empty basket, permits only pre-checkout phases without any provisional reference or payment dispatch marker, and archives the intent in `abandonedCheckouts`. Submitted payment journals cannot be cleared by this control.
 
 An `armed` response with `mode:payment` and `paymentAutomatic:true` confirms the saved date and automatic payment mode, not a completed preflight or booking. The response's release timestamp is UTC; London midnight during BST appears as 23:00Z on the preceding date. Preflight runs five minutes before that release. Source updates take effect after extension reload; saved jobs survive, but the unlocked card session does not. Unlock again after the final reload and avoid further reloads before the run. The paid-test launch control has been removed; its historical payment journal and receipt-only recovery remain intact.
 
@@ -64,7 +70,7 @@ Persistent Chrome local storage includes `job`, `checkoutRecords`, `checkoutResu
 
 | Check | Status |
 | --- | --- |
-| Regression suite | 67 passing tests, including worker recovery and mixed-court two-hour simulated flow |
+| Regression suite | 72 passing tests, including worker recovery and mixed-court two-hour simulated flow |
 | Live one-hour Victoria Park basket selection and cleanup | Passed on 12 October UTC / 13 October London |
 | Live local-card autofill and £2.50 submission | Paid merchant purchase independently verified on 13 October |
 | Test booking cancellation | Manually performed and confirmed by owner |

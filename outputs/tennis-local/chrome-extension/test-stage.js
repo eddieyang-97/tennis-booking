@@ -51,10 +51,10 @@ test('mixed basket verifies each hourly court, while keys distinguish court orde
 test('page selection rechecks all adjacent hours before first click; duplicate checked cell stops',async()=>{
  const code=fs.readFileSync(new URL('./stage-content.js',import.meta.url),'utf8');let listener,clicks=0;
  const boxes=[{disabled:false,checked:false,labels:[{textContent:'Court 2£7'}],click(){clicks++;this.checked=true;}},
- {disabled:true,checked:false,labels:[{textContent:'Court 2£7'}],click(){clicks++;}}];
+ {disabled:true,checked:false,labels:[{textContent:'Court 2£7'}],click(){clicks++;this.checked=true;}}];
  const rows=boxes.map((box,i)=>({querySelector:()=>({textContent:i===0?'8pm':'9pm'}),querySelectorAll:()=>[box]}));
  const book={textContent:'Monday 19th October 2026',querySelectorAll:()=>rows};
- const context={chrome:{runtime:{id:'test',onMessage:{addListener:f=>listener=f}}},location:{pathname:'/book/courts/victoria-park/2026-10-19'},document:{querySelector:q=>q==='#book'?book:{textContent:'',getAttribute:()=> '2'}},Intl,Date,setTimeout};
+ const context={chrome:{runtime:{id:'test',onMessage:{addListener:f=>listener=f}}},location:{pathname:'/book/courts/victoria-park/2026-10-19'},document:{querySelector:q=>q==='#book'?book:{textContent:'',getAttribute:()=> String(boxes.filter(b=>b.checked).length)}},Intl,Date,setTimeout:callback=>queueMicrotask(callback)};
  vm.runInNewContext(code,context);
  const invoke=s=>new Promise(resolve=>listener({kind:'select-slot',slot:s},{id:'test'},resolve));
  let response=await invoke({...slot,start:'20:00',hours:2,totalGBP:'14.00'});assert.equal(response.ok,false);assert.match(response.error,/Slot unavailable/);assert.equal(clicks,0);
@@ -71,7 +71,7 @@ test('CSS data-items acknowledgement survives async badge replacement without re
  const book={textContent:'Monday 19th October 2026',querySelectorAll:()=>[row]};
  vm.runInNewContext(code,{chrome:{runtime:{id:'test',onMessage:{addListener:f=>listener=f}}},location:{pathname:'/book/courts/victoria-park/2026-10-19'},document:{querySelector:q=>q==='#book'?book:badge},Intl,Date,setTimeout:callback=>{waits++;badge={textContent:'',getAttribute:()=> '1'};queueMicrotask(callback);}});
  const response=await new Promise(resolve=>listener({kind:'select-slot',slot},{id:'test'},resolve));
- assert.equal(response.ok,true);assert.equal(clicks,1);assert.equal(waits,1);
+ assert.equal(response.ok,true);assert.equal(clicks,1);assert.equal(waits,3);
 });
 
 test('reused-tab navigation ignores old complete until a new loading/complete cycle',async()=>{
@@ -92,5 +92,5 @@ test('live booked label is identified without a price and stops before any click
  vm.runInNewContext(code,{chrome:{runtime:{id:'test',onMessage:{addListener:f=>listener=f}}},location:{pathname:'/book/courts/bethnal-green-gardens/2026-10-18'},document:{querySelector:()=>book},Intl,Date,setTimeout});
  const sundaySlot={venue:'bethnal-green-gardens',date:'2026-10-18',court:4,start:'07:00',hours:1,totalGBP:'7.00'};
  const response=await new Promise(resolve=>listener({kind:'select-slot',slot:sundaySlot},{id:'test'},resolve));
- assert.equal(response.ok,false);assert.equal(response.error,'Slot unavailable: court 4, 7am (Tennis court 4booked)');assert.equal(clicks,0);
+ assert.equal(response.ok,false);assert.equal(response.error,'Slot unavailable: court 4, 7am');assert.equal(clicks,0);
 });

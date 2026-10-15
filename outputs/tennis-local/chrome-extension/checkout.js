@@ -23,6 +23,7 @@ export async function prepareCheckout(slot,deps,{test=false,adopt=false}={}) {
   record={...record,key,slot,test,phase,status:'pending',updatedAt:new Date().toISOString()};
   await deps.save([...records.filter(r=>r.key!==key),record]);
  };
+ try {
  let basket=await deps.read();
  if(record) {
   // Never replay selection after worker interruption or a lost response.
@@ -33,20 +34,37 @@ export async function prepareCheckout(slot,deps,{test=false,adopt=false}={}) {
   verifyBasket(basket,slot);await persist('basket-adopted');
  } else {
   if(!basket.empty)throw Error('Existing basket items; checkout stopped without changes');
+  if(Number.isInteger(deps.tabId))record={...record,tabId:deps.tabId};
   await persist('selection-dispatched');
-  try{await deps.select(slot);}catch(error){
+  try{const selected=await deps.select(slot);if(selected?.selectionDiagnostic)record={...record,selectionDiagnostic:selected.selectionDiagnostic};}catch(error){
+   if(error.selectionDiagnostic)record={...record,selectionDiagnostic:error.selectionDiagnostic};
    basket=await deps.read();
    if(basket.empty)throw Error('Selection uncertain; pending checkout retained; no retry');
    verifyBasket(basket,slot);
   }
   basket=await deps.read();verifyBasket(basket,slot);
  }
- record={...record,basketVerifiedAt:new Date().toISOString()};
+ const {lastError,basketDiagnostic,...clean}=record||{};
+ record={...clean,recoveryRequired:false,basketVerifiedAt:new Date().toISOString()};
  await persist('awaiting-payment');
  const tabId=await deps.retain();
  record={...record,tabId};await deps.save([...records.filter(r=>r.key!==key),record]);
  await deps.notify(slot);
  return {status:'awaiting-payment',slot,tabId,basketVerified:true,booked:false,paid:false,key};
+ }catch(error){
+  if(record?.status==='pending'){
+   record={...record,recoveryRequired:true,lastError:error.message,...(error.basketDiagnostic?{basketDiagnostic:error.basketDiagnostic}:{}),updatedAt:new Date().toISOString()};
+   await deps.save([...records.filter(r=>r.key!==key),record]);
+  }
+  throw error;
+ }
+}
+export function reconcileClearedSelection(records,basket) {
+ const pending=records.filter(r=>r.status!=='confirmed');
+ if(pending.length!==1||!['selection-dispatched','awaiting-payment'].includes(pending[0].phase)||pending[0].paymentDispatchedAt||Object.hasOwn(pending[0],'reference'))throw Error('Only an unsubmitted selection can be reconciled; preserve payment journals');
+ if(basket?.empty!==true||!Array.isArray(basket.items)||basket.items.length!==0)throw Error('Remove the partial selection from the site basket first; no items were removed automatically');
+ const abandoned={...pending[0],status:'abandoned',phase:'selection-cleared',abandonedAt:new Date().toISOString()};
+ return {checkoutRecords:records.filter(r=>r!==pending[0]),abandoned};
 }
 export function confirmCheckout(record,receipt) {
  if(!record || receipt?.status!=='confirmed' || receipt.key!==record.key || !/^\d+$/.test(receipt.reference||'') || (record.reference && receipt.reference!==record.reference))throw Error('A matching paid receipt has not been verified');
