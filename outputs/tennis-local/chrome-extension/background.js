@@ -11,6 +11,7 @@ import {reconcilePaid} from './reconciliation.js';
 import {readGrid,gridReadPolicy} from './grid-read.js';
 import {readPageState,pageReadBudget,waitPaymentState} from './page-read.js';
 import {normalizeDiscount,ensureDiscount,payableSlot} from './discount.js';
+import {normalizeSettings} from './booking-settings.js';
 const linkFrames=createLinkFrames(chrome.tabs,{step:(name,detail)=>step(name,detail)});
 const BASE='https://tennistowerhamlets.com';
 let busy=false;
@@ -32,13 +33,14 @@ async function account(scheduled=false) {
   const result=await readPage(BASE+'/account',{kind:'account'},{scheduled});
   if(!result.ok) throw Object.assign(Error(result.error),{diagnostic:{page:result.page,retainedTabId:result.retainedTabId}});
 }
-async function check(day, scheduled=false) {
+async function check(day, scheduled=false,settings=null) {
   if(busy) throw Error('A check is already running');
   busy=true;
   trace=newRun(scheduled?'release-check':'manual-check',day);
   let ownsRunning=false;
   try {
-    await step('started');
+    if(settings)settings=normalizeSettings(settings);
+    await step('started',{...(settings?{settings}:{})});
     addDays(day,0);
     if(day<londonDay() || day>addDays(londonDay(),7)) throw Error('Date is outside the current booking window');
     if(scheduled && Date.now()-releaseAt(day)>60000) throw Error('Release check was over one minute late; inspect manually');
@@ -48,16 +50,16 @@ async function check(day, scheduled=false) {
     ownsRunning=true;
     await account(scheduled);
     const results=[];
-    for(const venue of VENUES) {
+    for(const venue of (settings?.venues||VENUES)) {
       const response=await readPage(`${BASE}/book/courts/${venue}/${day}#book`,{kind:'grid',venue,day},{scheduled});
       if(!response.ok) throw Object.assign(Error(response.error),{diagnostic:{page:response.page,retainedTabId:response.retainedTabId}});
-      results.push({venue,candidates:candidates(response.rows,venue,day)});
+      results.push({venue,candidates:candidates(response.rows,venue,day,{settings})});
       // The scheduled flow chooses this venue first anyway. Do not delay an
       // eligible preferred candidate behind a slow fallback-venue request.
-      if(scheduled) {try{checkoutCandidate(results);await step('preferred-candidate-found',{venue});break;}catch{}}
+      if(scheduled) {try{checkoutCandidate(results,settings);await step('preferred-candidate-found',{venue});break;}catch{}}
     }
     await step('availability-complete');await trace.finish('complete');
-    await save({status:'complete',day,checkedAt:new Date().toISOString(),runId:trace.record.id,results,booked:false,paid:false});
+    await save({status:'complete',day,checkedAt:new Date().toISOString(),runId:trace.record.id,results,...(settings?{settings}:{}),booked:false,paid:false});
     await chrome.storage.local.remove('running');
   } catch(e) { await step('stopped');await trace.finish('stopped');await save({status:'stopped',day,checkedAt:new Date().toISOString(),runId:trace.record.id,error:e.message,...e.diagnostic,booked:false,paid:false});e.recorded=true;throw e; }
   finally {
@@ -68,18 +70,19 @@ async function check(day, scheduled=false) {
     trace=null;
   }
 }
-async function arm(day,mode='availability',code='') {
+async function arm(day,mode='availability',code='',settings=null) {
   const discountCode=normalizeDiscount(code);
+  settings=normalizeSettings(settings||undefined);
   addDays(day,0);
   const when=releaseAt(day);
   if(when<=Date.now()) throw Error('This date has already released; use Check now');
   if(mode==='payment'){await resolvePendingPayment();await paymentCard(chrome.storage,null);}
   await chrome.alarms.clear('prepare'); await chrome.alarms.clear('release');
   if(!['availability','checkout','payment'].includes(mode))throw Error('Unknown release mode');
-  await chrome.storage.local.set({job:{day,when,prepared:false,mode,...(discountCode?{discountCode}:{})}});
+  await chrome.storage.local.set({job:{day,when,prepared:false,mode,settings,...(discountCode?{discountCode}:{})},bookingSettings:settings});
   await chrome.alarms.create('prepare',{when:Math.max(Date.now()+1000,when-300000)});
   await chrome.alarms.create('release',{when});
-  return {status:'armed',day,release:new Date(when).toISOString(),mode,paymentAutomatic:mode==='payment',discountRequested:!!discountCode};
+  return {status:'armed',day,release:new Date(when).toISOString(),mode,paymentAutomatic:mode==='payment',discountRequested:!!discountCode,settings};
 }
 
 async function automaticPayment(test=false,scheduled=false) {
@@ -155,7 +158,7 @@ async function notifyCheckout(slot) {
  try {await chrome.notifications.create('tennis-checkout',{type:'basic',iconUrl:chrome.runtime.getURL('notification.png'),title:'Tennis checkout ready',message:`${slot.date} ${slot.start}, £${slot.totalGBP}. Verified basket ready; inspect the extension for payment status.`});}
  catch {await step('notification-unavailable');}
 }
-async function checkout(expectedDay=null,scheduled=false,basketOnly=false,discountCode='') {
+async function checkout(expectedDay=null,scheduled=false,basketOnly=false,discountCode='',settings=null) {
  if(busy)throw Error('Another run is active');
  busy=true;
  let tab,slot;
@@ -163,9 +166,11 @@ async function checkout(expectedDay=null,scheduled=false,basketOnly=false,discou
  const {result,basketTest,checkoutRecords=[]}=await chrome.storage.local.get(['result','basketTest','checkoutRecords']);
  if(basketTest && basketTest.status!=='cleared')throw Error('Basket test needs reconciliation first');
  const pending=checkoutRecords.find(r=>r.status!=='confirmed');
+ settings=basketOnly?null:pending?(pending.settings||null):(settings||result?.settings||null);
+ if(settings)settings=normalizeSettings(settings);
  if(pending && !!pending.basketOnly!==basketOnly)throw Error('Another checkout requires reconciliation');
  if(expectedDay && pending && pending.slot.date!==expectedDay)throw Error('Another date has an unresolved checkout; release preparation stopped');
- slot=pending?.slot || (!basketOnly && result?.status==='complete'?checkoutCandidate(result.results):null);
+ slot=pending?.slot || (!basketOnly && result?.status==='complete'?checkoutCandidate(result.results,settings):null);
  if(basketOnly && !slot) {
   addDays(expectedDay,0);
   if(expectedDay<londonDay()||expectedDay>addDays(londonDay(),7))throw Error('Choose a released date within the next seven days');
@@ -181,7 +186,7 @@ async function checkout(expectedDay=null,scheduled=false,basketOnly=false,discou
  }
  if(!slot)throw Error('Check availability before preparing checkout');
  trace=trace||newRun('checkout-preparation',slot.date);
-  await step('started',{slot,scheduled,basketOnly});
+  await step('started',{slot,scheduled,basketOnly,...(settings?{settings}:{})});
   if(pending?.tabId) {
    tab=await recoverPreparationTab(pending,{get:id=>readTab(()=>chrome.tabs.get(id))},async()=>{
     await step('closed-selection-tab-recovery',{previousTabId:pending.tabId});
@@ -209,7 +214,7 @@ async function checkout(expectedDay=null,scheduled=false,basketOnly=false,discou
     return response.value;
    },
    retain:async()=>{await chrome.tabs.update(tab.id,{active:true});return tab.id;},notify:basketOnly?async()=>{await chrome.action.setBadgeText({text:'TEST'});}:notifyCheckout
-  },{test:pending?.test===true,basketOnly,allowPartial:scheduled&&!basketOnly,discountCode});
+  },{test:pending?.test===true,basketOnly,allowPartial:scheduled&&!basketOnly,discountCode,settings});
   await trace.finish(output.status);await chrome.storage.local.set({checkoutResult:{...output,runId:trace.record.id,finishedAt:trace.record.finishedAt}});return output;
  } catch(e) {
   if(!trace)trace=newRun('checkout-preparation',slot?.date||londonDay());
@@ -289,7 +294,7 @@ async function resume(day) {
   if(!ready?.ok) throw Error(ready?.error || 'Tab is not ready; finish verification manually');
   // A resumed tab remains open: it is now the user's foreground workflow.
   resumedTab=tab.id;
-  try {await check(result.day || day);return (await chrome.storage.local.get('result')).result;}
+  try {await check(result.day || day,false,result.settings||null);return (await chrome.storage.local.get('result')).result;}
   finally {resumedTab=null;}
 }
 chrome.alarms.onAlarm.addListener(async alarm=>{
@@ -306,8 +311,8 @@ chrome.alarms.onAlarm.addListener(async alarm=>{
     if(alarm.name==='release') {
       if(!job.prepared) throw Error('Preflight did not complete; check stopped');
       if(job.mode==='payment'){await resolvePendingPayment(true);await paymentCard(chrome.storage,null);}
-      await check(job.day,true);
-      if(['checkout','payment'].includes(job.mode)){const prepared=await checkout(job.day,true,false,job.discountCode||'');if(job.mode==='payment' && prepared.status==='awaiting-payment')await automaticPayment(false,true);}
+      await check(job.day,true,job.settings||null);
+      if(['checkout','payment'].includes(job.mode)){const prepared=await checkout(job.day,true,false,job.discountCode||'',job.settings||null);if(job.mode==='payment' && prepared.status==='awaiting-payment')await automaticPayment(false,true);}
       await chrome.storage.local.remove('job');
     }
   } catch(e) {if(!e.recorded)await save({status:'stopped',day:job.day,checkedAt:new Date().toISOString(),step:alarm.name,error:e.message,...e.diagnostic,booked:false,paid:false});await notifyPaymentResult({status:'stopped'});}
@@ -318,14 +323,15 @@ chrome.runtime.onMessage.addListener((message,sender,respond)=>{
   }
   if(sender.id!==chrome.runtime.id || sender.tab || !sender.url?.startsWith(chrome.runtime.getURL('popup.html'))) return;
   (async()=>{
-    if(message.kind==='check') {await check(message.day); return (await chrome.storage.local.get('result')).result;}
+    if(message.kind==='check') {await check(message.day,false,message.settings||null); return (await chrome.storage.local.get('result')).result;}
     if(message.kind==='resume') return resume(message.day);
+    if(message.kind==='saveSettings'){const settings=normalizeSettings(message.settings);await chrome.storage.local.set({bookingSettings:settings});return {status:'preferences-saved',settings,armedJobChanged:false};}
     if(message.kind==='prepareCheckout')return checkout();
     if(message.kind==='daytimeBasketTest')return checkout(message.day,false,true);
     if(message.kind==='verifyPayment')return verifyPayment();
     if(message.kind==='openCardVault'){await chrome.tabs.create({url:chrome.runtime.getURL('card-vault.html'),active:true});return {status:'local-card-setup-opened'};}
     if(message.kind==='payCheckout')return automaticPayment();
-    if(message.kind==='armPayment')return arm(message.day,'payment',message.discountCode);
+    if(message.kind==='armPayment')return arm(message.day,'payment',message.discountCode,message.settings);
     if(message.kind==='reconcileSelection') {
      if(busy)throw Error('Another run is active');busy=true;
      try {
@@ -350,7 +356,7 @@ chrome.runtime.onMessage.addListener((message,sender,respond)=>{
     if(message.kind==='cancel') {await chrome.alarms.clear('prepare');await chrome.alarms.clear('release');await chrome.storage.local.remove('job');return {status:'cancelled'};}
     if(message.kind==='reset' && !busy) {await chrome.storage.local.remove('running');return {status:'reset'};}
     if(message.kind==='status') {
-     const status=await chrome.storage.local.get(['result','job','running','basketTest','basketTestResult','runHistory','checkoutRecords','checkoutResult','abandonedCheckouts']);
+     const status=await chrome.storage.local.get(['result','job','running','basketTest','basketTestResult','runHistory','checkoutRecords','checkoutResult','abandonedCheckouts','bookingSettings']);
      let localCardUnlocked=false;try{localCardUnlocked=!!(await chrome.storage.session.get('localPaymentCard')).localPaymentCard;}catch{}
      return {...status,localCardUnlocked,version:chrome.runtime.getManifest().version};
     }

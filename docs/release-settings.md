@@ -1,6 +1,6 @@
-# Extension settings required before full release
+# Extension settings — implemented in v0.8.0
 
-Each explicitly armed job must contain a validated, immutable snapshot of its booking settings. Current MVP source still has fixed evening venue/time/duration/price rules. The optional discount field is implemented in v0.7.0; the other controls below are release requirements. Its automatic tennis checkout still needs live acceptance.
+Each explicitly armed job must contain a validated, immutable snapshot of its booking settings. All controls below are implemented in v0.8.0. User-configurable durations are one or two hours, and times are whole-hour same-day London ranges. Defaults are 20:00–22:00, prefer two hours/accept one, BGG then VP, £14 total and £7 for one hour. Caps apply conservatively to gross price before discount. Legacy jobs and journals keep their original rules. Automated configurable and discounted tennis payment still needs live acceptance.
 
 | Setting | Required behavior |
 | --- | --- |

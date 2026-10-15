@@ -1,4 +1,5 @@
 import {NAMES,eligible,londonDay,addDays,slotCourts,slotKey} from './core.js';
+import {authorizeSettingsSlot} from './booking-settings.js';
 // Chrome storage can return object keys in a different order. Authorization
 // compares every field and its type, never the object's serialized key order.
 export function sameSlot(slot,expected) {
@@ -6,10 +7,12 @@ export function sameSlot(slot,expected) {
   Object.keys(slot).length===Object.keys(expected).length &&
   Object.keys(expected).every(key=>Object.hasOwn(slot,key) && slot[key]===expected[key]);
 }
-export function validateSlot(slot) {
+export function validateSlot(slot,settings=null) {
  if(!NAMES[slot.venue] || ![1,2,3,4].includes(slot.court) || ![1,2].includes(slot.hours))throw Error('Invalid court identity');
  if(slot.date<londonDay() || slot.date>addDays(londonDay(),7))throw Error('Outside booking window');
- if(!eligible(slot.date)||!['20:00','21:00'].includes(slot.start))throw Error('Outside recurring preferences');
+ if(!eligible(slot.date))throw Error('Invalid playing date');
+ if(settings)authorizeSettingsSlot(slot,settings);
+ else if(!['20:00','21:00'].includes(slot.start))throw Error('Outside recurring preferences');
  if(!/^\d+\.\d{2}$/.test(slot.totalGBP)||+slot.totalGBP<=0)throw Error('Invalid price');
  return slotKey(slot);
 }

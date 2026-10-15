@@ -1,20 +1,36 @@
 <!doctype html><html lang="en"><meta charset="utf-8"><title>Tennis booking</title>
+<style>body{font:14px system-ui,sans-serif;width:440px;margin:16px;color:#17392f}fieldset{border:1px solid #bccdc5;border-radius:8px;margin:14px 0;padding:12px}label{display:block;margin:8px 0}select,input{font:inherit;padding:5px;max-width:100%;box-sizing:border-box}button{font:inherit;padding:7px;margin:3px 0}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px}.note{font-size:12px;color:#496158}#readiness{background:#edf7f1;padding:10px;border-radius:8px;white-space:pre-line}</style>
 <body><h2>Tennis booking</h2>
+<div id="readiness" role="status">Loading booking status…</div>
 <p id="cardStatus" role="status">Checking local card…</p>
 <p><button id="openCardVault">Set up or unlock card file</button></p>
 <label>Playing date <input id="day" type="date"></label>
+<fieldset><legend>Booking preferences</legend>
+<label>First-choice venue <select id="firstVenue"><option value="bethnal-green-gardens">Bethnal Green Gardens</option><option value="victoria-park">Victoria Park</option></select></label>
+<label>Fallback venue <select id="secondVenue"><option value="">None</option><option value="bethnal-green-gardens">Bethnal Green Gardens</option><option value="victoria-park" selected>Victoria Park</option></select></label>
+<label>Earliest start (London) <select id="earliestStart"></select></label>
+<label>Latest finish (London) <select id="latestFinish"></select></label>
+<label>Desired hours <select id="preferredHours"><option value="2">2 hours</option><option value="1">1 hour</option></select></label>
+<label>Minimum acceptable hours <select id="minHours"><option value="1">1 hour</option><option value="2">2 hours</option></select></label>
+<label><input id="allowCourtSwitch" type="checkbox" checked> Allow switching courts between consecutive hours</label>
+<label>Maximum total payment (£) <input id="maxTotalGBP" type="number" min="0.01" max="9999.99" step="0.01" value="14.00"></label>
+<label>Maximum for a one-hour booking (£) <input id="maxOneHourGBP" type="number" min="0.01" max="9999.99" step="0.01" value="7.00"></label>
+<p class="note">Every hour must fit inside the selected range. Desired duration is preferred within the first available venue. Caps apply to the full court price before any discount.</p>
+<button id="saveSettings">Save preferences</button>
+</fieldset>
 <p><label>Discount code (optional) <input id="discountCode" type="text" maxlength="10" autocomplete="off" placeholder="Leave blank for no code"></label></p>
 <p>A supplied code is saved with this armed run. Checkout stops if its discount cannot be verified. Editing this field does not change an already armed run; arm again to update it.</p>
 <p><button id="armPayment">Arm midnight booking and payment</button> <button id="cancel">Cancel scheduled run</button></p>
-<p>Any playing day, 20:00 or 21:00. Bethnal Green Gardens first, then Victoria Park. Prefer 2 consecutive hours over 1; switching courts between hours is allowed. Maximum £14 for 2 hours or £7 for 1 hour; one booking per playing date.</p>
+<p class="note">Each arm saves a copy of these preferences. Editing the form does not change an armed run or a pending checkout. One booking per playing date; any playing day is supported.</p>
 <p>Unlock the card file before the run and keep Chrome open and the laptop awake. Payments use the local card directly; a locked card stops the run. Human verification or bank approval can stop a run. Uncertain payments are never submitted again.</p>
-<p>During a scheduled run, if only one intended evening hour reaches the basket, it may proceed for that verified hour at up to £7. Extra or mismatched items still stop checkout.</p>
+<p class="note">A scheduled partial selection can proceed for one verified intended hour only when the saved minimum duration and one-hour cap permit it. Extra or mismatched items stop checkout.</p>
 <details><summary>Check and recover</summary>
 <p><button id="daytimeBasketTest">Test 09:00–11:00 basket (no payment)</button> Uses the playing date above, including weekends, within the released booking window. Searches both venues for two hours, up to £14. Inspect the basket, remove both items manually, then reconcile the cleared selection.</p>
 <p><button id="check">Check availability now</button> <button id="resume">Resume after site verification</button></p>
 <p><button id="prepareCheckout">Prepare or resume checkout</button> <button id="payCheckout">Pay or reconcile checkout</button> <button id="verifyPayment">Verify paid receipt</button></p>
 <p><button id="reset">Reset interrupted availability check</button> <button id="reconcileBasket">Verify cleared legacy test basket</button></p>
 <p><button id="reconcileSelection">Reconcile cleared selection</button> After removing an incomplete selection from the site basket, reconcile it here before another booking. Submitted payment records remain protected.</p>
+<p><button id="showStatus">Show diagnostic JSON</button> Contains private local job and checkout data; omit personal codes before sharing publicly.</p>
 </details>
 <p>Direct-card payment and paid purchase recovery are supported. An actual midnight run remains to be verified.</p>
 <pre id="result" aria-live="polite"></pre><script type="module" src="popup.js"></script></body></html>

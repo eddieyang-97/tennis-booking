@@ -1,0 +1,16 @@
+export function readiness(status,now=Date.now()) {
+ const pending=status.checkoutRecords?.find(record=>record.status!=='confirmed');
+ const submitted=pending&&(pending.paymentDispatchedAt||['payment-dispatched','payment-uncertain'].includes(pending.phase));
+ const lines=[`Version ${status.version||'unknown'}`,status.localCardUnlocked?'Card unlocked':'Card locked'];
+ lines.push(pending?(submitted?'Pending payment: verify receipt before another booking':`Pending checkout (${pending.phase}): inspect or reconcile`):'No unresolved checkout');
+ if(!status.job)lines.push('No midnight run armed');
+ else{
+  const when=status.job.when,valid=Number.isFinite(when),release=valid?new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/London',dateStyle:'medium',timeStyle:'short'}).format(new Date(when)):'unknown';
+  lines.push(`Playing ${status.job.day}; release ${release} London`);
+  if(status.job.settings){const s=status.job.settings;lines.push(`${s.earliestStart}–${s.latestFinish}, prefer ${s.preferredHours}h, minimum ${s.minHours}h; cap £${s.maxTotalGBP}, 1h cap £${s.maxOneHourGBP}`);}else lines.push('Legacy job: original evening preferences');
+  lines.push(status.job.discountCode?'Discount requested':'No discount requested');
+  lines.push(!valid||when<=now?'Release passed or invalid: inspect result':status.job.prepared?'Preflight passed':'Preflight pending');
+ }
+ const ready=!!status.localCardUnlocked&&!pending&&status.job?.mode==='payment'&&status.job.when>now&&status.job.prepared===true;
+ return {ready,lines,summary:ready?'Preflight passed — keep Chrome open and awake':status.job?'Armed run: review readiness below':'Not armed'};
+}

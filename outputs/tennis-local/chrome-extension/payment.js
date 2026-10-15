@@ -12,7 +12,7 @@ export async function payCheckout(record,deps) {
   recoveryIdentity(record);
   const receipt=await deps.receipt();return confirm(receipt);
  }
- if(checkoutKey(record.slot,record.test) !== record.key)throw Error('Checkout identity changed');
+ if(checkoutKey(record.slot,record.test,record.settings) !== record.key)throw Error('Checkout identity changed');
  if(record.discountCode&&!record.discount)throw Error('Discount must be verified before payment');
  const amount=payableSlot(record).totalGBP;
  if(!['selection-dispatched','basket-adopted','awaiting-payment','checkout-opening','link-opening','authentication-required','card-filling','provisional-reference-renewed'].includes(record.phase))throw Error('Unknown checkout phase; inspect payment status before continuing');

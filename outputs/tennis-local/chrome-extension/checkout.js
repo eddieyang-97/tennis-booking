@@ -1,16 +1,17 @@
 import {validateSlot,verifyBasket,sameSlot,basketEvidence} from './stage-rules.js';
 import {londonDay,addDays,slotKey,slotCourts} from './core.js';
 import {normalizeDiscount} from './discount.js';
+import {normalizeSettings} from './booking-settings.js';
 export const PAYMENT_TEST_SLOT={venue:'victoria-park',date:'2026-10-17',court:2,start:'07:00',hours:1,totalGBP:'2.50'};
-export function checkoutKey(slot,test=false) {
+export function checkoutKey(slot,test=false,settings=null) {
  if(test){if(!sameSlot(slot,PAYMENT_TEST_SLOT))throw Error('Unauthorized payment test');if(slot.date<londonDay() || slot.date>addDays(londonDay(),7))throw Error('Payment test outside booking window');}
- else {validateSlot(slot);if(+slot.totalGBP>(slot.hours===2?14:7))throw Error('Checkout exceeds authorized price limit');}
+ else {validateSlot(slot,settings);if(!settings&&+slot.totalGBP>(slot.hours===2?14:7))throw Error('Checkout exceeds authorized price limit');}
  return slotKey(slot);
 }
-export function checkoutCandidate(results) {
+export function checkoutCandidate(results,settings=null) {
  for(const entry of results||[])for(const candidate of entry.candidates||[]) {
   const slot={...candidate,venue:entry.venue};
-  try{checkoutKey(slot);return slot;}catch{}
+  try{checkoutKey(slot,false,settings);return slot;}catch{}
  }
  throw Error('No available candidate within authorized price limits');
 }
@@ -29,34 +30,37 @@ export async function recoverPreparationTab(record,tabs,create) {
   return create();
  }
 }
-export function singleHourFallback(slot,basket) {
- checkoutKey(slot);
+export function singleHourFallback(slot,basket,settings=null) {
+ checkoutKey(slot,false,settings);
  if(slot.hours!==2||basket?.items?.length!==1)throw Error('Not a single-hour fallback');
  const item=basket.items[0],index=item.hour-Number(slot.start.slice(0,2));
  if(![0,1].includes(index)||item.court!==slotCourts(slot)[index])throw Error('Fallback is not an intended hour');
- const fallback={venue:slot.venue,date:slot.date,court:item.court,start:`${item.hour}:00`,hours:1,totalGBP:basket.totalGBP};
- checkoutKey(fallback);verifyBasket(basket,fallback);return fallback;
+ const fallback={venue:slot.venue,date:slot.date,court:item.court,start:`${String(item.hour).padStart(2,'0')}:00`,hours:1,totalGBP:basket.totalGBP};
+ checkoutKey(fallback,false,settings);verifyBasket(basket,fallback);return fallback;
 }
-export async function prepareCheckout(slot,deps,{test=false,adopt=false,basketOnly=false,allowPartial=false,discountCode=''}={}) {
+export async function prepareCheckout(slot,deps,{test=false,adopt=false,basketOnly=false,allowPartial=false,discountCode='',settings=null}={}) {
  discountCode=normalizeDiscount(discountCode);
  if(discountCode&&(test||basketOnly))throw Error('Discount not supported in basket-only tests');
  if(basketOnly&&(test||adopt))throw Error('Daytime test cannot adopt or pay');
- let key=basketOnly?basketTestKey(slot):checkoutKey(slot,test);
- const originalKey=key,records=await deps.load();
+ const records=await deps.load(),existing=records.find(r=>r.key===slotKey(slot));
+ // Never apply new popup preferences to an existing or legacy journal.
+ settings=existing?(existing.settings||null):(settings?normalizeSettings(settings):null);
+ let key=basketOnly?basketTestKey(slot):checkoutKey(slot,test,settings);
+ const originalKey=key;
  let record=records.find(r=>r.key===key);
  if(record && (record.paymentDispatchedAt || ['payment-dispatched','payment-uncertain'].includes(record.phase)))throw Error('Payment requires receipt reconciliation; checkout preparation cannot reset it');
  if(records.some(r=>r.status==='confirmed' && r.slot.date===slot.date))throw Error('A booking for this date is already confirmed');
  if(records.some(r=>r.key!==key && r.status!=='confirmed'))throw Error('Another checkout requires reconciliation');
  const persist=async phase=>{
-  record={...record,key,slot,test,...(!record?.discountCode&&discountCode?{discountCode}:{}),...(basketOnly?{basketOnly:true}:{}),phase,status:'pending',updatedAt:new Date().toISOString()};
+  record={...record,key,slot,test,...(settings?{settings}:{}),...(!record?.discountCode&&discountCode?{discountCode}:{}),...(basketOnly?{basketOnly:true}:{}),phase,status:'pending',updatedAt:new Date().toISOString()};
   await deps.save([...records.filter(r=>r.key!==key&&r.key!==originalKey),record]);
  };
  const verifySelected=async basket=>{
   try{return verifyBasket(basket,slot);}catch(error){
    if(!allowPartial||test||basketOnly||record?.phase!=='selection-dispatched'||record.paymentDispatchedAt||Object.hasOwn(record,'reference'))throw error;
-   let fallback;try{fallback=singleHourFallback(slot,basket);}catch{throw error;}
+   let fallback;try{fallback=singleHourFallback(slot,basket,settings);}catch{throw error;}
    const fallbackFrom={key,slot,basketDiagnostic:basketEvidence(basket,slot),at:new Date().toISOString()};
-   slot=fallback;key=checkoutKey(slot);record={...record,fallbackFrom};await persist('selection-dispatched');return true;
+   slot=fallback;key=checkoutKey(slot,false,settings);record={...record,fallbackFrom};await persist('selection-dispatched');return true;
   }
  };
  try {
