@@ -19,6 +19,15 @@ export function basketTestKey(slot) {
  if(slot.date<londonDay()||slot.date>addDays(londonDay(),7))throw Error('Basket test outside booking window');
  return slotKey(slot);
 }
+export async function recoverPreparationTab(record,tabs,create) {
+ try{return await tabs.get(record.tabId);}catch(error){
+  if(!/No tab with id/i.test(error.message))throw error;
+  if(!['selection-dispatched','awaiting-payment'].includes(record.phase)||record.paymentDispatchedAt||Object.hasOwn(record,'reference'))throw Error('Checkout tab closed after payment preparation; verify payment instead of reopening');
+  // Reopen only the read-only basket. The durable intent still prevents
+  // selection replay, even when this replacement basket is empty or partial.
+  return create();
+ }
+}
 export async function prepareCheckout(slot,deps,{test=false,adopt=false,basketOnly=false}={}) {
  if(basketOnly&&(test||adopt))throw Error('Daytime test cannot adopt or pay');
  const key=basketOnly?basketTestKey(slot):checkoutKey(slot,test),records=await deps.load();

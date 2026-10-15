@@ -1,6 +1,6 @@
 import test from 'node:test';import assert from 'node:assert/strict';import vm from 'node:vm';import fs from 'node:fs';
 import {prepareCheckout,checkoutKey,checkoutCandidate,confirmCheckout,PAYMENT_TEST_SLOT} from './checkout.js';
-import {basketTestKey,reconcileClearedSelection} from './checkout.js';
+import {basketTestKey,reconcileClearedSelection,recoverPreparationTab} from './checkout.js';
 import {candidates} from './core.js';
 import {payCheckout} from './payment.js';
 const slot={venue:'bethnal-green-gardens',date:'2026-10-20',court:2,start:'20:00',hours:1,totalGBP:'7.00'};
@@ -10,6 +10,23 @@ function fixture(){
  return {get records(){return records;},set records(x){records=x;},set current(x){current=x;},get clicks(){return clicks;},get notices(){return notices;},deps:{load:async()=>structuredClone(records),save:async x=>records=structuredClone(x),read:async()=>current,select:async()=>{clicks++;assert.equal(records[0].phase,'selection-dispatched');current=basket;},retain:async()=>42,notify:async()=>notices++}};
 }
 async function fixed(fn){const now=Date.now;Date.now=()=>Date.parse('2026-10-13T12:00:00Z');try{return await fn();}finally{Date.now=now;}}
+test('closed preparation tab reopens only an unsubmitted basket, never a referenced or dispatched checkout',async()=>{
+ let created=0;const tabs={get:async()=>{throw Error('No tab with id: 42.');}},create=async()=>{created++;return {id:43,url:'https://tennistowerhamlets.com/basket'};};
+ for(const phase of ['selection-dispatched','awaiting-payment'])assert.equal((await recoverPreparationTab({tabId:42,phase},tabs,create)).id,43);
+ assert.equal(created,2);
+ for(const record of [{phase:'checkout-opening'},{phase:'card-filling'},{phase:'awaiting-payment',reference:'123'},{phase:'selection-dispatched',paymentDispatchedAt:'timestamp'}])await assert.rejects(recoverPreparationTab({tabId:42,...record},tabs,create),/verify payment/);
+ await assert.rejects(recoverPreparationTab({tabId:42,phase:'awaiting-payment'},{get:async()=>{throw Error('Other failure');}},create),/Other failure/);
+ assert.equal(created,2);
+ const existing={id:42,url:'https://tennistowerhamlets.com/basket/pay/card'};
+ assert.equal(await recoverPreparationTab({tabId:42,phase:'card-filling'},{get:async()=>existing},create),existing);assert.equal(created,2);
+});
+test('closed-tab recovery still reconciles intent and cannot replay an empty or partial selection',()=>fixed(async()=>{
+ const f=fixture();f.records=[{key:checkoutKey(slot),slot,status:'pending',phase:'selection-dispatched',tabId:42}];
+ const replacement=await recoverPreparationTab(f.records[0],{get:async()=>{throw Error('No tab with id');}},async()=>({id:43}));
+ f.deps.tabId=replacement.id;
+ await assert.rejects(prepareCheckout(slot,f.deps),/Pending checkout basket is empty/);assert.equal(f.clicks,0);
+ f.current=basket;await prepareCheckout(slot,f.deps);assert.equal(f.clicks,0);assert.equal(f.records[0].phase,'awaiting-payment');
+}));
 test('daytime test searches exactly two morning hours including weekends; recurring defaults stay evening',()=>fixed(()=>{
  const rows=[9,10,20,21].map(hour=>({time:`${hour>12?hour-12:hour}${hour>=12?'pm':'am'}`,inputs:[{disabled:false,label:'Court 2 £2.50'}]}));
  const morning=candidates(rows,'victoria-park','2026-10-17',{basketOnly:true});

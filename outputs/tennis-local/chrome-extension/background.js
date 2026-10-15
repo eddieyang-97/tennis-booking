@@ -2,7 +2,7 @@ import {VENUES, londonDay, addDays, eligible, releaseAt, candidates} from './cor
 import {verifyBasket,basketEvidence} from './stage-rules.js';
 import {retryTab} from './retry.js';
 import {startRun} from './run-log.js';
-import {prepareCheckout,checkoutCandidate,confirmCheckout,PAYMENT_TEST_SLOT,reconcileClearedSelection,basketTestKey} from './checkout.js';
+import {prepareCheckout,checkoutCandidate,confirmCheckout,PAYMENT_TEST_SLOT,reconcileClearedSelection,basketTestKey,recoverPreparationTab} from './checkout.js';
 import {payCheckout} from './payment.js';
 import {checkoutKey} from './checkout.js';
 import {createLinkFrames} from './link-frames.js';
@@ -165,7 +165,15 @@ async function checkout(expectedDay=null,scheduled=false,basketOnly=false) {
  if(!slot)throw Error('Check availability before preparing checkout');
  trace=trace||startRun(chrome.storage.local,'checkout-preparation',slot.date);
   await step('started');
-  if(pending?.tabId) {tab=await readTab(()=>chrome.tabs.get(pending.tabId));if(!tab.url?.startsWith(BASE+'/'))throw Error('Checkout tab left Courtside');}
+  if(pending?.tabId) {
+   tab=await recoverPreparationTab(pending,{get:id=>readTab(()=>chrome.tabs.get(id))},async()=>{
+    await step('closed-selection-tab-recovery',{previousTabId:pending.tabId});
+    const replacement=await retryTab(()=>chrome.tabs.create({url:BASE+'/basket',active:false}),{navigation:true});
+    await chrome.storage.local.set({checkoutRecords:checkoutRecords.map(record=>record.key===pending.key?{...record,tabId:replacement.id,updatedAt:new Date().toISOString()}:record)});
+    return replacement;
+   });
+   if(!tab.url?.startsWith(BASE+'/'))throw Error('Checkout tab left Courtside');
+  }
   else tab=await retryTab(()=>chrome.tabs.create({url:BASE+'/basket',active:false}),{navigation:true});
   resumedTab=tab.id;
   // Never navigate away from a card form or bank challenge to "resume" selection.
@@ -188,7 +196,7 @@ async function checkout(expectedDay=null,scheduled=false,basketOnly=false) {
   await trace.finish(output.status);await chrome.storage.local.set({checkoutResult:{...output,runId:trace.record.id,finishedAt:trace.record.finishedAt}});return output;
  } catch(e) {
   if(!trace)trace=startRun(chrome.storage.local,'checkout-preparation',slot?.date||londonDay());
-  await step('checkout-stopped',{...(e.basketDiagnostic?{basketDiagnostic:e.basketDiagnostic}:{})});await trace.finish('stopped');const output={status:'stopped',error:e.message,...(e.basketDiagnostic?{basketDiagnostic:e.basketDiagnostic}:{}),tabId:tab?.id,booked:false,paid:false,runId:trace.record.id};await chrome.storage.local.set({checkoutResult:output});
+  await step('checkout-stopped',{...(e.basketDiagnostic?{basketDiagnostic:e.basketDiagnostic}:{}),...(e.diagnostic?{diagnostic:e.diagnostic}:{})});await trace.finish('stopped');const output={status:'stopped',error:e.message,...(e.basketDiagnostic?{basketDiagnostic:e.basketDiagnostic}:{}),...(e.diagnostic?{diagnostic:e.diagnostic}:{}),tabId:tab?.id,booked:false,paid:false,runId:trace.record.id};await chrome.storage.local.set({checkoutResult:output});
   await chrome.action.setBadgeText({text:'!'});
   try{await chrome.notifications.create('tennis-checkout-stopped',{type:'basic',iconUrl:chrome.runtime.getURL('notification.png'),title:'Tennis checkout stopped',message:'Open the extension to inspect the result. No automatic payment was attempted.'});}catch{}
   return output;
