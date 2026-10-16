@@ -122,10 +122,10 @@ Notes below describe changes made *at each release*, not instructions to install
 ### v0.5.2 — historical paid-test control retired
 - Removed the dedicated £2.50 paid-test launch control while keeping the original paid journal and read-only receipt reconciliation available.
 
-### v0.5.0 — initial payment safety MVP
-- Scheduled availability → exact basket → card fill → durable one-submit journal → merchant payment reconciliation.
-- Historical recovery works after the release window and when the checkout tab has closed or card is locked.
-- A purchase row confirms payment but leaves active booking state unknown. See the [historical MVP release record](mvp-release.md).
+### v0.5.0 — initial payment safety MVP (13 October 2026)
+- The source path covered scheduled availability → exact basket → local-card fill → a durable, once-only Pay dispatch → merchant paid-evidence reconciliation. Successful simulation did **not** establish a complete unattended midnight booking.
+- A unique `PT`-prefixed Confirmed / Paid purchase with the exact amount was recognised against the live account DOM. Recovery was designed to survive a closed/stale checkout tab, an expired booking window and a locked card, while retaining the original dispatch marker, basket-verification timestamp and test-duplicate guard. Receipt-only recovery did not require card access.
+- The historical MVP report stated **50 passing local tests**, including a simulated two-hour checkout and worker recovery with a closed tab. This is a **historical assertion, not a current executed test count**. The installed extension still required a reload and live follow-up; the original £2.50 paid test had been manually cancelled, with no verified refund.
 
 ### v0.4.6 — first real £2.50 test charge
 - The extension filled Stripe's card form and submitted an authorized £2.50 Victoria Park test.
@@ -145,5 +145,5 @@ Notes below describe changes made *at each release*, not instructions to install
 - [Extension usage and recovery](../outputs/tennis-local/chrome-extension/README.md)
 - [Payment investigation and merchant DOM findings](payment-system.md) — detailed chronological evidence, including earlier superseded hypotheses
 - [Testing reliability proposal](test-improvement.md)
-- [Settings requirements](release-settings.md) — implemented requirements and original acceptance criteria
-- [Historical v0.5.0 MVP notes](mvp-release.md)
+- [Current booking policy](../README.md#default-booking-policy) — implemented settings and immutable job rules
+- [Settings and discount regression matrix](test-improvement.md#5-required-scenario-matrix) — requirements consolidated from the v0.8.0 settings specification
