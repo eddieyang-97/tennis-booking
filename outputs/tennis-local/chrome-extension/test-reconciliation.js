@@ -8,11 +8,11 @@ const slot=PAYMENT_TEST_SLOT,key=JSON.stringify([slot.venue,slot.date,slot.court
 const record={slot,test:true,key,reference:'100001',status:'pending',phase:'payment-uncertain',paymentDispatchedAt:'2026-10-13T00:00:00Z'};
 const source=fs.readFileSync(new URL('./checkout-content.js',import.meta.url),'utf8');
 const row=['Tue 13th Oct','PT100001','Confirmed','','£2.50','Paid ✔'];
-function purchase(rows=[row],headers=['Date','Ref','State','Info','Value',''],path='/account'){
+function purchase(rows=[row],headers=['Date','Ref','State','Info','Value',''],path='/account',readyState='complete'){
  let listener,reads=0;
  const node=text=>({textContent:text});
  const table={querySelectorAll:q=>q==='th'?headers.map(node):rows.map(cells=>({querySelectorAll:q=>{assert.equal(q,'td');return cells.map(node);}}))};
- const context={location:{origin:'https://tennistowerhamlets.com',pathname:path},document:{querySelector:q=>{assert.equal(q,'h1');reads++;return node('Welcome back, Test');},querySelectorAll:q=>{assert.equal(q,'table');reads++;return [table];}},chrome:{runtime:{id:'own',onMessage:{addListener:f=>listener=f}}}};
+ const context={location:{origin:'https://tennistowerhamlets.com',pathname:path},document:{readyState,querySelector:q=>{assert.equal(q,'h1');reads++;return node('Welcome back, Test');},querySelectorAll:q=>{assert.equal(q,'table');reads++;return [table];}},chrome:{runtime:{id:'own',onMessage:{addListener:f=>listener=f}}}};
  vm.runInNewContext(source,context);
  return {get reads(){return reads;},send(overrides={},id='own'){let result;listener({kind:'purchase-read',slot,key,reference:record.reference,paymentDispatchedAt:record.paymentDispatchedAt,...overrides},{id},r=>result=r);return result;}};
 }
@@ -26,6 +26,8 @@ test('test reset requires explicit Pending / Pay purchase evidence, never absent
  assert.equal(purchase([pending]).send(overrides).value.status,'unpaid');
  for(const rows of [[],[row],[pending,pending],[[...pending.slice(0,5),'Processing']],[[...pending.slice(0,4),'£7.00',pending[5]]]])assert.equal(purchase(rows).send(overrides).ok,false);
  assert.equal(purchase([pending],undefined,'/verify-human').send(overrides).humanRequired,true);
+ const loading=purchase([],undefined,'/account','loading');assert.equal(loading.send(overrides).notReady,true);assert.equal(loading.reads,0);
+ assert.match(purchase([]).send(overrides).error,/reference 100001: observed 0 matches/);
 });
 test('mixed-court paid history binds the complete hourly-court key and supports historical recovery',()=>{
  const mixed={venue:'victoria-park',date:'2026-10-20',court:2,courts:[2,3],start:'20:00',hours:2,totalGBP:'10.00'},mixedKey=slotKey(mixed);

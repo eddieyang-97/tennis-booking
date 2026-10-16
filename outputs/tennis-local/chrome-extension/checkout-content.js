@@ -32,7 +32,7 @@ function checkoutPurchase(slot,key,reference,paymentDispatchedAt,manualPaymentRe
  if(tables.length!==1)throw Error('Purchase history layout not verified');
  const rows=[...tables[0].querySelectorAll('tr')].map(row=>[...row.querySelectorAll('td')].map(e=>e.textContent.trim()));
  const matches=rows.filter(cells=>cells.length===6 && /^(?:PT)?\d+$/.test(cells[1]) && cells[1].replace(/^PT/,'')===reference);
- if(matches.length!==1)throw Error('Unique matching purchase not found; no payment retry');
+ if(matches.length!==1)throw Error(`Unique matching purchase not found for reference ${reference}: observed ${matches.length} matches; journal retained, no payment retry`);
  const cells=matches[0];
  if(testStatusOnly){if(cells[2]==='Pending'&&cells[4]===`£${slot.totalGBP}`&&cells[5]===`Pay £${slot.totalGBP}`)return {status:'unpaid',reference,totalGBP:slot.totalGBP};throw Error('Test purchase is paid or uncertain; preserve the journal');}
  if(cells[2]!=='Confirmed'||cells[4]!==`£${slot.totalGBP}`||!/^Paid\s*✔$/.test(cells[5]))throw Error('Matching purchase is not confirmed paid at the expected amount');
@@ -42,6 +42,7 @@ function checkoutPurchase(slot,key,reference,paymentDispatchedAt,manualPaymentRe
 }
 chrome.runtime.onMessage.addListener((request,sender,respond)=>{
  if(sender.id!==chrome.runtime.id || !['receipt-read','purchase-read','test-purchase-state'].includes(request.kind))return;
+ if(request.kind==='test-purchase-state'&&location.pathname==='/account'&&document.readyState&&document.readyState!=='complete'){respond({ok:false,notReady:true,error:'Account purchase history is still loading'});return;}
  if(['purchase-read','test-purchase-state'].includes(request.kind) && /\/(?:verify-human|sign-in|login)(?:\/|$)/.test(location.pathname)){respond({ok:false,error:'Account login or human verification required',humanRequired:true,page:'account-verification'});return;}
  if(['purchase-read','test-purchase-state'].includes(request.kind)&&location.pathname==='/account'&&document.readyState&&document.readyState!=='complete'&&!document.querySelector('h1')?.textContent.trim()){respond({ok:false,notReady:true,error:'Account DOM not ready'});return;}
  try{respond({ok:true,value:request.kind==='test-purchase-state'?checkoutPurchase(request.slot,request.key,request.reference,null,null,true):request.kind==='purchase-read'?checkoutPurchase(request.slot,request.key,request.reference,request.paymentDispatchedAt,request.manualPaymentReportedAt):checkoutReceipt(request.slot,request.key)});}catch(e){respond({ok:false,error:e.message});}

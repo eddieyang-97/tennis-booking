@@ -1,6 +1,8 @@
-# Tennis booking extension — v0.8.5 MVP
+# Tennis booking extension — v0.8.6 MVP
 
 ### Unpaid checkout verification
+
+v0.8.6 waits for the account document to finish loading before inspecting unpaid-test purchase history. A missing/duplicate match error now identifies the requested reference and matching row count. A completed page with no exact reference still blocks cleanup; the extension does not substitute another pending purchase based on its price.
 
 The popup restores the pending unpaid test's saved discount code. v0.8.5 automatically clears an unfinished unpaid test before restarting when its requested code or the latest checked date/preferences change. **Clear unfinished unpaid test** also performs this cleanup directly. No manual basket cleanup is needed for a verified unpaid test.
 
