@@ -9,7 +9,7 @@ document.querySelector('#create').addEventListener('submit',async event=>{
   await unlock(card);const url=URL.createObjectURL(new Blob([JSON.stringify(file)],{type:'application/json'}));
   const link=document.createElement('a');link.href=url;link.download='tennis-card.encrypted.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),10000);
   form.reset();status.textContent='Encrypted file downloaded. Card unlocked for this Chrome session. Close this setup tab and run the £2.50 test from the Courtside checkout.';
- }catch(error){status.textContent=error?.code?vaultErrorMessage(error):'Could not save the card. Check its fields and use a passphrase of at least 12 characters.';}
+ }catch(error){status.textContent=error?.code?vaultErrorMessage(error):'Could not save the card. Check its fields and use a passphrase of at least 6 characters.';}
 });
 document.querySelector('#unlock').addEventListener('submit',async event=>{
  event.preventDefault();const form=event.currentTarget;status.textContent='Unlocking…';

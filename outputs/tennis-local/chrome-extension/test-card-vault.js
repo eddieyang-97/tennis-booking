@@ -1,6 +1,14 @@
 import test from 'node:test';import assert from 'node:assert/strict';import vm from 'node:vm';import fs from 'node:fs';
 import {encryptCard,decryptCard,validateCard,readCardFile,unlockCardSession,vaultErrorMessage,paymentCard} from './card-vault-core.js';
 const dummy={number:'4242424242424242',expiry:'12/30',cvc:'123',postcode:'E1 1AA'};
+test('six-character passphrase round-trips and shorter values are rejected',async()=>{
+ const file=await encryptCard(dummy,'test-6');
+ assert.deepEqual(await decryptCard(file,'test-6'),dummy);
+ for(const pass of ['', '12345']){
+  await assert.rejects(encryptCard(dummy,pass),e=>e.code==='short_passphrase');
+  await assert.rejects(decryptCard(file,pass),e=>e.code==='short_passphrase');
+ }
+});
 test('encrypted local file round-trips without raw fields or passphrase',async()=>{const pass='dummy-test-passphrase';const file=await encryptCard(dummy,pass),serialized=JSON.stringify(file);for(const value of [...Object.values(dummy),pass])assert.equal(serialized.includes(value),false);assert.deepEqual(await decryptCard(file,pass),dummy);await assert.rejects(decryptCard(file,'wrong-test-passphrase'),e=>e.code==='authentication_failed');const changed={...file,ciphertext:(file.ciphertext[0]==='A'?'B':'A')+file.ciphertext.slice(1)};await assert.rejects(decryptCard(changed,pass),e=>e.code==='authentication_failed');assert.notEqual((await encryptCard(dummy,pass)).ciphertext,file.ciphertext);});
 test('invalid card fields and short passphrase do not produce a file',async()=>{assert.throws(()=>validateCard({...dummy,number:'4242424242424241'}),/Check card number/);assert.throws(()=>validateCard({...dummy,cvc:'1'}),/Check card/);assert.throws(()=>validateCard({...dummy,expiry:'13/30'}),/Check card/);await assert.rejects(encryptCard(dummy,'short'),/passphrase/);});
 test('file reading distinguishes missing, oversized and invalid JSON; accepts UTF-8 BOM',async()=>{

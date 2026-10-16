@@ -1,4 +1,14 @@
-# Tennis booking extension — v0.8.2 MVP
+# Tennis booking extension — v0.8.3 MVP
+
+### Unpaid checkout verification
+
+Cancel any armed job first. Choose a released date and preferences, then use **Check availability now**. Enter an optional discount code and click **Test discount and open checkout (no payment)** in Check and recover. Use this button directly rather than preparing an ordinary payable checkout first. It uses the last successful availability result and its saved settings. Card unlock is unnecessary.
+
+Success returns `checkout-test-passed`, `paymentBlocked: true`, `cardFilled: false` and the verified gross, discount and payable amounts. The test does not read the local card, fill Stripe or submit Pay. Its journal cannot be promoted into an automatic payment.
+
+For cleanup, use the merchant's **Cancel & return to basket**, remove the test items and any discount, check **I did not submit payment** in the extension, then **Reconcile cleared selection**. If you paid manually, preserve the journal and reconcile the receipt instead. Never attest that payment was not submitted if it was.
+
+v0.8.3 also reduces popup typography (13px body, 12px controls, 18px title), removes duplicate unarmed text and permits passphrases of at least six characters. Existing files retain their original passphrase. Regression tests cover one-time checkout opening, lost-response recovery, exact discounted amount matching, payment blocking and guarded cleanup. Live extension-triggered discount checkout acceptance remains pending.
 
 Runs in normal Chrome using your Courtside sign-in. It checks and books at London midnight, seven days before the selected playing date, then attempts payment. Any playing day; starts at 20:00 or 21:00. Bethnal Green Gardens precedes Victoria Park; two hours precede one, with consecutive hours in the same venue; switching courts is allowed, with same-court options tried first. Limits are £14 for two hours and £7 for one. Confirmed dates and unresolved checkouts block duplicate bookings. Each armed job runs once.
 
@@ -11,7 +21,7 @@ v0.5.9 closes the remaining scheduled account/basket timeout gap: read-only acco
 The midnight grid policy uses a 60-second budget per attempt and waits five seconds before one fresh retry. This applies both to the scheduled availability scan and its pre-selection grid read. Manual checks retain 20-second attempts and a 500 ms pause. A ready grid can be read before the whole page finishes loading. The scheduled scan proceeds immediately when the preferred venue has an eligible candidate; manual checks still inspect both venues. Sign-in/human verification and changed layouts stop without retries. Final failure retains a diagnostic tab and reports availability as unknown; no payment or selection is blindly retried. The extended budgets have not yet been validated under a real midnight traffic surge.
 
 1. Load this directory as an unpacked Chrome extension, or reload after updating. Reload any existing checkout tab to attach its scripts.
-2. Open **Set up or unlock card file**. Enter card number, expiry, CVC and billing postcode locally; choose a passphrase of at least 12 characters. Creation downloads `tennis-card.encrypted.json` and unlocks it for the current Chrome session.
+2. Open **Set up or unlock card file**. Enter card number, expiry, CVC and billing postcode locally; choose a passphrase of at least 6 characters. Creation downloads `tennis-card.encrypted.json` and unlocks it for the current Chrome session.
 3. Close setup, choose a future playing date, and use **Arm midnight booking and payment**. Unlock the existing file before subsequent sessions. Keep Chrome open and the laptop awake. Chrome restart or extension reload locks the card.
 
 The playing-date field defaults to London’s today plus eight days. It does not skip weekends automatically or change an already armed job; choose the desired playing date before arming. The armed response shows the saved date and release in UTC. During BST, 23:00Z means midnight London on the next calendar day. Preflight runs five minutes before release. An armed response does not mean preflight has passed or a booking has succeeded.

@@ -8,7 +8,7 @@ const vaultMessages={
  file_read:'The selected file could not be read. Select it again from your local disk.',
  invalid_json:'This is not a valid JSON file. Select the encrypted card file downloaded by this extension.',
  invalid_file:'This is not a supported encrypted tennis card file, or its encryption fields are damaged.',
- short_passphrase:'Enter the original file passphrase, including any spaces. It must be at least 12 characters.',
+ short_passphrase:'Enter the original file passphrase, including any spaces. It must be at least 6 characters.',
  authentication_failed:'The passphrase does not match this file, or the encrypted file has been changed. Try the original passphrase with the original downloaded file.',
  invalid_card:'The file decrypted, but its card fields are invalid. Create a new card file.',
  context_invalidated:'This setup tab is from an earlier extension reload. Close it and reopen card setup from the extension.',
@@ -45,7 +45,7 @@ export function validateCard(card) {
 const encode=bytes=>btoa(String.fromCharCode(...bytes));
 const decode=text=>Uint8Array.from(atob(text),c=>c.charCodeAt(0));
 async function key(password,salt) {
- if(typeof password!=='string'||password.length<12)throw new VaultError('short_passphrase');
+ if(typeof password!=='string'||password.length<6)throw new VaultError('short_passphrase');
  const material=await crypto.subtle.importKey('raw',new TextEncoder().encode(password),'PBKDF2',false,['deriveKey']);
  return crypto.subtle.deriveKey({name:'PBKDF2',salt,iterations:600000,hash:'SHA-256'},material,{name:'AES-GCM',length:256},false,['encrypt','decrypt']);
 }

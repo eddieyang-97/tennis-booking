@@ -9,8 +9,7 @@ export function readiness(status,now=Date.now()) {
  const lines=[`Version ${status.version||'unknown'}`,status.localCardUnlocked?'Card unlocked':'Card locked'];
  lines.push(pending?(submitted?'Pending payment: verify receipt before another booking':`Pending checkout (${pending.phase}): inspect or reconcile`):'No unresolved checkout');
  if(pending?.slot){const s=pending.slot;lines.push(`Pending: ${s.date} ${s.start}, ${s.hours}h, ${s.venue}, court ${s.courts?.join('/')||s.court}, gross £${s.totalGBP}`);}
- if(!status.job)lines.push('No midnight run armed');
- else{
+ if(status.job){
   const when=status.job.when,valid=Number.isFinite(when),release=valid?new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/London',dateStyle:'medium',timeStyle:'short'}).format(new Date(when)):'unknown';
   lines.push(`Playing ${status.job.day}; release ${release} London`);
   if(status.job.settings){const s=status.job.settings;lines.push(`${s.earliestStart}–${s.latestFinish}, prefer ${s.preferredHours}h, minimum ${s.minHours}h; cap £${s.maxTotalGBP}, 1h cap £${s.maxOneHourGBP}`);}else lines.push('Legacy job: original evening preferences');
