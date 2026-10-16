@@ -33,7 +33,7 @@ All preferences below are configurable in the popup. The saved job's settings sn
 | Price authorization | **£14 total** by default, with **£7 one-hour cap**; caps check gross price before any optional discount |
 | Duplication | A previously confirmed booking for the same playing date or unresolved checkout blocks a conflicting new checkout |
 
-Candidate priority is **venue → duration → court configuration**, not always two hours across all venues: a valid candidate in a higher-ranked venue can take priority over a longer booking at a fallback venue.
+Candidate priority is **venue → duration → earliest eligible start time → court configuration** (same court first for a given start). A valid candidate at a higher-ranked venue can take priority over a longer booking at a fallback venue.
 
 A scheduled two-hour selection may be treated as a one-hour booking **only** when the observed basket contains precisely one intended, authorized hour and the saved minimum duration, time and one-hour cap allow it. No extra click is issued to manufacture a fallback.
 
