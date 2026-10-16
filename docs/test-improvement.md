@@ -208,15 +208,15 @@ Use Playwright/Chromium to load the unpacked MV3 extension against the local sim
 | S10 | Missing, ambiguous or contradictory receipt/account evidence | Remain uncertain; retain reason and journal; no repeat charge | P0 |
 | S11 | Discount applied, then same retained tab loads/disconnects or read throws an unclassified error | One discount dispatch; classify observed/unknown state; bounded read-only recovery; never resubmit | P0 |
 | S12 | Six consecutive purchase-history cleanup rejections, then manual empty-basket reconciliation | No unsafe removals or false unpaid confirmation; explicit audit provenance and preserved history | P0 |
+| S13 | Service worker restarts with stale/closed tab | Read-only recovery; preserve payment guards and references | P1 |
+| S14 | Saved settings edited after arming or during pending checkout | Original authorization remains immutable | P1 |
+| S15 | DST boundary, missed alarm and late release | Correct London release; no unsafe late booking | P1 |
+| S16 | Multiple invocations or older pending checkout | No concurrent conflicting checkout, lost hold or double submission | P1 |
 | S17 | Account purchase page still loading, complete with zero matching reference, duplicated row or malformed state | Distinct blocker/diagnostic, no premature removal or inferred unpaid status | P0 |
 | S18 | Checkout open acknowledged, but card page appears after the old 15-second limit or shows a merchant error | Configured 60-second bounded readiness for both test and scheduled flows; one opening click; never assume completion | P0 |
 | S19 | Cleanup stops before its first merchant read while journal has no provisional reference | Precise logged reason and prescribed read-only/manual next action; no journal loss | P0 |
 | S20 | New export/build contains prior run's failure and a stale earlier `checkoutResult` | Attribute each run to its own version; deduplicate snapshots; show latest action separately from unresolved record | P0 |
 | S21 | Manual empty-basket reconciliation archives an opened, reference-bearing unpaid test | Record owner attestation distinctly from confirmed merchant-unpaid evidence; never imply paid/unpaid verification without supporting evidence | P0 |
-| S13 | Service worker restarts with stale/closed tab | Read-only recovery; preserve payment guards and references | P1 |
-| S14 | Saved settings edited after arming or during pending checkout | Original authorization remains immutable | P1 |
-| S15 | DST boundary, missed alarm and late release | Correct London release; no unsafe late booking | P1 |
-| S16 | Multiple invocations or older pending checkout | No concurrent conflicting checkout, lost hold or double submission | P1 |
 
 Every scenario should verify the *observable mutation trace*, recovery decision and expected durable state. Explicitly label cases proven only by simulation versus reproduced against the real merchant.
 
