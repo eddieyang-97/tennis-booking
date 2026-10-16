@@ -1,6 +1,8 @@
-# Tennis booking extension — v0.8.3 MVP
+# Tennis booking extension — v0.8.4 MVP
 
 ### Unpaid checkout verification
+
+v0.8.4 restores the pending unpaid test's saved discount code when the popup opens. Changing a code cannot silently modify an unfinished test: resume it with its saved code, or clear its basket and reconcile before starting another test.
 
 Cancel any armed job first. Choose a released date and preferences, then use **Check availability now**. Enter an optional discount code and click **Test discount and open checkout (no payment)** in Check and recover. Use this button directly rather than preparing an ordinary payable checkout first. It uses the last successful availability result and its saved settings. Card unlock is unnecessary.
 

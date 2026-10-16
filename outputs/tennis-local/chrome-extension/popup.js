@@ -17,7 +17,7 @@ async function refresh(initial=false,show=false){
  field('readiness').textContent=[view.summary,...view.lines].join('\n');
  field('armBlocker').textContent=view.armBlocker||'';
  field('cardStatus').textContent=status.localCardUnlocked?'Local card: unlocked for this Chrome session.':'Local card: locked. Open card setup and unlock the file first.';
- if(initial&&!formEdited){writeSettings(status.job?.settings||status.bookingSettings||DEFAULT_SETTINGS);field('discountCode').value=status.job?.discountCode||'';}
+ if(initial&&!formEdited){const pendingTest=status.checkoutRecords?.find(record=>record.status!=='confirmed'&&record.checkoutTestOnly);writeSettings(status.job?.settings||status.bookingSettings||DEFAULT_SETTINGS);field('discountCode').value=status.job?.discountCode??pendingTest?.discountCode??'';}
  if(show)output.textContent=JSON.stringify(status,null,2);
 }
 async function send(kind){output.textContent='Checking…';try{

@@ -245,7 +245,7 @@ async function testDiscountCheckout(code='') {
  if(saved.job)throw Error('Cancel the scheduled run before running an unpaid checkout test');
  let record=(saved.checkoutRecords||[]).find(r=>r.status!=='confirmed');
  if(record&&!record.checkoutTestOnly)throw Error('Resolve the existing checkout before starting an unpaid checkout test');
- if(record&&(record.discountCode||'')!==discountCode)throw Error('The pending test uses a different discount code; finish or clear that test first');
+ if(record&&(record.discountCode||'')!==discountCode)throw Error('An unfinished checkout test is saved with '+(record.discountCode?'another discount code':'no discount code')+'. Reopen the popup to restore its saved code and resume. To change the code, cancel checkout on the site, remove the test items and discount, confirm you did not pay, then Reconcile cleared selection.');
  if(!record){const prepared=await checkout(null,false,false,discountCode,null,true);if(prepared.status!=='checkout-test-prepared')return prepared;}
  if(busy)throw Error('Another run is active');busy=true;
  try{

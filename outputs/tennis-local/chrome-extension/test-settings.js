@@ -47,6 +47,9 @@ test('popup sends real settings, preserves edits across status refresh and expos
  const context={normalizeSettings,DEFAULT_SETTINGS,londonDay:()=> '2026-10-13',addDays,readiness,releasePreview,document:{querySelector:q=>elements[q.slice(1)],querySelectorAll:()=>Object.values(elements),createElement:()=>({})},chrome:{runtime:{sendMessage:async message=>{calls.push(structuredClone(message));return message.kind==='status'?structuredClone(state):{status:'preferences-saved'};}}}};
  vm.createContext(context);vm.runInContext(source.replace(/^import .*;\r?\n/gm,''),context);await context.refresh(true);
  assert.equal(elements.earliestStart.value,'09:00');assert.equal(elements.day.value,'2026-10-21');assert.equal(elements.result.textContent,'');
+ state.checkoutRecords=[{status:'pending',checkoutTestOnly:true,phase:'awaiting-payment',discountCode:'TESTCODE'}];await context.refresh(true);assert.equal(elements.discountCode.value,'TESTCODE');
+ elements.discountCode.value='EDITED';await context.refresh();assert.equal(elements.discountCode.value,'EDITED');
+ state.checkoutRecords[0].discountCode='';await context.refresh(true);assert.equal(elements.discountCode.value,'');
  elements.earliestStart.value='08:00';elements.maxTotalGBP.value='22.00';await context.send('saveSettings');
  assert.equal(calls.at(-2).settings.earliestStart,'08:00');assert.equal(calls.at(-2).settings.maxTotalGBP,'22.00');assert.equal(elements.earliestStart.value,'08:00');assert.match(elements.result.textContent,/preferences-saved/);
  await context.refresh(false,true);assert.match(elements.result.textContent,/checkoutRecords/);
