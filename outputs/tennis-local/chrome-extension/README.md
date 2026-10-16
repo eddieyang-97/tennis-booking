@@ -1,10 +1,12 @@
-# Tennis booking extension — v0.8.7 MVP
+# Tennis booking extension — v0.8.8 MVP
 
 ### Download logs for debugging
 
 In **Check and recover**, click **Download diagnostic log** and attach the downloaded `tennis-booking-log-<timestamp>.json` file in the chat. The export includes the installed version, job/search settings, current results, checkout records (including reference and phase), archived tests and bounded timestamped run history. It includes only the status response, never raw browser session storage. Known card fields, passphrases and discount-code values are removed; booking references and court details remain for diagnosis. The file is saved locally, with no automatic upload or additional extension permissions. Do not publish account-specific logs in the repository.
 
 ### Unpaid checkout verification
+
+v0.8.8 fixes manual reconciliation after automatic test cleanup stops in `test-cleanup-checking` or `test-cleanup-removing`. These test-only phases can be archived after an explicitly confirmed unpaid test and a verified empty basket. Payment dispatch/manual-payment markers and ordinary checkout journals still block this fallback.
 
 v0.8.6 waits for the account document to finish loading before inspecting unpaid-test purchase history. A missing/duplicate match error now identifies the requested reference and matching row count. A completed page with no exact reference still blocks cleanup; the extension does not substitute another pending purchase based on its price.
 

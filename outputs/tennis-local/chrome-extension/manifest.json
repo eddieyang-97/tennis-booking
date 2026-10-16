@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Tennis booking",
-  "version": "0.8.7",
+  "version": "0.8.8",
   "description": "Book tennis at London midnight with an unlocked local card file, exact price limits and payment reconciliation.",
   "permissions": [
     "storage",

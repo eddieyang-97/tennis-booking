@@ -48,6 +48,14 @@ test('reference-bearing unpaid test cleanup requires explicit attestation and ne
  assert.throws(()=>reconcileClearedSelection([{...record,checkoutTestOnly:false}],empty,options));
  for(const marker of ['paymentDispatchedAt','manualPaymentReportedAt'])assert.throws(()=>reconcileClearedSelection([{...record,[marker]:'2026-10-16T08:00:00Z'}],empty,options));
  assert.throws(()=>reconcileClearedSelection([record],gross,options),/Remove/);
+ for(const phase of ['test-cleanup-checking','test-cleanup-removing']){
+  const stopped={...record,phase};
+  assert.throws(()=>reconcileClearedSelection([stopped],empty),/preserve payment/);
+  assert.equal(reconcileClearedSelection([stopped],empty,options).checkoutRecords.length,0);
+  assert.throws(()=>reconcileClearedSelection([stopped],gross,options),/Remove/);
+  for(const marker of ['paymentDispatchedAt','manualPaymentReportedAt'])assert.throws(()=>reconcileClearedSelection([{...stopped,[marker]:'2026-10-16T08:00:00Z'}],empty,options));
+  assert.throws(()=>reconcileClearedSelection([{...stopped,checkoutTestOnly:false}],empty,options));
+ }
 });
 
 function cleanupFixture(overrides={}){
