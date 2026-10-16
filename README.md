@@ -37,6 +37,8 @@ Candidate priority is **venue → duration → earliest eligible start time → 
 
 A scheduled two-hour selection may be treated as a one-hour booking **only** when the observed basket contains precisely one intended, authorized hour and the saved minimum duration, time and one-hour cap allow it. No extra click is issued to manufacture a fallback.
 
+Supported configuration is limited to **whole-hour, same-day London windows** and **one- or two-hour** durations. Reversed/empty/overnight/fractional ranges, unsupported venues, invalid/nonpositive caps and duplicate/unsupported preferences are rejected. Totals are compared in integer pence. A blank discount code follows ordinary checkout; a provided code is applied at most once and must be verified against every basket item, gross subtotal, explicit discount and net payable. Zero-cost card checkout is not supported. These acceptance requirements are covered in the [testing plan](docs/test-improvement.md#settings-and-discount-regression-contract-carried-forward-from-v080-requirements).
+
 The popup initially suggests London today + 8 days; it does not automatically change an already armed date. Nightly runs are one-shot, not a recurring weekly subscription.
 
 ## Execution and safety model
@@ -90,8 +92,7 @@ Storage is split between persistent `chrome.storage.local` (jobs, journals, resu
 - [Payment-system investigation](docs/payment-system.md) — merchant DOM contracts, failures and historical technical findings; earlier hypotheses may be superseded
 - [Test improvement proposal](docs/test-improvement.md) — prioritized reliability/testing work and acceptance gates
 - [Distribution flow](docs/distribution-flow.md) — friend beta, gated on proven unattended booking, and optional later Chrome Web Store rollout
-- [Settings requirements](docs/release-settings.md) — implemented requirements and original acceptance criteria
-- [Historical v0.5.0 MVP release](docs/mvp-release.md) — historical snapshot, **not** the current release status
+- [Historical MVP and settings releases](docs/release-notes.md) — retained v0.5.0/v0.8.0 release evidence; current booking rules are described above
 
 ## Repository boundaries
 
