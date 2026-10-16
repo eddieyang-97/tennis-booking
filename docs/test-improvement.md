@@ -2,7 +2,8 @@
 
 **Status:** Proposed; no implementation in this document  
 **Reviewed source:** `main` at `5aa63506a000d4adf05a7e8b8e635cab1b513dbd` (16 October 2026), extension v0.8.9  
-**Scope:** Chrome extension in `outputs/tennis-local/chrome-extension/`
+**Scope:** Chrome extension in `outputs/tennis-local/chrome-extension/`  
+**Evidence update:** Four private diagnostic exports from 16 October 2026, spanning installed versions v0.8.7–v0.8.9. Only sanitized findings are included here; original logs must not be committed.
 
 ## Executive summary
 
@@ -39,6 +40,21 @@ Recent fixes have been driven by live browser failures, manual extension reloads
 
 Sources: [README](../README.md), [payment system findings](payment-system.md), [MVP release](mvp-release.md). Live and simulated evidence are deliberately distinguished in those documents.
 
+### Follow-up: four installed-extension diagnostic exports (16 October 2026)
+
+These are **successive snapshots of one persisted browser history**, not four independent acceptance runs. Each `runHistory` entry includes the extension **version when the run happened**; a later export's top-level `version` only identifies the currently installed build. In particular, v0.8.9 contains the earlier v0.8.8 checkout timeout; **no v0.8.9 checkout-opening retest is evidenced**.
+
+| Observed UTC time / source version | Evidence from journal and run steps | Testing and diagnosis gap |
+| --- | --- | --- |
+| 08:53–09:03, v0.8.7–v0.8.8 | **Six** `unpaid-test-cleanup` runs stopped after a `test-purchase-state` read returned `ok:false` (first with tab loading; later reads reported complete). No actual row-match/error detail appears in the run step. | Distinguish transient loading, missing/ambiguous reference, changed merchant layout, and unsafe paid state. Report the exact sanitized blocker rather than only `cleanup-stopped`. |
+| 09:04, v0.8.8 | The previously reference-bearing unpaid test was archived as `selection-cleared` after the repeated cleanup stops; its archived record does not contain `cleanupUnpaidVerifiedAt`. | Test **positive merchant-unpaid verification vs explicit owner-attested/manual abandonment** as different provenance, without claiming that an empty basket proves unpaid. |
+| 09:05, v0.8.8 | After `discount-dispatched`, a same-tab basket read failed with `PAGE_TAB_ERROR`, `operation:message-read`, `readState:unclassified-tab-error`, while the tab route remained the requested basket and load state was `loading`. | Inject post-discount navigation/message failure, require no duplicate discount POST, and test bounded read-only observation and accurate reason reporting. Underlying Chrome error is unknown. |
+| 09:06, v0.8.8 | Two correct BGG hourly items (£10 gross) and a verified £7 discount (£3 payable) were observed. Checkout-opening command returned `ok:true`, but **15-second** card readiness timed out. Journal stayed `checkout-test-opening` without a reference; no Pay dispatch. | Separate **opening command acknowledged** from **card page ready**; test late appearance, merchant-error page, missing provisional reference, and recovery without repeating the click. |
+| 09:15, v0.8.9 | Another unpaid-test cleanup stopped within the same second with only `started`, `cleanup-stopped` and `finished`. The earlier v0.8.8 timeout remained in `checkoutResult`. | Preserve a failure reason and actionable recovery status for every command, including failure before any merchant read. Prevent an older success/failure result from masquerading as the most recent action. |
+
+The logs **do not establish** the cause of the missing purchase row, the precise Chrome message failure, whether the acknowledged checkout actually reached a usable card page later, or whether the archived test's purchase was merchant-verified unpaid. Do not encode any of those hypotheses as facts or publish the original account references.
+
+
 ## 2. Main gaps
 
 ### A. Tests often bypass the integration boundary that fails in practice
@@ -64,6 +80,18 @@ The suite covers many named edge cases, but a new incident often produces anothe
 Repeated extension reloads, card unlocks, midnight waiting, live site verification, and manual test-basket cleanup should not be routine regression steps.
 
 **Direction:** Make quick, scenario and browser tests runnable locally or in CI without real site credentials, court reservations or payments.
+
+### E. Stale results and missing root causes obscure recovery
+
+A test may finish with a success result, followed by several failed cleanup actions while `checkoutResult` still shows the earlier result. Runs may contain `page-read: ok:false` or `cleanup-stopped` without the source error, even when the tab load is complete. A version upgrade can also be mistaken for proof the prior failure was retested.
+
+**Direction:** Track **latest action result**, **current unresolved journal**, and **historical run result** separately. Propagate stable redacted failure codes and first failing operation into the run trace, retaining run-time code version. Add diagnostic-export comparison tooling that deduplicates runs by `runId` and displays which installed version actually executed each case.
+
+### F. Manual abandonment needs explicit evidence provenance
+
+The logs include a reference-bearing unpaid test archived under `selection-cleared` without a stored merchant-unpaid-verification timestamp. This does not establish that the purchase was paid; it establishes that the archive cannot be presented as merchant-verified unpaid. The existing manual attestation path is a different evidence standard from observing a unique Pending / Pay row.
+
+**Direction:** Model and test those recovery methods separately: `merchant-unpaid-verified`, `owner-attested-no-payment` and `unresolved`. Record the basis for any archive, prevent stale/incorrect attestations, and never silently convert a merchant-unknown outcome into confirmed unpaid. Keep actual payment and manual-payment holds non-clearable by test-only controls.
 
 ## 3. Testing philosophy and safeguards
 
@@ -119,6 +147,9 @@ Create an in-process/local fake merchant that implements just the site-visible c
 - Checkout-opening state, provisional booking reference and card-page readiness.
 - Fake Pay dispatch and account purchase history.
 - Optional authentication, human-check route and merchant error state.
+- Purchase-history page which is still loading, fully loaded with **zero** matching references, duplicated matches, exact Pending / Pay match, or unexpected layout.
+- After a discount POST, temporary navigation/loading and lost content-script messages on the **same retained tab**; the merchant may have applied the code despite the read failure.
+- Checkout-opening command acknowledged before a delayed card page, merchant error, abandoned navigation, or provisional-reference appearance.
 
 The simulator must be configurable with event timelines, side-effect counters and injectable failures. Example scenario:
 
@@ -153,6 +184,8 @@ For each mutation boundary (hour selection, discount apply, checkout opening, un
 
 Consider concurrent popup/alarm entry points and interrupted writes. Assert phase transitions, durable journal contents, allowed next actions and counts of external mutations. Avoid relying only on `status === "stopped"`.
 
+For cleanup and checkout-opening specifically, test recovery across **multiple attempts and extension upgrades** with the same journal: repeated read failures must not mutate or erase the record; a later merchant observation may permit a safe next step; a failed cleanup must not leave the UI displaying an earlier test success as its last action. Drive scenarios with a fake clock so that 15-second vs 60-second readiness policies and a late card-page arrival are deterministic, rather than sleeping in real time.
+
 ### Layer 5 — real-extension browser integration
 
 Use Playwright/Chromium to load the unpacked MV3 extension against the local simulator and exercise the true service worker, messaging, tabs, alarms and page adapters. Run release logic with an injected clock or explicit test-only alarm trigger; do not wait for midnight.
@@ -173,8 +206,13 @@ Use Playwright/Chromium to load the unpacked MV3 extension against the local sim
 | S08 | Worker interrupted immediately before/after Pay dispatch | No second Pay; reconcile account/receipt after restart | P0 |
 | S09 | Manual payment after extension stopped before recording reference | Explicit reference report + unique paid account verification; never invent dispatch | P0 |
 | S10 | Missing, ambiguous or contradictory receipt/account evidence | Remain uncertain; retain reason and journal; no repeat charge | P0 |
-| S11 | Discount application response lost or net total changed | One application only; exact gross/net/item validation; otherwise stop | P1 |
-| S12 | Unpaid cleanup interrupted or basket changed | Remove only positively verified test items; otherwise stop with preserved journal | P1 |
+| S11 | Discount applied, then same retained tab loads/disconnects or read throws an unclassified error | One discount dispatch; classify observed/unknown state; bounded read-only recovery; never resubmit | P0 |
+| S12 | Six consecutive purchase-history cleanup rejections, then manual empty-basket reconciliation | No unsafe removals or false unpaid confirmation; explicit audit provenance and preserved history | P0 |
+| S17 | Account purchase page still loading, complete with zero matching reference, duplicated row or malformed state | Distinct blocker/diagnostic, no premature removal or inferred unpaid status | P0 |
+| S18 | Checkout open acknowledged, but card page appears after the old 15-second limit or shows a merchant error | Configured 60-second bounded readiness for both test and scheduled flows; one opening click; never assume completion | P0 |
+| S19 | Cleanup stops before its first merchant read while journal has no provisional reference | Precise logged reason and prescribed read-only/manual next action; no journal loss | P0 |
+| S20 | New export/build contains prior run's failure and a stale earlier `checkoutResult` | Attribute each run to its own version; deduplicate snapshots; show latest action separately from unresolved record | P0 |
+| S21 | Manual empty-basket reconciliation archives an opened, reference-bearing unpaid test | Record owner attestation distinctly from confirmed merchant-unpaid evidence; never imply paid/unpaid verification without supporting evidence | P0 |
 | S13 | Service worker restarts with stale/closed tab | Read-only recovery; preserve payment guards and references | P1 |
 | S14 | Saved settings edited after arming or during pending checkout | Original authorization remains immutable | P1 |
 | S15 | DST boundary, missed alarm and late release | Correct London release; no unsafe late booking | P1 |
@@ -204,7 +242,7 @@ Keep existing journal protections, but normalize recovery classification. Sugges
 }
 ~~~
 
-These are **proposed** fields, not a description of today's stored schema. Diagnostics should include expected/actual sanitized slot identities, relative timings, route category, loading state, reference presence (not raw tokens), whether a mutation was dispatched, and exact reason that safe recovery did/did not proceed.
+These are **proposed** fields, not a description of today's stored schema. Diagnostics should include expected/actual sanitized slot identities, relative timings, route category, loading state, reference presence (not raw tokens), whether a mutation was dispatched, and exact reason that safe recovery did/did not proceed. For every `cleanup-stopped`, `page-read: ok:false`, or early handler rejection, persist an allowlisted reason code (e.g. purchase-row-missing vs account-loading vs reference-unavailable), not a raw merchant response. Include an explicit **evidence provenance** field for archived tests: uniquely verified unpaid purchase vs owner attestation. Keep historical `checkoutResult` separate from latest action status and unresolved journal status.
 
 ### Separate recovery outcomes
 
@@ -227,6 +265,8 @@ Do not automatically convert uncertain to failed, paid to booked, or cancelled t
 - `run-log.js` and `diagnostics.js` should produce easy-to-read stage-level failure and recovery summaries while maintaining safe redaction and bounded retention.
 
 Consider a **read-only recovery assessment** button that reports the next permitted action without clearing state, selecting a court or touching payment. Existing controls should remain guarded.
+
+**Log-to-regression workflow:** Add a local analyzer that accepts multiple sanitized exports, deduplicates `runHistory` by `runId`, compares journals chronologically, and emits a **proposed scenario skeleton** identifying source version, observed phases, missing evidence and mutation counts. Do not treat JSON run logs as a full behavioral replay: reproducing merchant state, exact DOM, and unknown network outcomes still requires independently constructed fake-merchant/HTML fixtures. All real booking references and private dumps stay outside Git.
 
 ## 7. Developer experience and CI
 
@@ -251,14 +291,15 @@ Maintain a small `test/fixtures` and `test/scenarios` catalog with readable name
 ### PR 1 — Make failures reproducible and diagnosable (P0)
 
 **Scope**
-- Introduce stable safe error codes and recovery classifications.
-- Capture expected/actual basket and checkout evidence at existing stop boundaries.
+- Introduce stable safe error codes and recovery classifications, especially for cleanup and account-purchase response failures.
+- Capture expected/actual basket and checkout evidence at existing stop boundaries; distinguish latest action result from historical success and unresolved journal.
+- Record the provenance of cleanup/abandonment (merchant-unpaid evidence versus explicit user attestation), particularly for reference-bearing tests.
 - Create sanitized fixtures/reproductions for the 14–16 October failures.
 - Add a scenario command and concise failure report, even if the initial scenarios use direct module testing.
 
 **Done when**
 - A checkout/basket failure reports exactly which identity or lifecycle invariant failed.
-- Known failures have named offline reproductions.
+- Known failures, including repeated reference-lookup cleanup failures, post-discount same-tab read loss and checkout-open acknowledgement without card readiness, have named offline reproductions.
 - Existing payment guards and tests remain unchanged in semantics.
 - No sensitive DOM, card details or private tokens enter committed fixtures.
 
@@ -266,12 +307,12 @@ Maintain a small `test/fixtures` and `test/scenarios` catalog with readable name
 
 **Scope**
 - Implement the minimal merchant model and worker restart harness.
-- Add the S01–S10 P0 scenarios, with injected failures at every relevant persistence/dispatch boundary.
+- Add the S01–S12 and S17–S21 P0 scenarios, with injected failures at every relevant persistence/dispatch boundary; move any non-critical coverage into P1 only by explicit decision.
 - Assert per-journal mutation counts and no-repeat guarantees.
 - Document legal recovery transitions and clarify missing vs conflicting evidence.
 
 **Done when**
-- All P0 failures are reproduced deterministically.
+- All P0 failures are reproduced deterministically, including a sequence of repeated recovery attempts over the same journal and version change.
 - Every payment dispatch interruption retains the no-second-Pay invariant.
 - The simulated happy path reaches paid-evidence reconciliation.
 - Test runs require no credentials, owner interaction or real court availability.
@@ -295,7 +336,9 @@ Maintain a small `test/fixtures` and `test/scenarios` catalog with readable name
 ## 9. Acceptance criteria and live validation
 
 **Automated release gate**
-- All known October failures have deterministic scenarios.
+- All known October failures have deterministic scenarios, including the six-stop cleanup loop, lost post-discount read response, and ambiguous acknowledged checkout opening.
+- Every stopped run emits an actionable sanitized failure reason; exported build version is not conflated with each historical run's recorded version.
+- Reference-bearing test archives distinguish merchant-confirmed unpaid evidence from explicit user attestation, and never equate empty basket with proof of unpaid state.
 - All relevant mutation boundaries have crash/lost-response coverage.
 - Zero duplicate Pay dispatches or unauthorized basket/removal mutations in the test suite.
 - Exact slot and gross/net payment authorization across all tested flows.
