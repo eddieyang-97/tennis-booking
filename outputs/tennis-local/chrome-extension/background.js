@@ -94,16 +94,24 @@ async function arm(day,mode='availability',code='',settings=null) {
 }
 function checkoutCommands(tabId) {
  const command=async request=>{const response=await chrome.tabs.sendMessage(tabId,request);if(request.kind==='payment-open')await step('checkout-open-response',{tabId,ok:response?.ok===true,...(response?.routeCategory?{routeCategory:response.routeCategory}:{})});if(!response?.ok)throw Error(response?.error||'Checkout response unavailable');return response.value;};
- const state=async()=>{const current=await readTab(()=>chrome.tabs.get(tabId));const url=new URL(current.url);if(url.origin!==BASE||!['/basket','/basket/pay/card'].includes(url.pathname))throw Error('Checkout left supported payment pages; inspect retained tab');return readTab(()=>command({kind:'payment-state'}));};
+ let lastProgress;
+ const state=async()=>{const current=await readTab(()=>chrome.tabs.get(tabId));const url=new URL(current.url);if(url.origin!==BASE)throw Error('Checkout left the trusted site; inspect retained tab');
+  const progress=await readTab(()=>command({kind:'checkout-progress'}));
+  const evidence={stage:progress.stage,loadState:progress.loadState,merchantError:progress.merchantError===true,...(progress.reference?{reference:progress.reference,totalGBP:progress.totalGBP}:{})},fingerprint=JSON.stringify(evidence);
+  if(fingerprint!==lastProgress){await step('checkout-page-progress',{tabId,...evidence});lastProgress=fingerprint;}
+  if(progress.merchantError)throw Error('Merchant reported Something went wrong while opening checkout; no repeat request sent');
+  if(progress.stage==='other-page')throw Error('Checkout left supported payment pages; inspect retained tab');
+  if(progress.stage!=='card')throw Error('Not the card checkout');return progress;
+ };
  return {command,state};
 }
 async function openStoredCheckout(record,tabId,scheduled,save) {
  const {command,state}=checkoutCommands(tabId);
- await step('card-page-readiness',{timeoutMs:pageReadBudget(scheduled)});
+ const timeoutMs=60000;await step('card-page-readiness',{timeoutMs});
  return openVerifiedCheckout(record,{
   current:()=>readTab(()=>chrome.tabs.get(tabId)),save,command,state,
   read:async()=>{const response=await readPageState(chrome.tabs,BASE+'/basket',{kind:'basket-read'},{tabId,navigate:false,timeoutMs:pageReadBudget(scheduled),step});if(!response.ok)throw Error(response.error);await step('checkout-basket-verified',{tabId,...basketEvidence(response.value,record.slot)});return response.value;}
- },{timeoutMs:pageReadBudget(scheduled)});
+ },{timeoutMs});
 }
 
 async function automaticPayment(test=false,scheduled=false) {
@@ -302,7 +310,7 @@ async function testDiscountCheckout(code='') {
   const result={status:'checkout-test-passed',slot:record.slot,grossTotalGBP:record.slot.totalGBP,discountGBP:record.discount?.discountGBP||'0.00',payableGBP:payableSlot(record).totalGBP,checkoutOpened:true,paymentBlocked:true,cardFilled:false,booked:false,paid:false,runId:trace.record.id,finishedAt:trace.record.finishedAt};
   await chrome.storage.local.set({checkoutResult:result});return result;
  }catch(error){
-  if(trace){await step('stopped');await trace.finish('stopped');}
+  if(trace){await step('stopped',{errorCode:/Merchant reported/.test(error.message)?'MERCHANT_CHECKOUT_ERROR':/timed out/.test(error.message)?'CHECKOUT_READY_TIMEOUT':'CHECKOUT_TEST_STOPPED'});await trace.finish('stopped');}
   const result={status:'stopped',error:error.message,paymentBlocked:true,booked:false,paid:false,runId:trace?.record.id};await chrome.storage.local.set({checkoutResult:result});return result;
  }finally{busy=false;trace=null;resumedTab=null;}
 }

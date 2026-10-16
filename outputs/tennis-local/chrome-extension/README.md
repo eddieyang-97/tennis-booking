@@ -1,10 +1,12 @@
-# Tennis booking extension — v0.8.8 MVP
+# Tennis booking extension — v0.8.9 MVP
 
 ### Download logs for debugging
 
 In **Check and recover**, click **Download diagnostic log** and attach the downloaded `tennis-booking-log-<timestamp>.json` file in the chat. The export includes the installed version, job/search settings, current results, checkout records (including reference and phase), archived tests and bounded timestamped run history. It includes only the status response, never raw browser session storage. Known card fields, passphrases and discount-code values are removed; booking references and court details remain for diagnosis. The file is saved locally, with no automatic upload or additional extension permissions. Do not publish account-specific logs in the repository.
 
 ### Unpaid checkout verification
+
+v0.8.9 gives card-page opening a bounded 60-second wait for both manual and scheduled paths. The read-only `checkout-progress` adapter reports route category, document readiness and a recognised merchant error without reading Stripe values or copying page text. Transition logs record the verified total/reference when present. A merchant “Something went wrong” page stops with an explicit error rather than being treated as an ordinary loading delay. Checkout opening is still dispatched once; the existing matching card page can be resumed without another click. This improves diagnosis and slow-page handling, but does not establish the cause of a merchant server error or silently remove a requested discount.
 
 v0.8.8 fixes manual reconciliation after automatic test cleanup stops in `test-cleanup-checking` or `test-cleanup-removing`. These test-only phases can be archived after an explicitly confirmed unpaid test and a verified empty basket. Payment dispatch/manual-payment markers and ordinary checkout journals still block this fallback.
 

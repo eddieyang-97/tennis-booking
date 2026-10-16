@@ -8,9 +8,14 @@ function paymentState() {
  return {totalGBP:match[1],reference,enabled:!pay.disabled,linkFramePresent};
 }
 chrome.runtime.onMessage.addListener((request,sender,respond)=>{
- if(sender.id!==chrome.runtime.id || !['test-remove-next','discount-apply','payment-state','payment-open','payment-submit'].includes(request.kind))return;
+ if(sender.id!==chrome.runtime.id || !['checkout-progress','test-remove-next','discount-apply','payment-state','payment-open','payment-submit'].includes(request.kind))return;
  try {
   if(request.kind==='payment-state')return respond({ok:true,value:paymentState()});
+  if(request.kind==='checkout-progress'){
+   const merchantError=/something went wrong/i.test(document.body.innerText||'');
+   if(!merchantError&&location.pathname==='/basket/pay/card')return respond({ok:true,value:{stage:'card',loadState:document.readyState,...paymentState()}});
+   return respond({ok:true,value:{stage:location.pathname==='/basket'?'basket':'other-page',loadState:document.readyState,merchantError}});
+  }
   if(request.kind==='test-remove-next'){
    if(location.pathname!=='/basket'||JSON.stringify(basketSummary())!==JSON.stringify(request.expected))throw Error('Basket changed before test cleanup');
    const discount=document.querySelector('a[href="/basket/discount-remove"]');

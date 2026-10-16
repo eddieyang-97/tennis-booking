@@ -1,5 +1,11 @@
 # Payment system findings and development handoff
 
+## Discount checkout opening evidence (16 October, v0.8.8–0.8.9)
+
+The owner export verifies a two-hour BGG basket at gross £10, a £7 discount and net £3. The single checkout-opening command was acknowledged, but the card-page read timed out after 15 seconds. The owner reports a merchant error page and manually returning to the basket. Later live inspection found a £3 card page with a provisional reference and disabled Pay; this proves the discounted card page can exist, not that the original failed request eventually succeeded. No card filling or payment submission occurred in the unpaid test. The merchant error's underlying cause remains unverified.
+
+v0.8.9 waits up to 60 seconds while logging safe page-state transitions and explicitly identifies the known merchant error phrase on trusted-site pages. Opening clicks are not automatically replayed. Existing matching card pages can be resumed and validated against the saved net amount. Do not clear a checkout-opening marker or reapply a discount merely because a generic page error occurred.
+
 ## Automatic unpaid-test cleanup (v0.8.5)
 
 Unpaid test retries now clear a verified prior test automatically when the discount code, checked date or saved search preferences change; an explicit cleanup button uses the same path. Ordinary checkout/payment journals are excluded. Remaining basket items must match the test's venue/date/hour/court subset and accounting; unrelated items block removal. The extension commits a removal fingerprint before each single UI dispatch, observes the resulting basket and archives the test only after verified emptiness. Lost responses are reconciled by observation without replaying an unchanged removal.

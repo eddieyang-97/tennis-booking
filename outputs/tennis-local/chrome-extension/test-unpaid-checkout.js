@@ -7,6 +7,7 @@ import {clearUnpaidTest} from './test-cleanup.js';
 import {slotKey} from './core.js';
 import vm from 'node:vm';
 import fs from 'node:fs';
+import {waitPaymentState} from './page-read.js';
 
 const slot={venue:'victoria-park',date:'2026-10-22',court:4,courts:[4,1],start:'12:00',hours:2,totalGBP:'10.00'};
 const settings={schemaVersion:1,venues:['victoria-park'],earliestStart:'09:00',latestFinish:'22:00',preferredHours:2,minHours:1,maxTotalGBP:'14.00',maxOneHourGBP:'7.00',allowCourtSwitch:true};
@@ -119,4 +120,19 @@ test('removal content handler uses observed item control and refuses changed bas
  vm.runInNewContext(fs.readFileSync(new URL('./payment-content.js',import.meta.url),'utf8'),context);
  const send=value=>{let result;listener({kind:'test-remove-next',expected:value},{id:'own'},r=>result=r);return result;};
  assert.equal(send({...expected,totalGBP:'14.00'}).ok,false);assert.equal(clicks,0);assert.equal(send(expected).ok,true);assert.equal(clicks,1);
+});
+test('checkout progress reads only safe page state and reports merchant errors without clicking',()=>{
+ let listener,clicks=0;
+ const context={location:{pathname:'/basket'},document:{readyState:'complete',body:{innerText:'Something went wrong'},querySelector:()=>({click:()=>clicks++})},chrome:{runtime:{id:'own',onMessage:{addListener:fn=>listener=fn}}}};
+ vm.runInNewContext(fs.readFileSync(new URL('./payment-content.js',import.meta.url),'utf8'),context);
+ const send=()=>{let result;listener({kind:'checkout-progress'},{id:'own'},r=>result=r);return result;};
+ assert.equal(send().value.merchantError,true);assert.equal(send().value.stage,'basket');assert.equal(clicks,0);
+ context.location.pathname='/error';assert.equal(send().value.merchantError,true);assert.equal(send().value.stage,'other-page');
+ context.document.body.innerText='Basket';assert.equal(send().value.merchantError,false);
+});
+test('a slow card page can arrive after fifteen seconds within the extended bounded wait',async()=>{
+ let now=0,reads=0;
+ const page=await waitPaymentState(async()=>{reads++;if(now<18000)throw Error('Not the card checkout');return {reference:'100001',totalGBP:'3.00'};},{timeoutMs:60000,now:()=>now,delay:async ms=>now+=ms});
+ assert.equal(page.totalGBP,'3.00');assert.ok(now>=18000&&now<60000);assert.ok(reads>30);
+ await assert.rejects(waitPaymentState(async()=>{throw Error('Merchant reported Something went wrong');},{timeoutMs:60000,now:()=>now,delay:async()=>{throw Error('Unexpected retry');}}),/Merchant reported/);
 });
