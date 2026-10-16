@@ -95,7 +95,7 @@ Notes below describe changes made *at each release*, not instructions to install
 - Installed test evidence from 15 October showed the two-hour daytime £10 basket prepared successfully.
 
 ### v0.6.1 — daytime two-hour basket-only test
-- Added **Test 09:00–11:00 basket (no payment)** for an eligible released date, testing two hours at the selected venue (mixed courts allowed), capped at £14.
+- Added **Test 09:00–11:00 basket (no payment)** for an eligible released date, searching Bethnal Green Gardens then Victoria Park for two hours (mixed courts allowed), capped at £14.
 - Basket-only records block all payment paths. The owner must remove basket items and reconcile the cleared selection manually.
 
 ### v0.6.0 — serialized hourly selection
