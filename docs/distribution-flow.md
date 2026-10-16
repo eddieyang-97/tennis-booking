@@ -34,7 +34,7 @@ This gate calls for **at least one complete, genuinely unattended paid live acce
 
 ## 3. Phase 1 — direct ZIP for one friend
 
-**Trigger:** Begin implementation immediately after `1's acceptance gate is satisfied. **Current state:** Not started / blocked on the gate and payment-security review.
+**Trigger:** Begin implementation immediately after the acceptance gate in §1 is satisfied. **Current state:** Not started / blocked on the gate and payment-security review.
 
 ### Already available
 
