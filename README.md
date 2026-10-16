@@ -89,6 +89,7 @@ Storage is split between persistent `chrome.storage.local` (jobs, journals, resu
 - [Release notes](docs/release-notes.md) — version history and dated live acceptance evidence
 - [Payment-system investigation](docs/payment-system.md) — merchant DOM contracts, failures and historical technical findings; earlier hypotheses may be superseded
 - [Test improvement proposal](docs/test-improvement.md) — prioritized reliability/testing work and acceptance gates
+- [Distribution flow](docs/distribution-flow.md) — friend beta, gated on proven unattended booking, and optional later Chrome Web Store rollout
 - [Settings requirements](docs/release-settings.md) — implemented requirements and original acceptance criteria
 - [Historical v0.5.0 MVP release](docs/mvp-release.md) — historical snapshot, **not** the current release status
 
