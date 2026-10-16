@@ -20,6 +20,13 @@ test('account purchase confirms exact PT reference and amount after cancellation
  const result=purchase().send();assert.equal(result.ok,true);assert.equal(result.value.reference,'100001');assert.equal(result.value.bookingState,'unknown');assert.equal(result.value.source,'account-purchase');
  const confirmed=confirmCheckout(record,result.value);assert.equal(confirmed.status,'confirmed');assert.equal(confirmed.paymentDispatchedAt,record.paymentDispatchedAt);assert.equal(confirmed.bookingState,'unknown');
 });
+test('test reset requires explicit Pending / Pay purchase evidence, never absent or paid history',()=>{
+ const overrides={kind:'test-purchase-state',paymentDispatchedAt:undefined};
+ const pending=[row[0],row[1],'Pending','2 courts','£2.50','Pay £2.50'];
+ assert.equal(purchase([pending]).send(overrides).value.status,'unpaid');
+ for(const rows of [[],[row],[pending,pending],[[...pending.slice(0,5),'Processing']],[[...pending.slice(0,4),'£7.00',pending[5]]]])assert.equal(purchase(rows).send(overrides).ok,false);
+ assert.equal(purchase([pending],undefined,'/verify-human').send(overrides).humanRequired,true);
+});
 test('mixed-court paid history binds the complete hourly-court key and supports historical recovery',()=>{
  const mixed={venue:'victoria-park',date:'2026-10-20',court:2,courts:[2,3],start:'20:00',hours:2,totalGBP:'10.00'},mixedKey=slotKey(mixed);
  const read=purchase([[row[0],row[1],row[2],'','£10.00',row[5]]]).send({slot:mixed,key:mixedKey});assert.equal(read.ok,true);

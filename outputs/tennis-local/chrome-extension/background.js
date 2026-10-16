@@ -12,6 +12,7 @@ import {readGrid,gridReadPolicy} from './grid-read.js';
 import {readPageState,pageReadBudget,waitPaymentState} from './page-read.js';
 import {normalizeDiscount,ensureDiscount,payableSlot} from './discount.js';
 import {normalizeSettings,pendingArmBlocker} from './booking-settings.js';
+import {clearUnpaidTest} from './test-cleanup.js';
 const linkFrames=createLinkFrames(chrome.tabs,{step:(name,detail)=>step(name,detail)});
 const BASE='https://tennistowerhamlets.com';
 let busy=false;
@@ -239,13 +240,47 @@ async function checkout(expectedDay=null,scheduled=false,basketOnly=false,discou
 function paidResult(record) {
  return {status:'confirmed',slot:record.slot,totalPaidGBP:payableSlot(record).totalGBP,discountApplied:!!record.discount,manualPayment:!!record.manualPaymentReportedAt,reference:record.reference,confirmedAt:record.confirmedAt,receiptSource:record.receiptSource,bookingState:record.bookingState,booked:record.bookingState==='confirmed'?true:null,paid:true};
 }
+async function resetUnpaidTest(){
+ if(busy)throw Error('Another run is active');busy=true;
+ let tab;
+ try{
+  const {checkoutRecords=[],abandonedCheckouts=[],job}=await chrome.storage.local.get(['checkoutRecords','abandonedCheckouts','job']);
+  if(job)throw Error('Cancel the scheduled run before clearing an unpaid test');
+  const pending=checkoutRecords.filter(r=>r.status!=='confirmed');if(pending.length!==1)throw Error('No unique unfinished unpaid test to clear');
+  let record=pending[0];trace=newRun('unpaid-test-cleanup',record.slot.date);await step('started');
+  const store=async value=>{record=value;await chrome.storage.local.set({checkoutRecords:checkoutRecords.map(r=>r.key===value.key?value:r)});await step(value.phase);};
+  const read=async()=>{
+   if(!tab)tab=await chrome.tabs.create({url:BASE+'/basket',active:false});
+   const response=await readPageState(chrome.tabs,BASE+'/basket',{kind:'basket-read'},{tabId:tab.id,navigate:false,timeoutMs:15000,step});if(!response.ok)throw Error(response.error);await step('test-cleanup-basket-observed',basketEvidence(response.value,record.slot));return response.value;
+  };
+  await clearUnpaidTest(record,{
+   save:store,read,
+   closeCheckout:async value=>{
+    let reference=value.reference;
+    const tabs=await chrome.tabs.query({url:BASE+'/basket/pay/card'});
+    for(const candidate of tabs){
+     const response=await chrome.tabs.sendMessage(candidate.id,{kind:'payment-state'});
+     if(!response?.ok)throw Error('Cannot verify an open checkout; test reset stopped');
+     if(candidate.id===value.tabId&&!reference){reference=response.value.reference;await store({...record,reference});}
+     if(reference&&response.value.reference===reference){await chrome.tabs.remove(candidate.id);await step('test-checkout-tab-closed');}
+    }
+    return reference;
+   },
+   purchase:async value=>{const response=await readPage(BASE+'/account',{kind:'test-purchase-state',slot:payableSlot(value),key:value.key,reference:value.reference});if(!response.ok)throw Error(response.error);await step('test-unpaid-purchase-verified');return response.value;},
+   remove:async expected=>{await step('test-cleanup-removal-dispatched',{items:expected.items.length,discount:expected.discountApplied===true});const response=await chrome.tabs.sendMessage(tab.id,{kind:'test-remove-next',expected});if(!response?.ok)throw Error(response?.error||'Test removal response unavailable');},
+   archive:async abandoned=>{await chrome.storage.local.set({checkoutRecords:checkoutRecords.filter(r=>r.key!==abandoned.key),abandonedCheckouts:[...abandonedCheckouts,abandoned]});}
+  });
+  await trace.finish('test-auto-cleared');return {status:'test-auto-cleared',basketCleared:true,booked:false,paid:false,runId:trace.record.id};
+ }catch(error){if(trace){await step('cleanup-stopped');await trace.finish('stopped');}throw error;}
+ finally{if(tab)await chrome.tabs.remove(tab.id).catch(()=>{});busy=false;trace=null;resumedTab=null;}
+}
 async function testDiscountCheckout(code='') {
  if(busy)throw Error('Another run is active');
- const discountCode=normalizeDiscount(code),saved=await chrome.storage.local.get(['checkoutRecords','job']);
+ const discountCode=normalizeDiscount(code),saved=await chrome.storage.local.get(['checkoutRecords','job','result']);
  if(saved.job)throw Error('Cancel the scheduled run before running an unpaid checkout test');
  let record=(saved.checkoutRecords||[]).find(r=>r.status!=='confirmed');
  if(record&&!record.checkoutTestOnly)throw Error('Resolve the existing checkout before starting an unpaid checkout test');
- if(record&&(record.discountCode||'')!==discountCode)throw Error('An unfinished checkout test is saved with '+(record.discountCode?'another discount code':'no discount code')+'. Reopen the popup to restore its saved code and resume. To change the code, cancel checkout on the site, remove the test items and discount, confirm you did not pay, then Reconcile cleared selection.');
+ if(record&&((record.discountCode||'')!==discountCode||(saved.result?.status==='complete'&&(saved.result.day!==record.slot.date||JSON.stringify(saved.result.settings||null)!==JSON.stringify(record.settings||null)))||record.phase?.startsWith('test-cleanup-'))){await resetUnpaidTest();record=null;}
  if(!record){const prepared=await checkout(null,false,false,discountCode,null,true);if(prepared.status!=='checkout-test-prepared')return prepared;}
  if(busy)throw Error('Another run is active');busy=true;
  try{
@@ -379,6 +414,7 @@ chrome.runtime.onMessage.addListener((message,sender,respond)=>{
     if(message.kind==='prepareCheckout')return checkout();
     if(message.kind==='daytimeBasketTest')return checkout(message.day,false,true);
     if(message.kind==='testDiscountCheckout')return testDiscountCheckout(message.discountCode);
+    if(message.kind==='resetUnpaidTest')return resetUnpaidTest();
     if(message.kind==='verifyPayment')return verifyPayment();
     if(message.kind==='reconcileManualPayment')return verifyPayment(false,message.reference||'');
     if(message.kind==='openCardVault'){await chrome.tabs.create({url:chrome.runtime.getURL('card-vault.html'),active:true});return {status:'local-card-setup-opened'};}
@@ -413,7 +449,7 @@ chrome.runtime.onMessage.addListener((message,sender,respond)=>{
      return {...status,localCardUnlocked,version:chrome.runtime.getManifest().version};
     }
     throw Error('Unknown action');
-  })().then(respond,e=>{const uncertain=['verifyPayment','reconcileManualPayment','armPayment','payCheckout'].includes(message.kind);respond({status:'stopped',error:e.message,...(e.code?{errorCode:e.code}:{}),...(e.attemptedDay?{attemptedDay:e.attemptedDay}:{}),booked:uncertain?null:false,paid:uncertain?null:false});}); return true;
+  })().then(respond,e=>{const uncertain=['verifyPayment','reconcileManualPayment','armPayment','payCheckout','resetUnpaidTest','testDiscountCheckout'].includes(message.kind);respond({status:'stopped',error:e.message,...(e.code?{errorCode:e.code}:{}),...(e.attemptedDay?{attemptedDay:e.attemptedDay}:{}),booked:uncertain?null:false,paid:uncertain?null:false});}); return true;
 });
 // Recreate one-shot alarms after restart without starting a missed release.
 async function restoreReleaseJob() {

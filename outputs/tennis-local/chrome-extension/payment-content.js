@@ -8,9 +8,19 @@ function paymentState() {
  return {totalGBP:match[1],reference,enabled:!pay.disabled,linkFramePresent};
 }
 chrome.runtime.onMessage.addListener((request,sender,respond)=>{
- if(sender.id!==chrome.runtime.id || !['discount-apply','payment-state','payment-open','payment-submit'].includes(request.kind))return;
+ if(sender.id!==chrome.runtime.id || !['test-remove-next','discount-apply','payment-state','payment-open','payment-submit'].includes(request.kind))return;
  try {
   if(request.kind==='payment-state')return respond({ok:true,value:paymentState()});
+  if(request.kind==='test-remove-next'){
+   if(location.pathname!=='/basket'||JSON.stringify(basketSummary())!==JSON.stringify(request.expected))throw Error('Basket changed before test cleanup');
+   const discount=document.querySelector('a[href="/basket/discount-remove"]');
+   if(discount){discount.click();return respond({ok:true});}
+   const anchors=[...document.querySelectorAll('a[href^="#item-"]')];
+   const item=anchors.length?document.getElementById(anchors[0].getAttribute('href').slice(1)):null;
+   const links=item?[...item.querySelectorAll('a')].filter(a=>a.textContent.trim()==='Remove'&&/^\/basket\/remove\/[a-f0-9]{32}$/.test(a.getAttribute('href')||'')):[];
+   if(links.length!==1)throw Error('Test item removal control unavailable');
+   links[0].click();return respond({ok:true});
+  }
   if(request.kind==='discount-apply') {
    if(location.pathname!=='/basket'||JSON.stringify(basketSummary())!==JSON.stringify(request.expected))throw Error('Basket changed before discount');
    if(typeof request.code!=='string'||!/^[A-Za-z0-9_-]{1,10}$/.test(request.code))throw Error('Invalid discount code');

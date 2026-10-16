@@ -16,7 +16,7 @@ export async function waitPaymentState(read,{timeoutMs=15000,accept=()=>true,now
 // Only known read-only adapters. No card, selection, checkout-opening or Pay
 // messages are accepted. A failed read retains its tab; navigation is once.
 export async function readPageState(tabs,url,request,{tabId=null,navigate=true,timeoutMs=15000,messageTimeoutMs=2000,now=Date.now,delay=ms=>new Promise(r=>setTimeout(r,ms)),timers=globalThis,step=async()=>{}}={}) {
- const path={'account':'/account','purchase-read':'/account','basket-read':'/basket'}[request.kind];
+ const path={'account':'/account','purchase-read':'/account','test-purchase-state':'/account','basket-read':'/basket'}[request.kind];
  if(!path||url!==BASE+path)throw Error('Invalid read-only page request');
  if(!navigate&&(tabId===null||request.kind!=='basket-read'))throw Error('Existing-tab reads require a basket tab');
  const reused=tabId!==null;let tab,retain=reused,operation='navigation',last={loadState:'unknown',routeCategory:'loading',readState:'not-probed'};

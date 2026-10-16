@@ -1,14 +1,16 @@
-# Tennis booking extension — v0.8.4 MVP
+# Tennis booking extension — v0.8.5 MVP
 
 ### Unpaid checkout verification
 
-v0.8.4 restores the pending unpaid test's saved discount code when the popup opens. Changing a code cannot silently modify an unfinished test: resume it with its saved code, or clear its basket and reconcile before starting another test.
+The popup restores the pending unpaid test's saved discount code. v0.8.5 automatically clears an unfinished unpaid test before restarting when its requested code or the latest checked date/preferences change. **Clear unfinished unpaid test** also performs this cleanup directly. No manual basket cleanup is needed for a verified unpaid test.
+
+Cleanup validates the remaining basket as a subset of that test, removes an applied test discount then each item through the site's observed controls, and verifies an empty basket before archiving the journal. It records each removal before dispatch; an unacknowledged removal is not clicked repeatedly. For tests that opened checkout, matching card tabs are closed and the exact purchase reference must appear explicitly as Pending / Pay at the expected amount before and after cleanup. A missing, paid, mismatched or ambiguous purchase, authentication failure, unrelated basket item or actual payment marker preserves the journal and stops automatic reset. It never cancels a paid booking or clears an ordinary paid-run journal. Historical test records are retained for diagnosis.
 
 Cancel any armed job first. Choose a released date and preferences, then use **Check availability now**. Enter an optional discount code and click **Test discount and open checkout (no payment)** in Check and recover. Use this button directly rather than preparing an ordinary payable checkout first. It uses the last successful availability result and its saved settings. Card unlock is unnecessary.
 
 Success returns `checkout-test-passed`, `paymentBlocked: true`, `cardFilled: false` and the verified gross, discount and payable amounts. The test does not read the local card, fill Stripe or submit Pay. Its journal cannot be promoted into an automatic payment.
 
-For cleanup, use the merchant's **Cancel & return to basket**, remove the test items and any discount, check **I did not submit payment** in the extension, then **Reconcile cleared selection**. If you paid manually, preserve the journal and reconcile the receipt instead. Never attest that payment was not submitted if it was.
+If automatic cleanup cannot establish an unpaid state, inspect the retained record. The manual fallback remains: use the merchant's **Cancel & return to basket**, remove the test items and any discount, check **I did not submit payment** in the extension, then **Reconcile cleared selection**. If you paid manually, preserve the journal and reconcile the receipt instead. Never attest that payment was not submitted if it was.
 
 v0.8.3 also reduces popup typography (13px body, 12px controls, 18px title), removes duplicate unarmed text and permits passphrases of at least six characters. Existing files retain their original passphrase. Regression tests cover one-time checkout opening, lost-response recovery, exact discounted amount matching, payment blocking and guarded cleanup. Live extension-triggered discount checkout acceptance remains pending.
 

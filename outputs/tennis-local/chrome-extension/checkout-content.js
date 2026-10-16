@@ -21,10 +21,10 @@ function checkoutReceipt(slot,key) {
  if(!duration.test(text) && !end.test(text))throw Error('Receipt duration not verified');
  return {status:'confirmed',key,reference,source:'booking-receipt',bookingState:'confirmed'};
 }
-function checkoutPurchase(slot,key,reference,paymentDispatchedAt,manualPaymentReportedAt) {
+function checkoutPurchase(slot,key,reference,paymentDispatchedAt,manualPaymentReportedAt,testStatusOnly=false) {
  if(location.origin!=='https://tennistowerhamlets.com'||location.pathname!=='/account')throw Error('Open the Courtside account page');
  if(!/^Welcome back,/.test(document.querySelector('h1')?.textContent.trim()||''))throw Error('Account login or human verification required');
- if(!/^\d+$/.test(reference||'')||(!Number.isFinite(Date.parse(paymentDispatchedAt))&&!Number.isFinite(Date.parse(manualPaymentReportedAt)))||key!==JSON.stringify([slot.venue,slot.date,slot.courts||slot.court,slot.start,slot.hours]))throw Error('Dispatched or manually reported checkout identity required');
+ if(!/^\d+$/.test(reference||'')||(!testStatusOnly&&!Number.isFinite(Date.parse(paymentDispatchedAt))&&!Number.isFinite(Date.parse(manualPaymentReportedAt)))||key!==JSON.stringify([slot.venue,slot.date,slot.courts||slot.court,slot.start,slot.hours]))throw Error('Dispatched or manually reported checkout identity required');
  const tables=[...document.querySelectorAll('table')].filter(table=>{
   const headers=[...table.querySelectorAll('th')].map(e=>e.textContent.trim());
   return headers.length===6&&headers.slice(0,5).join('|')==='Date|Ref|State|Info|Value'&&headers[5]==='';
@@ -34,14 +34,15 @@ function checkoutPurchase(slot,key,reference,paymentDispatchedAt,manualPaymentRe
  const matches=rows.filter(cells=>cells.length===6 && /^(?:PT)?\d+$/.test(cells[1]) && cells[1].replace(/^PT/,'')===reference);
  if(matches.length!==1)throw Error('Unique matching purchase not found; no payment retry');
  const cells=matches[0];
+ if(testStatusOnly){if(cells[2]==='Pending'&&cells[4]===`£${slot.totalGBP}`&&cells[5]===`Pay £${slot.totalGBP}`)return {status:'unpaid',reference,totalGBP:slot.totalGBP};throw Error('Test purchase is paid or uncertain; preserve the journal');}
  if(cells[2]!=='Confirmed'||cells[4]!==`£${slot.totalGBP}`||!/^Paid\s*✔$/.test(cells[5]))throw Error('Matching purchase is not confirmed paid at the expected amount');
  // A cancelled booking can still have a paid purchase. The purchase row
  // establishes transaction payment, never active court/cancellation/refund.
  return {status:'confirmed',key,reference,source:'account-purchase',bookingState:'unknown'};
 }
 chrome.runtime.onMessage.addListener((request,sender,respond)=>{
- if(sender.id!==chrome.runtime.id || !['receipt-read','purchase-read'].includes(request.kind))return;
- if(request.kind==='purchase-read' && /\/(?:verify-human|sign-in|login)(?:\/|$)/.test(location.pathname)){respond({ok:false,error:'Account login or human verification required',humanRequired:true,page:'account-verification'});return;}
- if(request.kind==='purchase-read'&&location.pathname==='/account'&&document.readyState&&document.readyState!=='complete'&&!document.querySelector('h1')?.textContent.trim()){respond({ok:false,notReady:true,error:'Account DOM not ready'});return;}
- try{respond({ok:true,value:request.kind==='purchase-read'?checkoutPurchase(request.slot,request.key,request.reference,request.paymentDispatchedAt,request.manualPaymentReportedAt):checkoutReceipt(request.slot,request.key)});}catch(e){respond({ok:false,error:e.message});}
+ if(sender.id!==chrome.runtime.id || !['receipt-read','purchase-read','test-purchase-state'].includes(request.kind))return;
+ if(['purchase-read','test-purchase-state'].includes(request.kind) && /\/(?:verify-human|sign-in|login)(?:\/|$)/.test(location.pathname)){respond({ok:false,error:'Account login or human verification required',humanRequired:true,page:'account-verification'});return;}
+ if(['purchase-read','test-purchase-state'].includes(request.kind)&&location.pathname==='/account'&&document.readyState&&document.readyState!=='complete'&&!document.querySelector('h1')?.textContent.trim()){respond({ok:false,notReady:true,error:'Account DOM not ready'});return;}
+ try{respond({ok:true,value:request.kind==='test-purchase-state'?checkoutPurchase(request.slot,request.key,request.reference,null,null,true):request.kind==='purchase-read'?checkoutPurchase(request.slot,request.key,request.reference,request.paymentDispatchedAt,request.manualPaymentReportedAt):checkoutReceipt(request.slot,request.key)});}catch(e){respond({ok:false,error:e.message});}
 });
