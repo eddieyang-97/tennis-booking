@@ -1,5 +1,6 @@
 import test from 'node:test';import assert from 'node:assert/strict';import vm from 'node:vm';import fs from 'node:fs';
 import {DEFAULT_SETTINGS,normalizeSettings,gbpPence,pendingArmBlocker} from './booking-settings.js';import {candidates,addDays} from './core.js';import {checkoutKey,prepareCheckout,singleHourFallback} from './checkout.js';import {payCheckout} from './payment.js';import {recoveryIdentity} from './reconciliation.js';import {readiness,releasePreview} from './readiness.js';
+import {diagnosticExport,diagnosticFilename} from './diagnostics.js';
 const preferences=()=>normalizeSettings({venues:['victoria-park'],earliestStart:'09:00',latestFinish:'12:00',preferredHours:2,minHours:1,maxTotalGBP:'20.00',maxOneHourGBP:'10.00',allowCourtSwitch:true});
 const slot={venue:'victoria-park',date:'2026-10-20',court:1,start:'09:00',hours:2,totalGBP:'18.00'};
 const basket={empty:false,items:[9,10].map(hour=>({venue:'Victoria Park',court:1,day:20,month:10,hour,priceGBP:'9.00'})),totalGBP:'18.00',paymentBoundary:true};
@@ -44,7 +45,8 @@ test('popup sends real settings, preserves edits across status refresh and expos
  const html=fs.readFileSync(new URL('./popup.html',import.meta.url),'utf8'),source=fs.readFileSync(new URL('./popup.js',import.meta.url),'utf8');
  const elements=Object.fromEntries([...html.matchAll(/id="([^"]+)"/g)].map(([,id])=>[id,{value:'',checked:false,textContent:'',listeners:{},append(){},addEventListener(event,fn){this.listeners[event]=fn;}}]));
  let state={localCardUnlocked:false,checkoutRecords:[],bookingSettings:preferences()},calls=[];
- const context={normalizeSettings,DEFAULT_SETTINGS,londonDay:()=> '2026-10-13',addDays,readiness,releasePreview,document:{querySelector:q=>elements[q.slice(1)],querySelectorAll:()=>Object.values(elements),createElement:()=>({})},chrome:{runtime:{sendMessage:async message=>{calls.push(structuredClone(message));return message.kind==='status'?structuredClone(state):{status:'preferences-saved'};}}}};
+ const downloads=[],revoked=[];
+ const context={normalizeSettings,DEFAULT_SETTINGS,diagnosticExport,diagnosticFilename,Blob,URL:{createObjectURL:blob=>{downloads.push({blob});return 'blob:test-log';},revokeObjectURL:url=>revoked.push(url)},setTimeout:fn=>fn(),londonDay:()=> '2026-10-13',addDays,readiness,releasePreview,document:{querySelector:q=>elements[q.slice(1)],querySelectorAll:()=>Object.values(elements),createElement:tag=>tag==='a'?{click(){Object.assign(downloads.at(-1),{href:this.href,filename:this.download});}}:{}},chrome:{runtime:{sendMessage:async message=>{calls.push(structuredClone(message));return message.kind==='status'?structuredClone(state):{status:'preferences-saved'};}}}};
  vm.createContext(context);vm.runInContext(source.replace(/^import .*;\r?\n/gm,''),context);await context.refresh(true);
  assert.equal(elements.earliestStart.value,'09:00');assert.equal(elements.day.value,'2026-10-21');assert.equal(elements.result.textContent,'');
  state.checkoutRecords=[{status:'pending',checkoutTestOnly:true,phase:'awaiting-payment',discountCode:'TESTCODE'}];await context.refresh(true);assert.equal(elements.discountCode.value,'TESTCODE');
@@ -53,7 +55,16 @@ test('popup sends real settings, preserves edits across status refresh and expos
  elements.earliestStart.value='08:00';elements.maxTotalGBP.value='22.00';await context.send('saveSettings');
  assert.equal(calls.at(-2).settings.earliestStart,'08:00');assert.equal(calls.at(-2).settings.maxTotalGBP,'22.00');assert.equal(elements.earliestStart.value,'08:00');assert.match(elements.result.textContent,/preferences-saved/);
  await context.refresh(false,true);assert.match(elements.result.textContent,/checkoutRecords/);
+ await elements.downloadLog.listeners.click();assert.match(downloads[0].filename,/^tennis-booking-log-.*\.json$/);assert.equal(downloads[0].href,'blob:test-log');assert.equal(revoked[0],'blob:test-log');
+ const exported=JSON.parse(await downloads[0].blob.text());assert.ok(exported.exportedAt);assert.equal(exported.format,'tennis-booking-diagnostics');assert.equal(exported.checkoutRecords[0].discountCode,'');assert.match(elements.result.textContent,/downloaded/);
  elements.latestFinish.value='07:00';const count=calls.length;await context.send('armPayment');assert.equal(calls.length,count);assert.match(elements.result.textContent,/Time range/);
+});
+test('diagnostic download preserves reference and trace evidence while excluding card data and codes',()=>{
+ const status={version:'0.8.7',localCardUnlocked:true,localPaymentCard:{number:'4242424242424242'},session:{passphrase:'private'},job:{discountCode:'PRIVATE-CODE',day:'2026-10-22'},checkoutRecords:[{reference:'100001',phase:'test-cleanup-checking',slot:{court:1,date:'2026-10-22'},passphrase:'hidden',card:{number:'4242424242424242',cvc:'123'},discountCode:'PRIVATE-CODE'}],runHistory:[{steps:[{at:'2026-10-16T09:00:00Z',name:'cleanup-stopped',error:'Card 4242 4242 4242 4242 CXC-EXAMPLE'}]}]};
+ const result=diagnosticExport(status,new Date('2026-10-16T09:00:00Z')),json=JSON.stringify(result);
+ for(const secret of ['4242','PRIVATE-CODE','CXC-EXAMPLE','hidden','private','"cvc"'])assert.equal(json.includes(secret),false);
+ assert.equal(result.checkoutRecords[0].reference,'100001');assert.equal(result.runHistory[0].steps[0].name,'cleanup-stopped');assert.equal(result.localCardUnlocked,true);assert.equal(status.job.discountCode,'PRIVATE-CODE');assert.equal(diagnosticFilename(result),'tennis-booking-log-2026-10-16T09-00-00-000Z.json');
+ assert.throws(()=>diagnosticExport({status:'stopped',error:'Unavailable'}),/Unavailable/);
 });
 test('future-release guidance and prior-checkout blockers identify separate dates and recovery actions',()=>{
  const now=Date.parse('2026-10-13T12:00:00Z');assert.match(releasePreview('2026-10-21',now),/14 Oct 2026, 00:00 London/);assert.match(releasePreview('2026-10-20',now),/already released/);assert.match(releasePreview('invalid',now),/valid playing date/);

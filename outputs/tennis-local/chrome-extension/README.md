@@ -1,4 +1,8 @@
-# Tennis booking extension — v0.8.6 MVP
+# Tennis booking extension — v0.8.7 MVP
+
+### Download logs for debugging
+
+In **Check and recover**, click **Download diagnostic log** and attach the downloaded `tennis-booking-log-<timestamp>.json` file in the chat. The export includes the installed version, job/search settings, current results, checkout records (including reference and phase), archived tests and bounded timestamped run history. It includes only the status response, never raw browser session storage. Known card fields, passphrases and discount-code values are removed; booking references and court details remain for diagnosis. The file is saved locally, with no automatic upload or additional extension permissions. Do not publish account-specific logs in the repository.
 
 ### Unpaid checkout verification
 

@@ -1,6 +1,7 @@
 import {londonDay,addDays} from './core.js';
 import {normalizeSettings,DEFAULT_SETTINGS} from './booking-settings.js';
 import {readiness,releasePreview} from './readiness.js';
+import {diagnosticExport,diagnosticFilename} from './diagnostics.js';
 const field=id=>document.querySelector('#'+id),day=field('day'),output=field('result');
 let formEdited=false;
 day.value=addDays(londonDay(),8);
@@ -33,4 +34,15 @@ for(const kind of ['openCardVault','payCheckout','armPayment','check','resume','
 for(const control of document.querySelectorAll('input,select'))control.addEventListener('input',()=>{formEdited=true;});
 field('preferredHours').addEventListener('change',()=>{if(Number(field('minHours').value)>Number(field('preferredHours').value))field('minHours').value=field('preferredHours').value;});
 field('showStatus').addEventListener('click',()=>refresh(false,true).catch(error=>output.textContent=error.message));
+async function downloadDiagnostics(){
+ output.textContent='Preparing diagnostic log…';let url;
+ try{
+  const status=await chrome.runtime.sendMessage({kind:'status'}),exported=diagnosticExport(status);
+  url=URL.createObjectURL(new Blob([JSON.stringify(exported,null,2)],{type:'application/json'}));
+  const link=document.createElement('a');link.href=url;link.download=diagnosticFilename(exported);link.click();
+  output.textContent='Diagnostic log downloaded. Attach the JSON file in this chat. Booking references and court details are included; card details, passphrases and discount codes are excluded.';
+ }catch(error){output.textContent=error.message;}
+ finally{if(url)setTimeout(()=>URL.revokeObjectURL(url),10000);}
+}
+field('downloadLog').addEventListener('click',()=>downloadDiagnostics());
 refresh(true).catch(error=>{field('readiness').textContent='Status unavailable';output.textContent=error.message;});
