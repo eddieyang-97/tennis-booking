@@ -38,7 +38,7 @@ Recent fixes have been driven by live browser failures, manual extension reloads
 | 16 Oct discount checkout test | Checkout open was acknowledged, but card-page readiness timed out; merchant error observed | Opening outcome can be ambiguous even without any Pay attempt |
 | Earlier £2.50 paid test | Pay outcome initially uncertain; account history subsequently verified paid | Durable dispatch protection worked, but receipt recovery is essential |
 
-Sources: [README](../README.md), [payment system findings](payment-system.md), [MVP release](mvp-release.md). Live and simulated evidence are deliberately distinguished in those documents.
+Sources: [README](../README.md), [payment system findings](payment-system.md), and [release history](release-notes.md). Live and simulated evidence are deliberately distinguished in those documents.
 
 ### Follow-up: four installed-extension diagnostic exports (16 October 2026)
 
@@ -220,6 +220,23 @@ Use Playwright/Chromium to load the unpacked MV3 extension against the local sim
 
 Every scenario should verify the *observable mutation trace*, recovery decision and expected durable state. Explicitly label cases proven only by simulation versus reproduced against the real merchant.
 
+### Settings and discount regression contract (carried forward from v0.8.0 requirements)
+
+These checks apply across pure rules, adapter fixtures, journal/restart tests and paid/receipt simulation. They are **requirements**, not evidence that all cases already pass:
+
+| Area | Required checks |
+| --- | --- |
+| Venues | Supported BGG/VP values only; deterministic priority and optional fallback; no unrestricted URL input; exact venue and per-hour court identity |
+| London time | Whole-hour, same-day start/finish; reject reversed, empty, overnight, fractional and out-of-window intervals; DST/release correctness |
+| Duration and court selection | Prefer two hours, optionally accept one according to saved minimum; allow/reject a mixed-court sequence per the saved policy; never add or remove an hour to manufacture fallback |
+| Authorization | Strict positive money input in integer pence; original gross cap and separate one-hour cap; reject an unexpected item/price; never infer authorization solely from a cheaper net price |
+| Immutable settings | Arm snapshots cannot change after popup edits or saved-preference updates; pending checkout, old journals and historical receipts retain their original policy, slot key and amount |
+| Discount | Empty code uses normal checkout; invalid, expired, previously applied or unavailable code stops safely; dispatch at most once and observe delayed/lost responses without replay |
+| Discount accounting | Independently verify every original item, subtotal, explicit discount and net total; reject mismatched or extra items, code/discount changes after checkout opening and ambiguous totals |
+| Special payment paths | Zero-cost checkout requires a separately designed **non-card** flow; never silently enter the Pay/card path. One-hour fallback and resumed/reloaded checkout must preserve gross/net and exact receipt identity |
+
+No discounts, codes, card data or private merchant references belong in committed test fixtures.
+
 ## 6. Recovery and observability improvements
 
 ### Structured result and evidence model
@@ -372,6 +389,6 @@ Real merchant checks may still be necessary for Cloudflare/human-verification, b
 
 - [Booking rules and current implementation](../README.md)
 - [Payment system, live findings and outstanding unknowns](payment-system.md)
-- [Release and acceptance notes](mvp-release.md)
+- [Historical releases and acceptance notes](release-notes.md)
 - [Extension source and tests](../outputs/tennis-local/chrome-extension/)
 - Key modules: `background.js`, `checkout.js`, `payment.js`, `reconciliation.js`, `stage-rules.js`, `stage-content.js`, `page-read.js`, `grid-read.js`, `run-log.js` and `diagnostics.js`.
