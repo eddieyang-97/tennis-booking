@@ -11,7 +11,7 @@ npm --prefix outputs/tennis-local/chrome-extension run test:ci
 
 Playwright 1.62.1 and its lockfile pin Chromium (revision 1234). Installation needs network access; execution uses only a new local test profile and the loopback merchant. A sandbox that denies Chromium loopback access reports `ERR_PROXY_CONNECTION_FAILED`; run the same isolated command with local networking permitted. There is no dependency on normal Chrome, its extension installation, account, encrypted card file or unlocked card session.
 
-`npm run test:browser` runs two proxy boundary tests and seven browser scenarios. `test:ci` also runs maintained tests, module reproductions, worker faults, and the production ZIP/source hash check. CI installs dependencies before starting the network-isolated browser phase.
+`npm run test:browser` runs two proxy boundary tests and seven browser scenarios. `test:ci` also runs maintained tests, module reproductions, worker faults, and the production ZIP/source hash check (`test:package`). CI installs dependencies before running that exact complete command, including the network-isolated browser phase. Packaging uses .NET hashing rather than depending on PowerShell module autoload in npm's child environment.
 
 ## Coverage and evidence
 
