@@ -1,6 +1,6 @@
 # Chrome extension: setup, testing and recovery
 
-This is the **operating guide** for the active Manifest V3 extension. The installed version is shown at the top of the popup; the source version is defined in [`manifest.json`](manifest.json) (**0.8.9** at the 16 October 2026 review).
+This is the **operating guide** for the active Manifest V3 extension. The installed version is shown at the top of the popup; the source version is defined in [`manifest.json`](manifest.json) (**0.9.0**, reliability PR 1, 17 October 2026).
 
 - [Project overview and safety model](../../../README.md)
 - [Release history and observed live evidence](../../../docs/release-notes.md)
@@ -78,6 +78,10 @@ After a reload, close stale card-vault tabs and reopen setup from the popup. Sel
 Stripe's initial collapsed Card Element may show number/expiry/CVC before postcode. The form adapter re-resolves inputs as they appear and stops if required fields are missing, disabled, read-only or ambiguous. Do not bypass the stop by trying to replay Pay.
 
 ## Tests and releases
+
+The reliability branch adds a **Latest action** line, separate from the current unresolved journal and historical `checkoutResult`. Stopped commands retain stable failure/recovery classifications even if they fail before a page read. Diagnostic downloads include this status. Test archives identify owner attestation, merchant-unpaid verification or an unsubmitted empty selection separately; none establishes merchant cancellation. Reopening the popup clears a stale attestation when its checkout identity changes.
+
+Use `npm run test:scenarios` for named offline reproductions, or `npm run repro -- --scenario post-discount-read-loss` for one case. `npm run analyze:logs -- <local-file.json> [...]` compares exports without copying merchant references into its summary; keep source exports and analysis private. These are simulations, not live payment checks.
 
 From this directory:
 

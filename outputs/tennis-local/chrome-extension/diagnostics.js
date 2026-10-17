@@ -1,4 +1,4 @@
-const statusFields=['version','localCardUnlocked','result','job','running','basketTest','basketTestResult','runHistory','checkoutRecords','checkoutResult','abandonedCheckouts','bookingSettings'];
+const statusFields=['version','localCardUnlocked','latestAction','result','job','running','basketTest','basketTestResult','runHistory','checkoutRecords','checkoutResult','abandonedCheckouts','bookingSettings'];
 const secretKey=/cardnumber|carddetails|localpaymentcard|securitycode|billing|passphrase|password|ciphertext|(?:^|_)(?:card|number|cvc|cvv|expiry|postcode|email|token|secret|authorization|cookie)(?:$|_)/i;
 function sanitize(value){
  if(Array.isArray(value))return value.map(sanitize);

@@ -38,5 +38,6 @@ export async function clearUnpaidTest(record,deps){
  }
  if(!basket.empty||basket.items.length)throw Error('Test basket is not empty; preserve the journal');
  if(record.reference){const evidence=await deps.purchase(record);if(evidence?.status!=='unpaid'||evidence.reference!==record.reference||evidence.totalGBP!==(record.discount?.totalGBP||record.slot.totalGBP))throw Error('Test payment state changed; preserve the journal');}
- const archived={...record,status:'abandoned',phase:'test-auto-cleared',abandonedAt:new Date().toISOString()};await deps.archive(archived);return archived;
+ const at=new Date().toISOString();
+ const archived={...record,status:'abandoned',phase:'test-auto-cleared',abandonedAt:at,abandonmentEvidence:{basis:record.reference?'merchant-unpaid-verified':'unsubmitted-selection-empty',at,key:record.key,...(record.reference?{reference:record.reference}:{}),basketEmptyVerified:true,merchantPaymentState:record.reference?'unpaid':'unknown',merchantCancellationState:'unknown'}};await deps.archive(archived);return archived;
 }

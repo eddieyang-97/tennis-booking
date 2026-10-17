@@ -3,6 +3,10 @@
 !/.gitignore
 !/.gitattributes
 !/build.ps1
+!/runtime-files.json
+!/.github/
+!/.github/workflows/
+!/.github/workflows/*.yml
 !/README.md
 !/docs/
 !/outputs/
@@ -26,6 +30,8 @@
 !/outputs/tennis-local/chrome-extension/package.json
 !/outputs/tennis-local/chrome-extension/README.md
 !/outputs/tennis-local/chrome-extension/notification.png
+!/outputs/tennis-local/chrome-extension/test/
+!/outputs/tennis-local/chrome-extension/test/**
 /work/*
 !/work/test_verification_guard.cjs
 !/work/test_diagnostic_scope.py

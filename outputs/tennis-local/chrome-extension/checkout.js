@@ -105,7 +105,8 @@ export function reconcileClearedSelection(records,basket,{unpaidTestConfirmed=fa
  const testCleanup=pending.length===1&&pending[0].checkoutTestOnly===true&&unpaidTestConfirmed===true&&['selection-dispatched','awaiting-payment','discount-dispatched','checkout-test-opening','checkout-test-ready','test-cleanup-checking','test-cleanup-removing'].includes(pending[0].phase);
  if(pending.length!==1||pending[0].manualPaymentReportedAt||pending[0].paymentDispatchedAt||(!testCleanup&&(!['selection-dispatched','awaiting-payment','discount-dispatched'].includes(pending[0].phase)||Object.hasOwn(pending[0],'reference'))))throw Error('Only an unsubmitted selection can be reconciled. For a checkout test, confirm you did not pay; preserve payment journals');
  if(basket?.empty!==true||!Array.isArray(basket.items)||basket.items.length!==0)throw Error('Remove the partial selection from the site basket first; no items were removed automatically');
- const abandoned={...pending[0],status:'abandoned',phase:'selection-cleared',abandonedAt:new Date().toISOString()};
+ const at=new Date().toISOString();
+ const abandoned={...pending[0],status:'abandoned',phase:'selection-cleared',abandonedAt:at,abandonmentEvidence:{basis:testCleanup?'owner-attested-no-payment':'unsubmitted-selection-empty',at,key:pending[0].key,...(pending[0].reference?{reference:pending[0].reference}:{}),basketEmptyVerified:true,merchantPaymentState:'unknown',merchantCancellationState:'unknown'}};
  return {checkoutRecords:records.filter(r=>r!==pending[0]),abandoned};
 }
 export function confirmCheckout(record,receipt) {

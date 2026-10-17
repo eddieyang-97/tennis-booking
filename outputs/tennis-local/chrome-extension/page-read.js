@@ -1,4 +1,5 @@
 import {retryTab,temporaryTabError,tabErrorReason} from './retry.js';
+import {failureFor} from './failures.js';
 const BASE='https://tennistowerhamlets.com';
 export function pageReadBudget(scheduled=false){return scheduled?60000:15000;}
 async function responseWithin(operation,ms,timers){let timer;try{return await Promise.race([operation(),new Promise((_,reject)=>{timer=timers.setTimeout(()=>reject(Error('Read response timed out')),ms);})]);}finally{timers.clearTimeout(timer);}}
@@ -37,7 +38,8 @@ export async function readPageState(tabs,url,request,{tabId=null,navigate=true,t
      const response=await responseWithin(()=>tabs.sendMessage(tab.id,request),Math.min(messageTimeoutMs,deadline-now()),timers);
      if(response&&!response.notReady){
       if(response.humanRequired||response.ok===false){retain=true;response.retainedTabId=tab.id;response.page=response.page||request.kind;}
-      await step('page-read',{page:request.kind,ok:response.ok,loadState:last.loadState});return response;
+      if(response.ok===false)Object.assign(response,failureFor(response,{operation:request.kind}));
+      await step('page-read',{page:request.kind,ok:response.ok,loadState:last.loadState,...(response.ok===false?failureFor(response,{operation:request.kind}):{})});return response;
      }
      last.readState='dom-not-ready';
     }catch(e){last.readState=/timed out/i.test(e.message)?'response-timeout':tabErrorReason(e);if(!temporaryTabError(e)&&!/Read response timed out/i.test(e.message))throw e;}

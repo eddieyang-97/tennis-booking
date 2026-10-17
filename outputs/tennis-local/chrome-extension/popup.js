@@ -4,6 +4,7 @@ import {readiness,releasePreview} from './readiness.js';
 import {diagnosticExport,diagnosticFilename} from './diagnostics.js';
 const field=id=>document.querySelector('#'+id),day=field('day'),output=field('result');
 let formEdited=false;
+let attestationIdentity='';
 day.value=addDays(londonDay(),8);
 field('releaseHelp').textContent=releasePreview(day.value);
 day.addEventListener('input',()=>field('releaseHelp').textContent=releasePreview(day.value));
@@ -17,6 +18,9 @@ async function refresh(initial=false,show=false){
  const status=await chrome.runtime.sendMessage({kind:'status'}),view=readiness(status);
  field('readiness').textContent=[view.summary,...view.lines].join('\n');
  field('armBlocker').textContent=view.armBlocker||'';
+ const test=status.checkoutRecords?.find(r=>r.status!=='confirmed'&&r.checkoutTestOnly),identity=test?JSON.stringify([test.key,test.reference||'',test.checkoutOpenDispatchedAt||'']):'';
+ if(identity!==attestationIdentity)field('unpaidTestConfirmed').checked=false;
+ attestationIdentity=identity;
  field('cardStatus').textContent=status.localCardUnlocked?'Local card: unlocked for this Chrome session.':'Local card: locked. Open card setup and unlock the file first.';
  if(initial&&!formEdited){const pendingTest=status.checkoutRecords?.find(record=>record.status!=='confirmed'&&record.checkoutTestOnly);writeSettings(status.job?.settings||status.bookingSettings||DEFAULT_SETTINGS);field('discountCode').value=status.job?.discountCode??pendingTest?.discountCode??'';}
  if(show)output.textContent=JSON.stringify(status,null,2);
@@ -25,7 +29,7 @@ async function send(kind){output.textContent='Checking…';try{
  const message={kind,day:day.value};
  if(['armPayment','check','saveSettings'].includes(kind))message.settings=readSettings();
  if(['armPayment','testDiscountCheckout'].includes(kind))message.discountCode=field('discountCode').value;
- if(kind==='reconcileSelection')message.unpaidTestConfirmed=field('unpaidTestConfirmed').checked;
+ if(kind==='reconcileSelection'){message.unpaidTestConfirmed=field('unpaidTestConfirmed').checked;message.attestationIdentity=attestationIdentity;}
  if(kind==='reconcileManualPayment')message.reference=field('manualReference').value;
  const result=await chrome.runtime.sendMessage(message);output.textContent=result.status==='stopped'?result.error:JSON.stringify(result,null,2);
  try{await refresh();}catch{/* Keep the completed action result visible. */}

@@ -1,6 +1,6 @@
 # Release notes
 
-This is the historical change log for the **active Chrome extension** in [`outputs/tennis-local/chrome-extension/`](../outputs/tennis-local/chrome-extension/). The authoritative source version is [`manifest.json`](../outputs/tennis-local/chrome-extension/manifest.json), **0.8.9** at the 16 October 2026 review.
+This is the historical change log for the **active Chrome extension** in [`outputs/tennis-local/chrome-extension/`](../outputs/tennis-local/chrome-extension/). The authoritative source version is [`manifest.json`](../outputs/tennis-local/chrome-extension/manifest.json), **0.9.0** on the observability review branch (17 October 2026).
 
 Notes below describe changes made *at each release*, not instructions to install or downgrade to older builds. Historical test counts and unverified behaviors are not current release-quality claims. For up-to-date setup, use the [project README](../README.md) and [extension usage guide](../outputs/tennis-local/chrome-extension/README.md). For original investigation and detailed timestamps, see [payment-system.md](payment-system.md).
 
@@ -18,6 +18,15 @@ Notes below describe changes made *at each release*, not instructions to install
 **Current acceptance limitation:** Source improvements and simulated tests do not establish an unattended successful midnight booking through paid receipt verification. Payment confirmation is also not proof that a reservation is still active after a cancellation.
 
 ## Changes by version
+
+### v0.9.0 — diagnosable recovery and offline reproductions
+- Added safe, centralized error-code/recovery mapping, including unresolved-checkout and page/grid readiness errors. Legacy messages provide classification only when no recognized structured code exists; possible payment always requires reconciliation and never automatic replay.
+- Latest-action identity and a persisted sequence keep older completions/failures from replacing newer status. Asynchronous status read/check/write operations are serialized within the active MV3 worker; interrupted status remains distinct from historical checkout results and payment journals.
+- Scheduled release status propagates the actual checkout/payment result instead of treating a discarded result as completion. Verification and automatic-payment failure traces retain reconciliation-only guidance for potentially paid journals, including manual-payment reports.
+- Test archives record merchant-unpaid evidence, owner attestation or unsubmitted-selection provenance separately. Attestation is bound to the current checkout identity and does not prove merchant cancellation.
+- Added seven named offline reproductions, private log comparison, production package/permission checks, exact runtime ZIP/source hashes and baseline GitHub Actions CI.
+- The documented Windows PowerShell build decodes the runtime list without nesting its array; CI verifies both that command and PowerShell 7 packaging. Focused worker-function regressions cover alarm result propagation and payment-failure trace consistency without introducing a merchant simulator.
+- Focused regressions use synthetic worker errors, out-of-order actions and delayed storage, including failures and worker recreation. These are local simulations; this release adds no live-site payment or unattended-midnight acceptance evidence. Stateful merchant and browser integration remain separate work.
 
 ### v0.8.9 — checkout readiness and merchant error diagnosis
 - Bounded card-page readiness now waits up to 60 seconds for both scheduled and manual checkout-opening paths.

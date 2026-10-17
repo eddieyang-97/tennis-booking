@@ -13,6 +13,8 @@ import {readPageState,pageReadBudget,waitPaymentState} from './page-read.js';
 import {normalizeDiscount,ensureDiscount,payableSlot} from './discount.js';
 import {normalizeSettings,pendingArmBlocker} from './booking-settings.js';
 import {clearUnpaidTest} from './test-cleanup.js';
+import {failureFor} from './failures.js';
+import {executeAction} from './actions.js';
 const linkFrames=createLinkFrames(chrome.tabs,{step:(name,detail)=>step(name,detail)});
 const BASE='https://tennistowerhamlets.com';
 let busy=false;
@@ -62,7 +64,7 @@ async function check(day, scheduled=false,settings=null) {
     await step('availability-complete');await trace.finish('complete');
     await save({status:'complete',day,checkedAt:new Date().toISOString(),runId:trace.record.id,results,...(settings?{settings}:{}),booked:false,paid:false});
     await chrome.storage.local.remove('running');
-  } catch(e) { await step('stopped');await trace.finish('stopped');await save({status:'stopped',day,checkedAt:new Date().toISOString(),runId:trace.record.id,error:e.message,...e.diagnostic,booked:false,paid:false});e.recorded=true;throw e; }
+  } catch(e) { await step('stopped',failureFor(e));await trace.finish('stopped');await save({status:'stopped',day,checkedAt:new Date().toISOString(),runId:trace.record.id,error:e.message,...e.diagnostic,booked:false,paid:false});e.recorded=true;throw e; }
   finally {
     // Known completion/failure clears only this invocation's read-only lock.
     // A prior interrupted run remains protected until explicit reset.
@@ -166,8 +168,10 @@ async function automaticPayment(test=false,scheduled=false) {
    try{const response=await chrome.tabs.sendMessage(tab.id,{kind:'payment-state'});if(response?.ok)linkDiagnostic.linkFramePresent=response.value.linkFramePresent;}catch{}
    await step('link-discovery-diagnostic',linkDiagnostic);
   }
-  if(trace){await step('stopped');await trace.finish('stopped');}
-  const output={status:'stopped',error:e.message,...(e.code?{errorCode:e.code}:{}),tabId:tab?.id,phase:record?.phase,booked:record?.paymentDispatchedAt?null:false,paid:record?.paymentDispatchedAt?null:false,...(linkDiagnostic?{linkDiagnostic}:{}),runId:trace?.record.id,finishedAt:trace?.record.finishedAt||new Date().toISOString()};await chrome.storage.local.set({checkoutResult:output});await chrome.action.setBadgeText({text:'!'});await notifyPaymentResult(output);return output;
+  const paymentPossible=!!(record?.paymentDispatchedAt||record?.manualPaymentReportedAt||['payment-dispatched','payment-uncertain'].includes(record?.phase));
+  const failure=failureFor(e,{paymentPossible});
+  if(trace){await step('stopped',failure);await trace.finish('stopped');}
+  const output={status:'stopped',error:e.message,...failure,...(e.code?{errorCode:e.code}:{}),tabId:tab?.id,phase:record?.phase,booked:paymentPossible?null:false,paid:paymentPossible?null:false,...(linkDiagnostic?{linkDiagnostic}:{}),runId:trace?.record.id,finishedAt:trace?.record.finishedAt||new Date().toISOString()};await chrome.storage.local.set({checkoutResult:output});await chrome.action.setBadgeText({text:'!'});await notifyPaymentResult(output);return output;
  }
  finally{busy=false;trace=null;resumedTab=null;}
 }
@@ -239,7 +243,7 @@ async function checkout(expectedDay=null,scheduled=false,basketOnly=false,discou
   await trace.finish(output.status);await chrome.storage.local.set({checkoutResult:{...output,runId:trace.record.id,finishedAt:trace.record.finishedAt}});return output;
  } catch(e) {
   if(!trace)trace=newRun('checkout-preparation',slot?.date||londonDay());
-  await step('checkout-stopped',{...(e.basketDiagnostic?{basketDiagnostic:e.basketDiagnostic}:{}),...(e.diagnostic?{diagnostic:e.diagnostic}:{})});await trace.finish('stopped');const output={status:'stopped',error:e.message,...(e.basketDiagnostic?{basketDiagnostic:e.basketDiagnostic}:{}),...(e.diagnostic?{diagnostic:e.diagnostic}:{}),tabId:tab?.id,booked:false,paid:false,runId:trace.record.id};await chrome.storage.local.set({checkoutResult:output});
+  await step('checkout-stopped',{...failureFor(e),...(e.basketDiagnostic?{basketDiagnostic:e.basketDiagnostic}:{}),...(e.diagnostic?{diagnostic:e.diagnostic}:{})});await trace.finish('stopped');const output={status:'stopped',error:e.message,...(e.basketDiagnostic?{basketDiagnostic:e.basketDiagnostic}:{}),...(e.diagnostic?{diagnostic:e.diagnostic}:{}),tabId:tab?.id,booked:false,paid:false,runId:trace.record.id};await chrome.storage.local.set({checkoutResult:output});
   await chrome.action.setBadgeText({text:'!'});
   try{await chrome.notifications.create('tennis-checkout-stopped',{type:'basic',iconUrl:chrome.runtime.getURL('notification.png'),title:'Tennis checkout stopped',message:'Open the extension to inspect the result. No automatic payment was attempted.'});}catch{}
   return output;
@@ -279,7 +283,7 @@ async function resetUnpaidTest(){
    archive:async abandoned=>{await chrome.storage.local.set({checkoutRecords:checkoutRecords.filter(r=>r.key!==abandoned.key),abandonedCheckouts:[...abandonedCheckouts,abandoned]});}
   });
   await trace.finish('test-auto-cleared');return {status:'test-auto-cleared',basketCleared:true,booked:false,paid:false,runId:trace.record.id};
- }catch(error){if(trace){await step('cleanup-stopped');await trace.finish('stopped');}throw error;}
+ }catch(error){if(trace){await step('cleanup-stopped',failureFor(error,{operation:'unpaid-test-cleanup'}));await trace.finish('stopped');}throw error;}
  finally{if(tab)await chrome.tabs.remove(tab.id).catch(()=>{});busy=false;trace=null;resumedTab=null;}
 }
 async function testDiscountCheckout(code='') {
@@ -310,7 +314,7 @@ async function testDiscountCheckout(code='') {
   const result={status:'checkout-test-passed',slot:record.slot,grossTotalGBP:record.slot.totalGBP,discountGBP:record.discount?.discountGBP||'0.00',payableGBP:payableSlot(record).totalGBP,checkoutOpened:true,paymentBlocked:true,cardFilled:false,booked:false,paid:false,runId:trace.record.id,finishedAt:trace.record.finishedAt};
   await chrome.storage.local.set({checkoutResult:result});return result;
  }catch(error){
-  if(trace){await step('stopped',{errorCode:/Merchant reported/.test(error.message)?'MERCHANT_CHECKOUT_ERROR':/timed out/.test(error.message)?'CHECKOUT_READY_TIMEOUT':'CHECKOUT_TEST_STOPPED'});await trace.finish('stopped');}
+  if(trace){await step('stopped',failureFor(error,{operation:'unpaid-checkout-test'}));await trace.finish('stopped');}
   const result={status:'stopped',error:error.message,paymentBlocked:true,booked:false,paid:false,runId:trace?.record.id};await chrome.storage.local.set({checkoutResult:result});return result;
  }finally{busy=false;trace=null;resumedTab=null;}
 }
@@ -367,7 +371,7 @@ async function verifyPayment(scheduled=false,manualReference=null) {
  if(!record.reference&&!record.paymentDispatchedAt)throw Error('No recorded payment reference. If you paid manually, enter its booking reference and use Verify manual payment');
  return await finishPaidRecord(record,scheduled);
  }catch(e){
-  if(trace){await step('stopped');await trace.finish('stopped');}
+  if(trace){await step('stopped',failureFor(e,{paymentPossible:true}));await trace.finish('stopped');}
   const output={status:'stopped',error:e.message,booked:null,paid:null,runId:trace?.record.id,finishedAt:trace?.record.finishedAt||new Date().toISOString()};
   await chrome.storage.local.set({checkoutResult:output});throw e;
  }finally{busy=false;trace=null;resumedTab=null;}
@@ -390,7 +394,7 @@ async function resume(day) {
   try {await check(result.day || day,false,result.settings||null);return (await chrome.storage.local.get('result')).result;}
   finally {resumedTab=null;}
 }
-chrome.alarms.onAlarm.addListener(async alarm=>{
+async function runAlarm(alarm){
   const {job}=await chrome.storage.local.get('job'); if(!job) return;
   try {
     if(alarm.name==='prepare') {
@@ -405,17 +409,23 @@ chrome.alarms.onAlarm.addListener(async alarm=>{
       if(!job.prepared) throw Error('Preflight did not complete; check stopped');
       if(job.mode==='payment'){await resolvePendingPayment(true);await paymentCard(chrome.storage,null);}
       await check(job.day,true,job.settings||null);
-      if(['checkout','payment'].includes(job.mode)){const prepared=await checkout(job.day,true,false,job.discountCode||'',job.settings||null);if(job.mode==='payment' && prepared.status==='awaiting-payment')await automaticPayment(false,true);}
+      let outcome=(await chrome.storage.local.get('result')).result;
+      if(['checkout','payment'].includes(job.mode)){
+       const prepared=await checkout(job.day,true,false,job.discountCode||'',job.settings||null);
+       outcome=job.mode==='payment'&&prepared.status==='awaiting-payment'?await automaticPayment(false,true):prepared;
+      }
       await chrome.storage.local.remove('job');
+      return outcome;
     }
-  } catch(e) {if(!e.recorded)await save({status:'stopped',day:job.day,checkedAt:new Date().toISOString(),step:alarm.name,error:e.message,...e.diagnostic,booked:false,paid:false});await notifyPaymentResult({status:'stopped'});}
-});
+  } catch(e) {if(!e.recorded)await save({status:'stopped',day:job.day,checkedAt:new Date().toISOString(),step:alarm.name,error:e.message,...e.diagnostic,booked:false,paid:false});await notifyPaymentResult({status:'stopped'});return {status:'stopped',...failureFor(e),error:e.message,paid:null,booked:null};}
+}
+chrome.alarms.onAlarm.addListener(alarm=>executeAction(chrome.storage.local,alarm.name,()=>runAlarm(alarm),{version:chrome.runtime.getManifest?.().version||'unknown',source:'alarm'}));
 chrome.runtime.onMessage.addListener((message,sender,respond)=>{
   if(message.kind==='link-frame' && sender.id===chrome.runtime.id) {
    linkFrames.register(sender).then(ok=>respond({ok}),()=>respond({ok:false}));return true;
   }
   if(sender.id!==chrome.runtime.id || sender.tab || !sender.url?.startsWith(chrome.runtime.getURL('popup.html'))) return;
-  (async()=>{
+  const run=async()=>{
     if(message.kind==='check') {await check(message.day,false,message.settings||null); return (await chrome.storage.local.get('result')).result;}
     if(message.kind==='resume') return resume(message.day);
     if(message.kind==='saveSettings'){const settings=normalizeSettings(message.settings);await chrome.storage.local.set({bookingSettings:settings});return {status:'preferences-saved',settings,armedJobChanged:false};}
@@ -432,6 +442,8 @@ chrome.runtime.onMessage.addListener((message,sender,respond)=>{
      if(busy)throw Error('Another run is active');busy=true;
      try {
       const {checkoutRecords=[],abandonedCheckouts=[]}=await chrome.storage.local.get(['checkoutRecords','abandonedCheckouts']);
+      const pendingTest=checkoutRecords.find(r=>r.status!=='confirmed'&&r.checkoutTestOnly);
+      if(pendingTest&&message.unpaidTestConfirmed===true&&message.attestationIdentity!==JSON.stringify([pendingTest.key,pendingTest.reference||'',pendingTest.checkoutOpenDispatchedAt||'']))throw Error('Unpaid test confirmation is stale; reopen the popup and confirm the current test');
       const response=await readPage(BASE+'/basket',{kind:'basket-read'});if(!response.ok)throw Error(response.error);
       const reconciled=reconcileClearedSelection(checkoutRecords,response.value,{unpaidTestConfirmed:message.unpaidTestConfirmed===true});
       await chrome.storage.local.set({checkoutRecords:reconciled.checkoutRecords,abandonedCheckouts:[...abandonedCheckouts,reconciled.abandoned].slice(-20)});
@@ -452,12 +464,14 @@ chrome.runtime.onMessage.addListener((message,sender,respond)=>{
     if(message.kind==='cancel') {await chrome.alarms.clear('prepare');await chrome.alarms.clear('release');await chrome.storage.local.remove('job');return {status:'cancelled'};}
     if(message.kind==='reset' && !busy) {await chrome.storage.local.remove('running');return {status:'reset'};}
     if(message.kind==='status') {
-     const status=await chrome.storage.local.get(['result','job','running','basketTest','basketTestResult','runHistory','checkoutRecords','checkoutResult','abandonedCheckouts','bookingSettings']);
+     const status=await chrome.storage.local.get(['latestAction','result','job','running','basketTest','basketTestResult','runHistory','checkoutRecords','checkoutResult','abandonedCheckouts','bookingSettings']);
      let localCardUnlocked=false;try{localCardUnlocked=!!(await chrome.storage.session.get('localPaymentCard')).localPaymentCard;}catch{}
      return {...status,localCardUnlocked,version:chrome.runtime.getManifest().version};
     }
     throw Error('Unknown action');
-  })().then(respond,e=>{const uncertain=['verifyPayment','reconcileManualPayment','armPayment','payCheckout','resetUnpaidTest','testDiscountCheckout'].includes(message.kind);respond({status:'stopped',error:e.message,...(e.code?{errorCode:e.code}:{}),...(e.attemptedDay?{attemptedDay:e.attemptedDay}:{}),booked:uncertain?null:false,paid:uncertain?null:false});}); return true;
+  };
+  const action=message.kind==='status'?run():executeAction(chrome.storage.local,message.kind,run,{version:chrome.runtime.getManifest?.().version||'unknown'});
+  action.then(respond,e=>{const uncertain=['verifyPayment','reconcileManualPayment','armPayment','payCheckout','resetUnpaidTest','testDiscountCheckout'].includes(message.kind);respond({status:'stopped',error:e.message,...failureFor(e,{operation:message.kind,paymentPossible:uncertain}),...(e.code?{errorCode:e.code}:{}),...(e.attemptedDay?{attemptedDay:e.attemptedDay}:{}),booked:uncertain?null:false,paid:uncertain?null:false});}); return true;
 });
 // Recreate one-shot alarms after restart without starting a missed release.
 async function restoreReleaseJob() {

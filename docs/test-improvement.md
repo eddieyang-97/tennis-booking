@@ -1,12 +1,19 @@
 # Tennis booking: reliability and test improvement proposal
 
-**Status:** Proposed; no implementation in this document  
+**Status:** PR 1 implemented on the reliability branch; remaining layers are planned. See implementation progress below.
 **Reviewed source:** `main` at `5aa63506a000d4adf05a7e8b8e635cab1b513dbd` (16 October 2026), extension v0.8.9  
 **Scope:** Chrome extension in `outputs/tennis-local/chrome-extension/`  
 **Evidence update:** Four private diagnostic exports from 16 October 2026, spanning installed versions v0.8.7–v0.8.9. Only sanitized findings are included here; original logs must not be committed.
 **Review update (17 October 2026):** Added existing-purchase-page recovery, P0 restart/concurrency coverage, an explicit receipt-source decision contract, baseline CI from PR 1 and enforceable browser network/package isolation. These remain proposed requirements, not implemented or live-verified behavior.
 
 ## Executive summary
+
+### Implementation progress (17 October 2026)
+
+- **PR 1 implemented, simulated locally:** fixed failure classifications, latest action status separate from historical checkout results, archived-test evidence provenance, current-journal-bound owner attestation, seven named offline module reproductions, a local log comparison tool, production package/configuration checks and baseline CI configuration. No live mutation or payment acceptance was performed. CI execution is a separate gate from local passes.
+- **Remaining:** the full stateful merchant/worker fault matrix, fixture-backed browser adapter coverage, isolated real-extension browser execution and its network gate. Existing direct-module reproductions do not satisfy those stronger layers.
+
+Commands currently available: `npm test`, `npm run test:quick`, `npm run test:scenarios`, `npm run repro -- --scenario <name>` and `npm run analyze:logs -- <local-export.json> [...]`. Run them from the extension directory. Analyzer output is observed evidence and a proposed scenario, never a full merchant replay; it retains local run IDs and must remain private.
 
 The current extension already has substantial defensive logic: exact slot and basket verification, durable payment-dispatch journaling, receipt reconciliation, strict spending limits, and bounded read retries. Keep those safeguards. The recurring problem is **test fidelity and recovery ergonomics**, not simply a shortage of unit tests.
 

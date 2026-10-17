@@ -2,7 +2,7 @@
 
 A Manifest V3 Chrome extension that checks and attempts to book tennis courts on [Tower Hamlets Courtside](https://tennistowerhamlets.com/) at the London midnight release, with configurable preferences, strict basket/payment verification, a local encrypted card file and recovery of uncertain payments.
 
-**Active implementation:** [`outputs/tennis-local/chrome-extension/`](outputs/tennis-local/chrome-extension/) · **Version:** [`0.8.9`](outputs/tennis-local/chrome-extension/manifest.json) (16 October 2026 source review).
+**Active implementation:** [`outputs/tennis-local/chrome-extension/`](outputs/tennis-local/chrome-extension/) · **Version:** [`0.9.0`](outputs/tennis-local/chrome-extension/manifest.json), reliability PR 1 (17 October 2026).
 
 **Release status:** In active development, **not yet verified for unattended end-to-end midnight payment**. A real £2.50 one-hour card payment and its subsequent account-purchase reconciliation were verified on 13 October. Live two-hour basket selection was verified, but an automated two-hour Pay and a complete unattended midnight booking have not been established. See [release notes and live-evidence limits](docs/release-notes.md).
 
@@ -71,7 +71,7 @@ powershell -ExecutionPolicy Bypass -File .\build.ps1
 
 The build uses an explicit runtime file allowlist, creates an archive under ignored `artifacts/`, checks its contents and outputs a SHA-256 hash. The archive deliberately omits test sources and private local data.
 
-**Validation boundaries:** Unit and mocked-worker tests cover extensive safety cases but do not prove real merchant behavior. The reviewed `package.json` lists 15 test files; no fresh pass count is asserted here, and CI is not yet configured. The [test improvement proposal](docs/test-improvement.md) calls for deterministic merchant simulation, real DOM fixtures, worker crash injection and browser integration before relying on another live midnight run.
+**Validation boundaries:** Unit and mocked-worker tests cover extensive safety cases but do not prove real merchant behavior. The reliability branch adds named offline reproductions, log comparison and baseline CI configuration with package checks. CI execution and stronger stateful/browser layers are tracked separately in the [test improvement plan](docs/test-improvement.md); local simulation passes are not unattended payment acceptance.
 
 ### Key source files
 
