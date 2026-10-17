@@ -7,6 +7,8 @@
     "test:scenarios": "node test/run-scenarios.js && node --experimental-vm-modules --test test/worker-faults.js",
     "repro": "node test/run-scenarios.js",
     "analyze:logs": "node test/analyze-logs.js",
-    "test:worker": "node --experimental-vm-modules --test test/worker-faults.js"
+    "test:worker": "node --experimental-vm-modules --test test/worker-faults.js",
+    "test:browser": "node --test test/browser/isolation-test.js && node test/browser/run.js",
+    "test:ci": "npm test && npm run test:scenarios && npm run test:browser && powershell -NoProfile -ExecutionPolicy Bypass -File ../../../build.ps1"
   }
 }

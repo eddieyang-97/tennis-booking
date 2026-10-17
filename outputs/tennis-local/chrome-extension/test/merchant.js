@@ -21,6 +21,7 @@ export class Merchant{
   }else if(request.kind==='payment-open'){
    this.counts.opening++;this.readyAt=this.clock+(this.options.cardDelay||0);this.purchases.set(this.reference,{state:'Pending',totalGBP:this.basket.totalGBP});response={ok:true};
   }else if(['checkout-progress','payment-state'].includes(request.kind)){
+   if(request.kind==='checkout-progress'&&this.options.missingProgress>0){this.options.missingProgress--;return undefined;}
    if(this.options.merchantError)response={ok:true,value:{stage:'other-page',merchantError:true,loadState:'complete'}};
    else if(this.clock<(this.readyAt||0)||!this.purchases.has(this.reference))response={ok:true,value:{stage:'basket',loadState:'loading'}};
    else response={ok:true,value:{stage:'card',reference:this.reference,totalGBP:this.purchases.get(this.reference).totalGBP,enabled:!!this.filled,loadState:'complete'}};

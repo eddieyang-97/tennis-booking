@@ -7,6 +7,15 @@ test('actual worker: check, prepare, fake Pay and account reconciliation; repeat
  const paid=await worker.send({kind:'payCheckout'});assert.equal(paid.status,'confirmed');assert.equal(merchant.counts.pay,1);assert.equal(merchant.counts.selection,2);
  await worker.send({kind:'payCheckout'});assert.equal(merchant.counts.pay,1);assert.equal(state.checkoutRecords[0].status,'confirmed');
 });
+
+test('checkout navigation with missing read replies settles without another opening or discount',async()=>{
+ const merchant=new Merchant(),state={},worker=await startWorker(merchant,state);merchant.options.missingProgress=2;
+ await worker.send({kind:'check',day:merchant.slot.date});
+ const result=await worker.send({kind:'testDiscountCheckout',discountCode:'SYNTHETIC'});
+ assert.equal(result.status,'checkout-test-passed',result.error);assert.equal(merchant.options.missingProgress,0);
+ assert.equal(merchant.counts.opening,1);assert.equal(merchant.counts.discount,1);assert.equal(merchant.counts.pay,0);
+ assert.equal(state.runHistory.flatMap(run=>run.steps).filter(step=>step.name==='checkout-read-unavailable').length,2);
+});
 for(const mutation of ['selection','opening','discount','fill','pay','removal'])for(const boundary of ['persist','dispatch'])for(const when of ['before','after'])test(`worker restart: ${mutation} ${boundary} ${when}`,async()=>{
  const merchant=new Merchant(),state={};let worker=await startWorker(merchant,state);
  await worker.send({kind:'check',day:merchant.slot.date});
