@@ -6,6 +6,16 @@ import {slotKey} from './core.js';
 import {paymentCard} from './card-vault-core.js';
 const slot=PAYMENT_TEST_SLOT,key=JSON.stringify([slot.venue,slot.date,slot.court,slot.start,slot.hours]);
 const record={slot,test:true,key,reference:'100001',status:'pending',phase:'payment-uncertain',paymentDispatchedAt:'2026-10-13T00:00:00Z'};
+test('receipt decision contract distinguishes unrelated/absent sources from positive contradiction',async()=>{
+ const paid={status:'confirmed',key,reference:'100001'},trace=[];let account=0;
+ for(const current of [null,{status:'awaiting-payment'},{...paid,reference:'100002'}]){
+  assert.equal(await reconcilePaid(record,{currentReceipt:async()=>current,accountReceipt:async()=>{account++;return paid;},step:async(name,detail)=>trace.push(detail)}),paid);
+ }
+ assert.equal(account,3);assert.ok(trace.some(e=>e.reasonCode==='RECEIPT_UNRELATED'));
+ await assert.rejects(reconcilePaid(record,{currentReceipt:async()=>({...paid,status:'conflicting'}),accountReceipt:async()=>{throw Error('Must not suppress contradictory evidence');}}),e=>e.reasonCode==='RECEIPT_CONFLICT');
+ assert.equal(await reconcilePaid(record,{currentReceipt:async()=>paid,accountReceipt:async()=>{throw Error('Unavailable');}}),paid);
+ await assert.rejects(reconcilePaid(record,{currentReceipt:async()=>null,accountReceipt:async()=>({...paid,reference:'100002'})}),e=>e.reasonCode==='RECEIPT_CONFLICT');
+});
 const source=fs.readFileSync(new URL('./checkout-content.js',import.meta.url),'utf8');
 const row=['Tue 13th Oct','PT100001','Confirmed','','£2.50','Paid ✔'];
 function purchase(rows=[row],headers=['Date','Ref','State','Info','Value',''],path='/account',readyState='complete'){

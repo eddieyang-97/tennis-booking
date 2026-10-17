@@ -6,9 +6,9 @@ import {openVerifiedCheckout} from '../payment.js';
 import {readGrid} from '../grid-read.js';
 import {executeAction} from '../actions.js';
 import {failureFor} from '../failures.js';
-import {londonDay,addDays,slotKey} from '../core.js';
+import {londonDay,addDays,slotKey,NAMES} from '../core.js';
 export const slot=()=>({venue:'victoria-park',date:addDays(londonDay(),1),court:1,start:'20:00',hours:2,totalGBP:'14.00'});
-export function basket(s=slot()){return {empty:false,items:[20,21].map(hour=>({venue:'Victoria Park',court:1,day:Number(s.date.slice(8)),month:Number(s.date.slice(5,7)),hour,priceGBP:'7.00'})),subtotalGBP:'14.00',discountGBP:'0.00',totalGBP:'14.00',paymentBoundary:true};}
+export function basket(s=slot()){return {empty:false,items:[20,21].map(hour=>({venue:NAMES[s.venue],court:1,day:Number(s.date.slice(8)),month:Number(s.date.slice(5,7)),hour,priceGBP:'7.00'})),subtotalGBP:'14.00',discountGBP:'0.00',totalGBP:'14.00',paymentBoundary:true};}
 export const journal=()=>{const s=slot();return {slot:s,key:slotKey(s),status:'pending',phase:'awaiting-payment',checkoutTestOnly:true};};
 export const scenarios={
  'grid-usable-while-loading':async()=>{

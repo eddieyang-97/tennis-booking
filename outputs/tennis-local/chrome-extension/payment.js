@@ -23,7 +23,8 @@ export async function openVerifiedCheckout(record,deps,{timeoutMs=15000,now=Date
 export async function payCheckout(record,deps) {
  if(record?.basketOnly||record?.checkoutTestOnly)throw Error('Unpaid test cannot submit payment; clear and reconcile its basket');
  if(!record || record.status==='confirmed')throw Error('No pending checkout');
- const persist=async phase=>{const at=new Date().toISOString();record={...record,phase,updatedAt:at,...(phase==='payment-dispatched'?{paymentDispatchedAt:record.paymentDispatchedAt||at}:{})};await deps.save(record);};
+ const fillingMayHaveHappened=!!record.cardFillDispatchedAt||record.phase==='card-filling';
+ const persist=async phase=>{const at=new Date().toISOString();record={...record,phase,updatedAt:at,...(phase==='payment-dispatched'?{paymentDispatchedAt:record.paymentDispatchedAt||at}:{}),...(phase==='card-filling'?{cardFillDispatchedAt:record.cardFillDispatchedAt||at}:{})};await deps.save(record);};
  const confirm=receipt=>{if(record.reference && receipt.reference!==record.reference)throw Error('Paid receipt reference differs from provisional booking');return confirmCheckout(record,receipt);};
  if(record.manualPaymentReportedAt || record.paymentDispatchedAt || record.phase==='payment-dispatched' || record.phase==='payment-uncertain') {
   recoveryIdentity(record);
@@ -39,6 +40,7 @@ export async function payCheckout(record,deps) {
  let page=await deps.state();
  if(page.totalGBP!==amount || !/^\d+$/.test(page.reference||''))throw Error('Payment amount or provisional reference not verified');
  if(record.reference && record.reference!==page.reference) {
+  if(fillingMayHaveHappened)throw Error('Reference changed after possible card filling; inspect without refilling');
   // Only reached before any payment dispatch and after exact basket/price
   // verification. A normal reload can replace an unpaid provisional reference.
   record={...record,priorReferences:[...(record.priorReferences||[]),{reference:record.reference,replacedAt:new Date().toISOString()}].slice(-10),reference:page.reference};
@@ -46,7 +48,8 @@ export async function payCheckout(record,deps) {
  }
  record={...record,reference:page.reference};await deps.save(record);
  if(deps.fillCard) {
-  await persist('card-filling');await deps.fillCard();page=await deps.waitCardReady();
+  if(!fillingMayHaveHappened){await persist('card-filling');await deps.fillCard();}
+  page=await deps.waitCardReady();
  } else if(!page.enabled) {
   await persist('link-opening');await deps.link();
   page=await deps.waitReady();

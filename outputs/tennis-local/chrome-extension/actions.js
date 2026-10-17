@@ -1,4 +1,7 @@
 import {failureFor} from './failures.js';
+// MV3 has one active worker. Serialize its mutation entry points; status and
+// frame discovery stay outside this queue to avoid deadlocking an active run.
+export function createSerialExecutor(){let tail=Promise.resolve();return run=>{const next=tail.then(run);tail=next.catch(()=>{});return next;};}
 export async function executeAction(storage,kind,run,{version='unknown',source='popup'}={}){
  const action={id:crypto.randomUUID(),kind,source,version,startedAt:new Date().toISOString(),outcome:'running'};
  await storage.set({latestAction:action});

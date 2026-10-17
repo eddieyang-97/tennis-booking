@@ -14,7 +14,8 @@ import {normalizeDiscount,ensureDiscount,payableSlot} from './discount.js';
 import {normalizeSettings,pendingArmBlocker} from './booking-settings.js';
 import {clearUnpaidTest} from './test-cleanup.js';
 import {failureFor} from './failures.js';
-import {executeAction} from './actions.js';
+import {executeAction,createSerialExecutor} from './actions.js';
+const enqueueAction=createSerialExecutor();
 const linkFrames=createLinkFrames(chrome.tabs,{step:(name,detail)=>step(name,detail)});
 const BASE='https://tennistowerhamlets.com';
 let busy=false;
@@ -102,6 +103,7 @@ function checkoutCommands(tabId) {
   const evidence={stage:progress.stage,loadState:progress.loadState,merchantError:progress.merchantError===true,...(progress.reference?{reference:progress.reference,totalGBP:progress.totalGBP}:{})},fingerprint=JSON.stringify(evidence);
   if(fingerprint!==lastProgress){await step('checkout-page-progress',{tabId,...evidence});lastProgress=fingerprint;}
   if(progress.merchantError)throw Error('Merchant reported Something went wrong while opening checkout; no repeat request sent');
+  if(progress.stage==='existing-purchase')throw Error('Existing-purchase payment page requires read-only recovery assessment; no Pay or cancellation action sent');
   if(progress.stage==='other-page')throw Error('Checkout left supported payment pages; inspect retained tab');
   if(progress.stage!=='card')throw Error('Not the card checkout');return progress;
  };
@@ -169,7 +171,7 @@ async function automaticPayment(test=false,scheduled=false) {
    await step('link-discovery-diagnostic',linkDiagnostic);
   }
   if(trace){await step('stopped',failureFor(e));await trace.finish('stopped');}
-  const output={status:'stopped',error:e.message,...(e.code?{errorCode:e.code}:{}),tabId:tab?.id,phase:record?.phase,booked:record?.paymentDispatchedAt?null:false,paid:record?.paymentDispatchedAt?null:false,...(linkDiagnostic?{linkDiagnostic}:{}),runId:trace?.record.id,finishedAt:trace?.record.finishedAt||new Date().toISOString()};await chrome.storage.local.set({checkoutResult:output});await chrome.action.setBadgeText({text:'!'});await notifyPaymentResult(output);return output;
+  const output={status:'stopped',error:e.message,...(e.code?{errorCode:e.code}:{}),tabId:tab?.id,phase:record?.phase,booked:(record?.paymentDispatchedAt||record?.manualPaymentReportedAt)?null:false,paid:(record?.paymentDispatchedAt||record?.manualPaymentReportedAt)?null:false,...(linkDiagnostic?{linkDiagnostic}:{}),runId:trace?.record.id,finishedAt:trace?.record.finishedAt||new Date().toISOString()};await chrome.storage.local.set({checkoutResult:output});await chrome.action.setBadgeText({text:'!'});await notifyPaymentResult(output);return output;
  }
  finally{busy=false;trace=null;resumedTab=null;}
 }
@@ -318,13 +320,14 @@ async function testDiscountCheckout(code='') {
 }
 async function readPaidEvidence(record,tabId=record.tabId,wait=false,scheduled=false) {
  return reconcilePaid(record,{
+  step,
   currentReceipt:async()=>{
    for(let i=0;i<(wait?10:1);i++) {
     try {
      const current=await readTab(()=>chrome.tabs.get(tabId));
      if(new URL(current.url).origin!==BASE||!new URL(current.url).pathname.startsWith('/basket'))return null;
-     const response=await readTab(()=>chrome.tabs.sendMessage(tabId,{kind:'receipt-read',slot:payableSlot(record),key:record.key}));
-     if(response?.ok&&response.value.status==='confirmed')return response.value;
+     const response=await readTab(()=>chrome.tabs.sendMessage(tabId,{kind:'receipt-read',slot:payableSlot(record),key:record.key,reference:record.reference}));
+     if(response?.ok&&['confirmed','conflicting'].includes(response.value.status))return response.value;
     }catch{ return null; }
     if(wait)await new Promise(r=>setTimeout(r,500));
    }
@@ -407,12 +410,14 @@ async function runAlarm(alarm){
       if(!job.prepared) throw Error('Preflight did not complete; check stopped');
       if(job.mode==='payment'){await resolvePendingPayment(true);await paymentCard(chrome.storage,null);}
       await check(job.day,true,job.settings||null);
-      if(['checkout','payment'].includes(job.mode)){const prepared=await checkout(job.day,true,false,job.discountCode||'',job.settings||null);if(job.mode==='payment' && prepared.status==='awaiting-payment')await automaticPayment(false,true);}
+      let outcome={status:'complete'};
+      if(['checkout','payment'].includes(job.mode)){const prepared=await checkout(job.day,true,false,job.discountCode||'',job.settings||null);outcome=job.mode==='payment'&&prepared.status==='awaiting-payment'?await automaticPayment(false,true):prepared;}
       await chrome.storage.local.remove('job');
+      return outcome;
     }
-  } catch(e) {if(!e.recorded)await save({status:'stopped',day:job.day,checkedAt:new Date().toISOString(),step:alarm.name,error:e.message,...e.diagnostic,booked:false,paid:false});await notifyPaymentResult({status:'stopped'});return {status:'stopped',...failureFor(e),error:e.message,paid:null,booked:null};}
+  } catch(e) {const {checkoutRecords=[]}=await chrome.storage.local.get('checkoutRecords'),possible=checkoutRecords.some(r=>r.status!=='confirmed'&&(r.paymentDispatchedAt||r.manualPaymentReportedAt));if(!e.recorded)await save({status:'stopped',day:job.day,checkedAt:new Date().toISOString(),step:alarm.name,error:e.message,...e.diagnostic,booked:possible?null:false,paid:possible?null:false});await notifyPaymentResult({status:'stopped'});return {status:'stopped',...failureFor(e,{paymentPossible:possible}),error:e.message,paid:possible?null:false,booked:possible?null:false};}
 }
-chrome.alarms.onAlarm.addListener(alarm=>executeAction(chrome.storage.local,alarm.name,()=>runAlarm(alarm),{version:chrome.runtime.getManifest?.().version||'unknown',source:'alarm'}));
+chrome.alarms.onAlarm.addListener(alarm=>enqueueAction(()=>executeAction(chrome.storage.local,alarm.name,()=>runAlarm(alarm),{version:chrome.runtime.getManifest?.().version||'unknown',source:'alarm'})));
 chrome.runtime.onMessage.addListener((message,sender,respond)=>{
   if(message.kind==='link-frame' && sender.id===chrome.runtime.id) {
    linkFrames.register(sender).then(ok=>respond({ok}),()=>respond({ok:false}));return true;
@@ -423,6 +428,16 @@ chrome.runtime.onMessage.addListener((message,sender,respond)=>{
     if(message.kind==='resume') return resume(message.day);
     if(message.kind==='saveSettings'){const settings=normalizeSettings(message.settings);await chrome.storage.local.set({bookingSettings:settings});return {status:'preferences-saved',settings,armedJobChanged:false};}
     if(message.kind==='prepareCheckout')return checkout();
+    if(message.kind==='assessRecovery'){
+     const {checkoutRecords=[]}=await chrome.storage.local.get('checkoutRecords'),record=checkoutRecords.find(r=>r.status!=='confirmed');
+     if(!record)return {status:'no-pending-checkout'};
+     const pages=[];
+     for(const tab of await chrome.tabs.query({url:BASE+'/*'})){
+      try{const response=await chrome.tabs.sendMessage(tab.id,{kind:'checkout-progress'});if(response?.ok&&response.value.stage==='existing-purchase')pages.push(response.value);}catch{}
+     }
+     const matching=pages.filter(p=>record.reference&&p.reference===record.reference&&p.totalGBP===payableSlot(record).totalGBP);
+     return {status:'needs-user-action',paymentState:'unknown',merchantCancellationState:'unknown',reasonCode:pages.length?(matching.length===1?'EXISTING_PURCHASE_READ_ONLY':'REFERENCE_UNAVAILABLE'):'RECOVERY_EVIDENCE_REQUIRED',referenceRecorded:!!record.reference,existingPurchasePages:pages.length,exactReferenceMatches:matching.length,automaticReplayAllowed:false};
+    }
     if(message.kind==='daytimeBasketTest')return checkout(message.day,false,true);
     if(message.kind==='testDiscountCheckout')return testDiscountCheckout(message.discountCode);
     if(message.kind==='resetUnpaidTest')return resetUnpaidTest();
@@ -463,7 +478,7 @@ chrome.runtime.onMessage.addListener((message,sender,respond)=>{
     }
     throw Error('Unknown action');
   };
-  const action=message.kind==='status'?run():executeAction(chrome.storage.local,message.kind,run,{version:chrome.runtime.getManifest?.().version||'unknown'});
+  const action=message.kind==='status'?run():enqueueAction(()=>executeAction(chrome.storage.local,message.kind,run,{version:chrome.runtime.getManifest?.().version||'unknown'}));
   action.then(respond,e=>{const uncertain=['verifyPayment','reconcileManualPayment','armPayment','payCheckout','resetUnpaidTest','testDiscountCheckout'].includes(message.kind);respond({status:'stopped',error:e.message,...failureFor(e,{operation:message.kind,paymentPossible:uncertain}),...(e.code?{errorCode:e.code}:{}),...(e.attemptedDay?{attemptedDay:e.attemptedDay}:{}),booked:uncertain?null:false,paid:uncertain?null:false});}); return true;
 });
 // Recreate one-shot alarms after restart without starting a missed release.
@@ -473,6 +488,6 @@ async function restoreReleaseJob() {
   await chrome.alarms.create('prepare',{when:Math.max(Date.now()+1000,job.when-300000)});
   await chrome.alarms.create('release',{when:job.when});
 }
-chrome.runtime.onStartup.addListener(restoreReleaseJob);
+chrome.runtime.onStartup.addListener(()=>enqueueAction(restoreReleaseJob));
 // Extension updates may clear alarms; retain the saved read-only job and date.
-chrome.runtime.onInstalled.addListener(restoreReleaseJob);
+chrome.runtime.onInstalled.addListener(()=>enqueueAction(restoreReleaseJob));
