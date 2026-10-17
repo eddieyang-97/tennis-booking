@@ -6,6 +6,8 @@ Use the [root README](../README.md) for current booking policy, the [extension g
 
 ## 1. Core payment and recovery contract
 
+PR 2 serializes mutation entry points within the active MV3 worker and persists `cardFillDispatchedAt` before filling. A legacy `card-filling` phase is treated as potentially dispatched; recovery observes readiness and does not refill blindly. Known paid-receipt contradictions for the saved reference remain held, while unrelated/unreadable current pages may fall back to independently matched account evidence. Existing-purchase payment pages are recognised for read-only assessment and cannot be used as an alternate automatic Pay or cancellation route. These contracts are simulated in an isolated actual-worker harness.
+
 The v0.9.0 reliability branch stores `latestAction` separately from historical results, classifies safe stop reasons, and includes those classifications in exports. Archived tests carry `abandonmentEvidence`: `merchant-unpaid-verified`, `owner-attested-no-payment` or `unsubmitted-selection-empty`. Owner attestation is bound to the current checkout key/reference/opening identity, and never establishes merchant payment or cancellation status. These changes are locally simulated; they do not add a new merchant recovery mutation or prove unattended acceptance.
 
 - **Pay dispatch is not idempotent.** Persist the complete checkout identity and `paymentDispatchedAt` **before** the one Pay action. An interrupted, returned-error or ambiguous dispatch may already have charged the card. Recover through trusted receipt/account purchase evidence only; never resubmit Pay for that journal.

@@ -1,6 +1,6 @@
 # Chrome extension: setup, testing and recovery
 
-This is the **operating guide** for the active Manifest V3 extension. The installed version is shown at the top of the popup; the source version is defined in [`manifest.json`](manifest.json) (**0.9.0**, reliability PR 1, 17 October 2026).
+This is the **operating guide** for the active Manifest V3 extension. The installed version is shown at the top of the popup; the source version is defined in [`manifest.json`](manifest.json) (**0.9.1**, reliability PR 2, 17 October 2026).
 
 - [Project overview and safety model](../../../README.md)
 - [Release history and observed live evidence](../../../docs/release-notes.md)
@@ -78,6 +78,8 @@ After a reload, close stale card-vault tabs and reopen setup from the popup. Sel
 Stripe's initial collapsed Card Element may show number/expiry/CVC before postcode. The form adapter re-resolves inputs as they appear and stops if required fields are missing, disabled, read-only or ambiguous. Do not bypass the stop by trying to replay Pay.
 
 ## Tests and releases
+
+PR 2 adds `npm run test:worker`, a stateful fake merchant with isolated actual-worker VM restarts and fault injection. Popup/alarm mutation commands are serialized, and card filling now has a durable marker preventing blind repetition after interruption. **Assess recovery (read only)** identifies open existing-purchase pages without paying or cancelling them; a price match cannot establish identity. Positively conflicting paid receipt evidence retains its hold for investigation.
 
 The reliability branch adds a **Latest action** line, separate from the current unresolved journal and historical `checkoutResult`. Stopped commands retain stable failure/recovery classifications even if they fail before a page read. Diagnostic downloads include this status. Test archives identify owner attestation, merchant-unpaid verification or an unsubmitted empty selection separately; none establishes merchant cancellation. Reopening the popup clears a stale attestation when its checkout identity changes.
 

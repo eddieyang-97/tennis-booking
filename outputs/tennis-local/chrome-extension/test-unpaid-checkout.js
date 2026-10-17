@@ -129,6 +129,7 @@ test('checkout progress reads only safe page state and reports merchant errors w
  assert.equal(send().value.merchantError,true);assert.equal(send().value.stage,'basket');assert.equal(clicks,0);
  context.location.pathname='/error';assert.equal(send().value.merchantError,true);assert.equal(send().value.stage,'other-page');
  context.document.body.innerText='Basket';assert.equal(send().value.merchantError,false);
+ context.document.body.innerText='Pay with card\nBooking ref: PT100001\nAmount due: £3.00';const existing=send().value;assert.equal(existing.stage,'existing-purchase');assert.equal(existing.reference,'100001');assert.equal(existing.cancellationSupported,false);assert.equal(clicks,0);
 });
 test('a slow card page can arrive after fifteen seconds within the extended bounded wait',async()=>{
  let now=0,reads=0;

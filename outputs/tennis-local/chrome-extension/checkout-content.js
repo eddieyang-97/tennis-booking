@@ -1,5 +1,5 @@
 // Read-only receipt inspection. Never accesses Stripe frames or input values.
-function checkoutReceipt(slot,key) {
+function checkoutReceipt(slot,key,expectedReference) {
  if(slot.courts?.some(c=>c!==slot.court))throw Error('Mixed-court booking requires purchase-history reconciliation');
  if(location.origin!=='https://tennistowerhamlets.com' || !location.pathname.startsWith('/basket'))throw Error('Open the resulting Courtside receipt page');
  const heading=document.querySelector('h1')?.textContent.trim()||'';
@@ -14,6 +14,7 @@ function checkoutReceipt(slot,key) {
  const hour=+slot.start.slice(0,2),time=new RegExp(`\\b${hour%12||12}:00\\s*${hour>=12?'pm':'am'}\\b`,'i');
  const totals=[...text.matchAll(/Total\s*[:]?\s*£\s*(\d+\.\d{2})/gi)];
  const paid=/payment (?:successful|received)|payment status\s*:\s*paid/i.test(heading+'\n'+text);
+ if(expectedReference&&reference===expectedReference&&paid&&totals.length===1&&totals[0][1]!==slot.totalGBP)return {status:'conflicting',key,reference,reasonCode:'RECEIPT_CONFLICT'};
  if(!reference || !paid || !text.includes(venue) || !datePattern.test(text) || !courtPattern.test(text) || !time.test(text) || totals.length!==1 || totals[0][1]!==slot.totalGBP)throw Error('Receipt layout or booking details not verified; inspect manually');
  const duration=new RegExp(`duration\\s*:\\s*${slot.hours}\\s*hours?\\b`,'i');
  const lastHour=hour+slot.hours-1;
@@ -45,5 +46,5 @@ chrome.runtime.onMessage.addListener((request,sender,respond)=>{
  if(request.kind==='test-purchase-state'&&location.pathname==='/account'&&document.readyState&&document.readyState!=='complete'){respond({ok:false,notReady:true,error:'Account purchase history is still loading'});return;}
  if(['purchase-read','test-purchase-state'].includes(request.kind) && /\/(?:verify-human|sign-in|login)(?:\/|$)/.test(location.pathname)){respond({ok:false,error:'Account login or human verification required',humanRequired:true,page:'account-verification'});return;}
  if(['purchase-read','test-purchase-state'].includes(request.kind)&&location.pathname==='/account'&&document.readyState&&document.readyState!=='complete'&&!document.querySelector('h1')?.textContent.trim()){respond({ok:false,notReady:true,error:'Account DOM not ready'});return;}
- try{respond({ok:true,value:request.kind==='test-purchase-state'?checkoutPurchase(request.slot,request.key,request.reference,null,null,true):request.kind==='purchase-read'?checkoutPurchase(request.slot,request.key,request.reference,request.paymentDispatchedAt,request.manualPaymentReportedAt):checkoutReceipt(request.slot,request.key)});}catch(e){respond({ok:false,error:e.message});}
+ try{respond({ok:true,value:request.kind==='test-purchase-state'?checkoutPurchase(request.slot,request.key,request.reference,null,null,true):request.kind==='purchase-read'?checkoutPurchase(request.slot,request.key,request.reference,request.paymentDispatchedAt,request.manualPaymentReportedAt):checkoutReceipt(request.slot,request.key,request.reference)});}catch(e){respond({ok:false,error:e.message});}
 });

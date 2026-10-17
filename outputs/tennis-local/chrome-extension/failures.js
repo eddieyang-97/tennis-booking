@@ -1,8 +1,10 @@
 // Only fixed classifications cross the diagnostic boundary; never copy arbitrary
 // merchant text, tokens, URLs or card fields into traces.
 const rules=[
+ ['RECEIPT_CONFLICT',/Conflicting paid receipt|Account receipt identity mismatch/i,'payment-reconciliation'],
+ ['EXISTING_PURCHASE_READ_ONLY',/Existing-purchase payment page requires/i,'user-action'],
  ['PURCHASE_MISSING',/Unique matching purchase.*observed 0 matches|Unique matching purchase not found(?!.*observed)/i,'manual-review'],
- ['PURCHASE_AMBIGUOUS',/Unique matching purchase.*observed [2-9]\d* matches/i,'manual-review'],
+ ['PURCHASE_AMBIGUOUS',/Unique matching purchase.*observed (?:[2-9]|[1-9]\d+) matches/i,'manual-review'],
  ['PURCHASE_LAYOUT_UNKNOWN',/Purchase history layout/i,'manual-review'],
  ['PURCHASE_STATE_UNSAFE',/purchase is paid or uncertain|purchase is not confirmed paid|Test payment is paid or uncertain|payment state changed/i,'payment-reconciliation'],
  ['REFERENCE_UNAVAILABLE',/reference unavailable|No recorded payment reference|Invalid recovery reference/i,'manual-review'],
