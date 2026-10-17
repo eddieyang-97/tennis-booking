@@ -45,7 +45,7 @@ export const scenarios={
   await assert.rejects(clearUnpaidTest(record,{closeCheckout:async()=>undefined,read:async()=>reads++}),e=>failureFor(e).reasonCode==='REFERENCE_UNAVAILABLE');assert.equal(reads,0);
  },
  'latest-action-not-historical-result':async()=>{
-  const state={checkoutResult:{status:'checkout-test-passed',runId:'old-run'}},storage={set:async value=>Object.assign(state,value)};
+  const state={checkoutResult:{status:'checkout-test-passed',runId:'old-run'}},storage={get:async()=>structuredClone(state),set:async value=>Object.assign(state,structuredClone(value))};
   await assert.rejects(executeAction(storage,'resetUnpaidTest',async()=>{throw Error('Test payment reference unavailable');},{version:'synthetic-new-version'}));
   assert.equal(state.latestAction.outcome,'stopped');assert.equal(state.latestAction.version,'synthetic-new-version');assert.equal(state.checkoutResult.runId,'old-run');
  }
