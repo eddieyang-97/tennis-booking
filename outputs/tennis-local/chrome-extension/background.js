@@ -168,8 +168,10 @@ async function automaticPayment(test=false,scheduled=false) {
    try{const response=await chrome.tabs.sendMessage(tab.id,{kind:'payment-state'});if(response?.ok)linkDiagnostic.linkFramePresent=response.value.linkFramePresent;}catch{}
    await step('link-discovery-diagnostic',linkDiagnostic);
   }
-  if(trace){await step('stopped',failureFor(e));await trace.finish('stopped');}
-  const output={status:'stopped',error:e.message,...(e.code?{errorCode:e.code}:{}),tabId:tab?.id,phase:record?.phase,booked:record?.paymentDispatchedAt?null:false,paid:record?.paymentDispatchedAt?null:false,...(linkDiagnostic?{linkDiagnostic}:{}),runId:trace?.record.id,finishedAt:trace?.record.finishedAt||new Date().toISOString()};await chrome.storage.local.set({checkoutResult:output});await chrome.action.setBadgeText({text:'!'});await notifyPaymentResult(output);return output;
+  const paymentPossible=!!(record?.paymentDispatchedAt||record?.manualPaymentReportedAt||['payment-dispatched','payment-uncertain'].includes(record?.phase));
+  const failure=failureFor(e,{paymentPossible});
+  if(trace){await step('stopped',failure);await trace.finish('stopped');}
+  const output={status:'stopped',error:e.message,...failure,...(e.code?{errorCode:e.code}:{}),tabId:tab?.id,phase:record?.phase,booked:paymentPossible?null:false,paid:paymentPossible?null:false,...(linkDiagnostic?{linkDiagnostic}:{}),runId:trace?.record.id,finishedAt:trace?.record.finishedAt||new Date().toISOString()};await chrome.storage.local.set({checkoutResult:output});await chrome.action.setBadgeText({text:'!'});await notifyPaymentResult(output);return output;
  }
  finally{busy=false;trace=null;resumedTab=null;}
 }
@@ -369,7 +371,7 @@ async function verifyPayment(scheduled=false,manualReference=null) {
  if(!record.reference&&!record.paymentDispatchedAt)throw Error('No recorded payment reference. If you paid manually, enter its booking reference and use Verify manual payment');
  return await finishPaidRecord(record,scheduled);
  }catch(e){
-  if(trace){await step('stopped',failureFor(e));await trace.finish('stopped');}
+  if(trace){await step('stopped',failureFor(e,{paymentPossible:true}));await trace.finish('stopped');}
   const output={status:'stopped',error:e.message,booked:null,paid:null,runId:trace?.record.id,finishedAt:trace?.record.finishedAt||new Date().toISOString()};
   await chrome.storage.local.set({checkoutResult:output});throw e;
  }finally{busy=false;trace=null;resumedTab=null;}
@@ -407,8 +409,13 @@ async function runAlarm(alarm){
       if(!job.prepared) throw Error('Preflight did not complete; check stopped');
       if(job.mode==='payment'){await resolvePendingPayment(true);await paymentCard(chrome.storage,null);}
       await check(job.day,true,job.settings||null);
-      if(['checkout','payment'].includes(job.mode)){const prepared=await checkout(job.day,true,false,job.discountCode||'',job.settings||null);if(job.mode==='payment' && prepared.status==='awaiting-payment')await automaticPayment(false,true);}
+      let outcome=(await chrome.storage.local.get('result')).result;
+      if(['checkout','payment'].includes(job.mode)){
+       const prepared=await checkout(job.day,true,false,job.discountCode||'',job.settings||null);
+       outcome=job.mode==='payment'&&prepared.status==='awaiting-payment'?await automaticPayment(false,true):prepared;
+      }
       await chrome.storage.local.remove('job');
+      return outcome;
     }
   } catch(e) {if(!e.recorded)await save({status:'stopped',day:job.day,checkedAt:new Date().toISOString(),step:alarm.name,error:e.message,...e.diagnostic,booked:false,paid:false});await notifyPaymentResult({status:'stopped'});return {status:'stopped',...failureFor(e),error:e.message,paid:null,booked:null};}
 }
