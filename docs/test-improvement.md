@@ -4,6 +4,7 @@
 **Reviewed source:** `main` at `5aa63506a000d4adf05a7e8b8e635cab1b513dbd` (16 October 2026), extension v0.8.9  
 **Scope:** Chrome extension in `outputs/tennis-local/chrome-extension/`  
 **Evidence update:** Four private diagnostic exports from 16 October 2026, spanning installed versions v0.8.7–v0.8.9. Only sanitized findings are included here; original logs must not be committed.
+**Review update (17 October 2026):** Added existing-purchase-page recovery, P0 restart/concurrency coverage, an explicit receipt-source decision contract, baseline CI from PR 1 and enforceable browser network/package isolation. These remain proposed requirements, not implemented or live-verified behavior.
 
 ## Executive summary
 
@@ -134,6 +135,7 @@ Run the actual content-script parsers and handlers against realistic, independen
 - Checkout opening/loading, provisional reference changes, disabled/enabled Pay, unsupported route and merchant errors.
 - Purchase history with one exact paid row, pending row, missing row, duplicate references, mismatched amount and cancelled-but-paid purchase.
 - Sign-in, human-verification and missing/changed DOM markers.
+- The separate **existing-purchase payment page** reached through Recent purchases → Pay: a `Booking ref: PT…` label, amount due and no visible basket-cancellation control. Test recognition separately from the basket's provisional-booking checkout; do not assume their routes, reference text or cancellation behavior are interchangeable.
 
 Keep the fixture set small but representative. Scrub names, references, account information and tokens. Any screenshot/DOM evidence gathered during live inspection should remain private until specifically reduced and reviewed for inclusion.
 
@@ -150,6 +152,7 @@ Create an in-process/local fake merchant that implements just the site-visible c
 - Purchase-history page which is still loading, fully loaded with **zero** matching references, duplicated matches, exact Pending / Pay match, or unexpected layout.
 - After a discount POST, temporary navigation/loading and lost content-script messages on the **same retained tab**; the merchant may have applied the code despite the read failure.
 - Checkout-opening command acknowledged before a delayed card page, merchant error, abandoned navigation, or provisional-reference appearance.
+- An existing pending purchase reopened from account history while the basket is empty, with no verified merchant cancellation action. Basket cleanup and local journal archival must not be represented as cancellation of that purchase.
 
 The simulator must be configurable with event timelines, side-effect counters and injectable failures. Example scenario:
 
@@ -184,6 +187,8 @@ For each mutation boundary (hour selection, discount apply, checkout opening, un
 
 Consider concurrent popup/alarm entry points and interrupted writes. Assert phase transitions, durable journal contents, allowed next actions and counts of external mutations. Avoid relying only on `status === "stopped"`.
 
+Concurrency is a P0 safety contract. Start overlapping popup/alarm commands against the same saved authorization and simulate competing read/modify/write operations, including before a journal has been created. Test lost storage updates, creation of two journals for one booking intent, immutable authorization and retention of payment holds across restart. Assert aggregate mutation counts across all journals and invocations for that intent, not only one counter per journal. The harness must expose conflicts rather than serializing them away accidentally. This remains a client-side safety property, not merchant-supported distributed exactly-once execution.
+
 For cleanup and checkout-opening specifically, test recovery across **multiple attempts and extension upgrades** with the same journal: repeated read failures must not mutate or erase the record; a later merchant observation may permit a safe next step; a failed cleanup must not leave the UI displaying an earlier test success as its last action. Drive scenarios with a fake clock so that 15-second vs 60-second readiness policies and a late card-page arrival are deterministic, rather than sleeping in real time.
 
 ### Layer 5 — real-extension browser integration
@@ -191,6 +196,10 @@ For cleanup and checkout-opening specifically, test recovery across **multiple a
 Use Playwright/Chromium to load the unpacked MV3 extension against the local simulator and exercise the true service worker, messaging, tabs, alarms and page adapters. Run release logic with an injected clock or explicit test-only alarm trigger; do not wait for midnight.
 
 **Origin and payment boundary requirement:** The production extension restricts trusted hosts to the real merchant/Stripe. Testing a localhost merchant needs an isolated test build or controlled routing layer that keeps the same production modules while substituting only the test origin and fake payment boundary. Never broaden production host permissions, copy live credentials, or call real Stripe Pay in automated tests.
+
+**Executable network isolation gate:** Deny network egress by default and allow only the local simulator and explicitly required local test resources. Cover requests from pages, service workers, redirects and child frames; serve fake Stripe scripts/frames locally without real payment keys. If controlled routing retains production-looking URLs, interception is mandatory and a missed route must fail closed without contacting the real host. An unexpected external request must fail the test and produce a sanitized destination category, even if the scenario otherwise passes. Include negative tests that attempt merchant/Stripe traffic and verify the isolation gate blocks it. Browser request interception alone is not the isolation guarantee; enforce the boundary for service-worker traffic as well.
+
+Test the packaged artifacts too: the production ZIP must contain neither test-origin overrides, fake payment adapters nor widened host permissions; test-only bundles must be identifiable and excluded from release artifacts. Run the packaged production-source checks in PR 1, and the browser/network-isolation checks when PR 3 introduces the browser harness.
 
 ## 5. Required scenario matrix
 
@@ -208,15 +217,16 @@ Use Playwright/Chromium to load the unpacked MV3 extension against the local sim
 | S10 | Missing, ambiguous or contradictory receipt/account evidence | Remain uncertain; retain reason and journal; no repeat charge | P0 |
 | S11 | Discount applied, then same retained tab loads/disconnects or read throws an unclassified error | One discount dispatch; classify observed/unknown state; bounded read-only recovery; never resubmit | P0 |
 | S12 | Six consecutive purchase-history cleanup rejections, then manual empty-basket reconciliation | No unsafe removals or false unpaid confirmation; explicit audit provenance and preserved history | P0 |
-| S13 | Service worker restarts with stale/closed tab | Read-only recovery; preserve payment guards and references | P1 |
+| S13 | Service worker restarts with stale/closed tab | Read-only recovery; preserve payment guards and references | P0 |
 | S14 | Saved settings edited after arming or during pending checkout | Original authorization remains immutable | P1 |
 | S15 | DST boundary, missed alarm and late release | Correct London release; no unsafe late booking | P1 |
-| S16 | Multiple invocations or older pending checkout | No concurrent conflicting checkout, lost hold or double submission | P1 |
+| S16 | Overlapping popup/alarm invocations, competing journal creation/storage writes, or older pending checkout | No conflicting journals for one intent, lost update/hold, authorization change or duplicate mutation; assert aggregate counts across invocations and journals | P0 |
 | S17 | Account purchase page still loading, complete with zero matching reference, duplicated row or malformed state | Distinct blocker/diagnostic, no premature removal or inferred unpaid status | P0 |
 | S18 | Checkout open acknowledged, but card page appears after the old 15-second limit or shows a merchant error | Configured 60-second bounded readiness for both test and scheduled flows; one opening click; never assume completion | P0 |
 | S19 | Cleanup stops before its first merchant read while journal has no provisional reference | Precise logged reason and prescribed read-only/manual next action; no journal loss | P0 |
 | S20 | New export/build contains prior run's failure and a stale earlier `checkoutResult` | Attribute each run to its own version; deduplicate snapshots; show latest action separately from unresolved record | P0 |
 | S21 | Manual empty-basket reconciliation archives an opened, reference-bearing unpaid test | Record owner attestation distinctly from confirmed merchant-unpaid evidence; never imply paid/unpaid verification without supporting evidence | P0 |
+| S22 | Existing pending purchase reopened through Recent purchases → Pay, with an empty basket or no visible cancellation control | Recognize its separate page contract; bind a reference through existing durable identity, explicit owner report or independently verified correlation, never price alone; default to read-only/manual recovery, and do not claim that basket cleanup or journal archival cancels the merchant purchase | P0 |
 
 Every scenario should verify the *observable mutation trace*, recovery decision and expected durable state. Explicitly label cases proven only by simulation versus reproduced against the real merchant.
 
@@ -281,6 +291,21 @@ Do not automatically convert uncertain to failed, paid to booked, or cancelled t
 - `stage-content.js` needs fixture-level testing against the actual parser plus delayed merchant behavior, not just box/label stubs.
 - `run-log.js` and `diagnostics.js` should produce easy-to-read stage-level failure and recovery summaries while maintaining safe redaction and bounded retention.
 
+### Receipt-source decision contract
+
+Before changing the existing fallback, make the following proposed policy executable. Classify the source before discarding an error: an unrelated page is different from positively conflicting evidence about the saved transaction. Use stable reason codes and sanitized observations rather than raw receipt text.
+
+| Current receipt observation | Independent account observation | Required decision |
+| --- | --- | --- |
+| Missing, closed, transiently unreadable or unsupported layout; no independently established contradictory claim | Unique exact-reference paid row at the saved net amount | Account evidence may reconcile payment; record the first source's failure category and account provenance |
+| Receipt clearly belongs to a different transaction | Unique exact-reference paid row at the saved net amount | Treat the current tab as unrelated, preserve its identity-mismatch diagnostic, and reconcile only the saved transaction from account evidence |
+| Provisional/awaiting-payment page without an explicit contradictory paid claim | Unique exact-reference paid row at the saved net amount | Account evidence may reconcile payment; the old page may be stale and is not by itself a contradiction |
+| Positively identified saved transaction with conflicting paid amount or other contradictory transaction facts | A different source appears to confirm the expected payment | Preserve the hold and classify conflicting evidence for manual investigation; do not silently choose whichever source permits success |
+| Independently verified exact paid receipt | Account source missing or temporarily unavailable, with no positive contradictory claim | Receipt evidence may reconcile payment under the existing trusted-receipt contract; absence alone does not invalidate positive evidence |
+| No independently verified exact paid source, or missing/duplicate/mismatched account rows | None sufficient | Remain unknown, preserve the journal and reason, and never repeat Pay |
+
+Test both permitted fallback and conflicting-evidence holds. A parser exception alone is not proof of contradiction, and a paid purchase still does not establish active reservation, cancellation or refund. S22 adds recognition and recovery assessment for the existing-purchase page; it does not authorize automatic payment through that page or invent a merchant cancellation action.
+
 Consider a **read-only recovery assessment** button that reports the next permitted action without clearing state, selecting a court or touching payment. Existing controls should remain guarded.
 
 **Log-to-regression workflow:** Add a local analyzer that accepts multiple sanitized exports, deduplicates `runHistory` by `runId`, compares journals chronologically, and emits a **proposed scenario skeleton** identifying source version, observed phases, missing evidence and mutation counts. Do not treat JSON run logs as a full behavioral replay: reproducing merchant state, exact DOM, and unknown network outcomes still requires independently constructed fake-merchant/HTML fixtures. All real booking references and private dumps stay outside Git.
@@ -299,7 +324,7 @@ npm run repro -- --scenario basket-hour-overwritten
 
 A failed scenario should emit a compact report: scenario/seed, exact expected and observed states, mutation counts, first broken invariant, run/phase correlation and a sanitized trace. Browser failures may attach local fake-site screenshots/Playwright traces; never retain card or account secrets.
 
-Add GitHub Actions for quick and scenario tests on each PR, browser integration where feasible, and a release gate that tests the exact packaged extension source. Pin Node/Chromium versions, use controlled clocks, and avoid flaky wall-clock sleeps in simulated tests.
+Add baseline GitHub Actions in PR 1: run the maintained suite plus each newly introduced scenario on every PR, and verify the runtime package allowlist and production configuration boundaries. Extend that same gate in PR 2 as the fault harness grows; do not defer all continuous verification until the browser harness exists. PR 3 adds browser integration, network isolation and the complete release gate against the exact packaged extension source. Pin Node/Chromium versions, use controlled clocks, and avoid flaky wall-clock sleeps in simulated tests.
 
 Maintain a small `test/fixtures` and `test/scenarios` catalog with readable names, linked back to the failure that introduced each scenario. Avoid a huge general-purpose test framework; favor simple interfaces and deterministic scheduling.
 
@@ -313,19 +338,22 @@ Maintain a small `test/fixtures` and `test/scenarios` catalog with readable name
 - Record the provenance of cleanup/abandonment (merchant-unpaid evidence versus explicit user attestation), particularly for reference-bearing tests.
 - Create sanitized fixtures/reproductions for the 14–16 October failures.
 - Add a scenario command and concise failure report, even if the initial scenarios use direct module testing.
+- Add baseline CI for the existing maintained suite and initial scenarios, plus package/configuration checks; retain this gate throughout subsequent PRs.
 
 **Done when**
 - A checkout/basket failure reports exactly which identity or lifecycle invariant failed.
 - Known failures, including repeated reference-lookup cleanup failures, post-discount same-tab read loss and checkout-open acknowledgement without card readiness, have named offline reproductions.
 - Existing payment guards and tests remain unchanged in semantics.
 - No sensitive DOM, card details or private tokens enter committed fixtures.
+- CI runs the maintained suite and new scenario reproductions on every PR; production-package checks reject leaked test configuration or widened permissions.
 
 ### PR 2 — Stateful fault and reconciliation coverage (P0)
 
 **Scope**
 - Implement the minimal merchant model and worker restart harness.
-- Add the S01–S12 and S17–S21 P0 scenarios, with injected failures at every relevant persistence/dispatch boundary; move any non-critical coverage into P1 only by explicit decision.
+- Add every P0 scenario in the matrix: S01–S13 and S16–S22, including restart, concurrent journal creation/storage writes and existing-purchase-page recovery. Inject failures at every relevant persistence/dispatch boundary; move any non-critical coverage into P1 only by explicit decision.
 - Assert per-journal mutation counts and no-repeat guarantees.
+- Assert aggregate counts across overlapping invocations and conflicting journals for the same authorization; make the receipt-source decision table executable and extend PR 1's CI gate.
 - Document legal recovery transitions and clarify missing vs conflicting evidence.
 
 **Done when**
@@ -333,20 +361,23 @@ Maintain a small `test/fixtures` and `test/scenarios` catalog with readable name
 - Every payment dispatch interruption retains the no-second-Pay invariant.
 - The simulated happy path reaches paid-evidence reconciliation.
 - Test runs require no credentials, owner interaction or real court availability.
+- Competing invocations cannot erase a hold, create duplicate conflicting checkout work, or bypass saved authorization; existing-purchase recovery never equates empty basket with cancellation.
 
 ### PR 3 — Browser integration and continuous release gate (P1)
 
 **Scope**
 - Test the real unpacked extension against the fake merchant in Chromium.
-- Add the remaining P1 scenarios, including discount and unpaid cleanup.
-- Add CI, test artifact retention and a one-command release check.
+- Add the remaining P1 scenarios S14–S15 and browser-level versions of the P0 discount, unpaid-cleanup, concurrency and recovery scenarios.
+- Extend the existing CI with browser integration, test artifact retention and a one-command release check.
 - Exercise the exact runtime package with a test-only configuration boundary.
+- Enforce deny-by-default network isolation and test missed routes, worker/frame requests, and attempts to reach real merchant or Stripe endpoints.
 
 **Done when**
 - Browser tests cover alarm → account/grid → selection → basket → checkout → fake payment/reconciliation.
 - Worker/extension restart and delayed content scripts are covered.
 - CI prevents releasing regressions in the core safety contracts.
 - Setup instructions are sufficient for a developer to reproduce a failure locally.
+- An unexpected external request fails the browser gate; production ZIPs contain no test overrides, fake adapters or widened host permissions.
 
 **Order:** PR 1 → PR 2 before additional behavior/features; PR 3 is the final release-confidence layer. This sequencing is more valuable than immediately adding new retries or widening payment recovery.
 
@@ -359,8 +390,12 @@ Maintain a small `test/fixtures` and `test/scenarios` catalog with readable name
 - All relevant mutation boundaries have crash/lost-response coverage.
 - Zero duplicate Pay dispatches or unauthorized basket/removal mutations in the test suite.
 - Exact slot and gross/net payment authorization across all tested flows.
+- Aggregate mutation counts and journal integrity hold under competing popup/alarm operations and worker restarts.
+- Receipt-source decisions distinguish stale/unrelated pages from positively conflicting transaction evidence.
+- Existing-purchase payment recovery is covered separately from basket checkout; local cleanup never claims merchant cancellation.
 - Sanitized merchant DOM fixtures detect unsupported layout changes.
 - Real-extension local browser integration covers the complete release-to-reconciliation path.
+- Browser tests cannot reach real merchant/Stripe services, and the production package excludes test-only configuration and payment adapters.
 - Full tests run with one command and with no real credentials or payments.
 
 **Live acceptance, deliberately limited**
