@@ -7,6 +7,7 @@ export function readiness(status,now=Date.now()) {
  const pending=status.checkoutRecords?.find(record=>record.status!=='confirmed');
  const submitted=pending&&(pending.manualPaymentReportedAt||pending.paymentDispatchedAt||['payment-dispatched','payment-uncertain'].includes(pending.phase));
  const lines=[`Version ${status.version||'unknown'}`,status.localCardUnlocked?'Card unlocked':'Card locked'];
+ if(status.latestAction){const a=status.latestAction;lines.push(`Latest action: ${a.kind} — ${a.outcome}${a.reasonCode?' ('+a.reasonCode+')':''}`);}
  lines.push(pending?(submitted?'Pending payment: verify receipt before another booking':`Pending checkout (${pending.phase}): inspect or reconcile`):'No unresolved checkout');
  if(pending?.slot){const s=pending.slot;lines.push(`Pending: ${s.date} ${s.start}, ${s.hours}h, ${s.venue}, court ${s.courts?.join('/')||s.court}, gross £${s.totalGBP}`);}
  if(status.job){

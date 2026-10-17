@@ -6,6 +6,8 @@ Use the [root README](../README.md) for current booking policy, the [extension g
 
 ## 1. Core payment and recovery contract
 
+The v0.9.0 reliability branch stores `latestAction` separately from historical results, classifies safe stop reasons, and includes those classifications in exports. Archived tests carry `abandonmentEvidence`: `merchant-unpaid-verified`, `owner-attested-no-payment` or `unsubmitted-selection-empty`. Owner attestation is bound to the current checkout key/reference/opening identity, and never establishes merchant payment or cancellation status. These changes are locally simulated; they do not add a new merchant recovery mutation or prove unattended acceptance.
+
 - **Pay dispatch is not idempotent.** Persist the complete checkout identity and `paymentDispatchedAt` **before** the one Pay action. An interrupted, returned-error or ambiguous dispatch may already have charged the card. Recover through trusted receipt/account purchase evidence only; never resubmit Pay for that journal.
 - **Mutation acknowledgement is not outcome proof.** A lost response to selecting an hour, applying a discount, opening checkout, or removing a test item does not authorize an automatic replay. Observe and reconcile the actual site state. Read-only probes may retry within explicit budgets; mutation calls may not.
 - **Payment and reservation state are distinct.** A uniquely matched `Confirmed / Paid ✔` purchase proves payment, not that the court remains booked, that cancellation succeeded, or that a refund occurred. Preserve separate state for payment, active booking, cancellation and refund; represent ambiguous evidence as unknown.

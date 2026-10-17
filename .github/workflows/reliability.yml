@@ -1,0 +1,19 @@
+name: Reliability gate
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  deterministic:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.18.0'
+      - name: Maintained suite
+        run: npm --prefix outputs/tennis-local/chrome-extension test
+      - name: Reproduction scenarios
+        run: npm --prefix outputs/tennis-local/chrome-extension run test:scenarios
+      - name: Exact runtime package
+        shell: pwsh
+        run: ./build.ps1

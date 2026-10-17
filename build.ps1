@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 $taskSource = Join-Path $PSScriptRoot 'outputs/tennis-local/chrome-extension'
 $taskManifest = Get-Content -LiteralPath (Join-Path $taskSource 'manifest.json') -Raw | ConvertFrom-Json
-$taskRuntime = @('manifest.json','background.js','core.js','booking-settings.js','readiness.js','diagnostics.js','stage-rules.js','discount.js','test-cleanup.js','navigation.js','grid-read.js','page-read.js','retry.js','run-log.js','checkout.js','payment.js','reconciliation.js','link-frames.js','content.js','stage-content.js','checkout-content.js','payment-content.js','link-content.js','card-content.js','card-vault-core.js','card-vault.html','card-vault.js','popup.html','popup.js','notification.png','README.md')
+$taskRuntime = @(Get-Content -LiteralPath (Join-Path $PSScriptRoot 'runtime-files.json') -Raw | ConvertFrom-Json)
 $taskOutput = Join-Path $PSScriptRoot 'artifacts'
 New-Item -ItemType Directory -Path $taskOutput -Force | Out-Null
 $taskZip = Join-Path $taskOutput ('tennis-booking-v' + $taskManifest.version + '.zip')
@@ -11,6 +11,12 @@ $taskArchive = [IO.Compression.ZipFile]::OpenRead($taskZip)
 try {
  $taskNames = @($taskArchive.Entries.FullName)
  if($taskNames.Count -ne $taskRuntime.Count -or (Compare-Object ($taskRuntime | Sort-Object) ($taskNames | Sort-Object))) { throw 'Runtime archive does not match the reviewed file allowlist' }
+ foreach ($taskEntry in $taskArchive.Entries) {
+  $taskStream = $taskEntry.Open()
+  try { $taskHasher = [Security.Cryptography.SHA256]::Create(); $taskHash = [BitConverter]::ToString($taskHasher.ComputeHash($taskStream)).Replace('-', '') }
+  finally { $taskStream.Dispose(); if ($taskHasher) { $taskHasher.Dispose() } }
+  if ($taskHash -ne (Get-FileHash -LiteralPath (Join-Path $taskSource $taskEntry.FullName) -Algorithm SHA256).Hash) { throw 'Runtime archive differs from tested source' }
+ }
 } finally { $taskArchive.Dispose() }
 Get-FileHash -LiteralPath $taskZip -Algorithm SHA256 | Format-List
 Write-Output $taskZip
