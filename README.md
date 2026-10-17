@@ -2,7 +2,7 @@
 
 A Manifest V3 Chrome extension that checks and attempts to book tennis courts on [Tower Hamlets Courtside](https://tennistowerhamlets.com/) at the London midnight release, with configurable preferences, strict basket/payment verification, a local encrypted card file and recovery of uncertain payments.
 
-**Active implementation:** [`outputs/tennis-local/chrome-extension/`](outputs/tennis-local/chrome-extension/) · **Version:** [`0.9.1`](outputs/tennis-local/chrome-extension/manifest.json), reliability PR 2 (17 October 2026).
+**Active implementation:** [`outputs/tennis-local/chrome-extension/`](outputs/tennis-local/chrome-extension/) · **Version:** [`0.9.2`](outputs/tennis-local/chrome-extension/manifest.json), reliability PR 3 (17 October 2026).
 
 **Release status:** In active development, **not yet verified for unattended end-to-end midnight payment**. A real £2.50 one-hour card payment and its subsequent account-purchase reconciliation were verified on 13 October. Live two-hour basket selection was verified, but an automated two-hour Pay and a complete unattended midnight booking have not been established. See [release notes and live-evidence limits](docs/release-notes.md).
 
@@ -71,7 +71,9 @@ powershell -ExecutionPolicy Bypass -File .\build.ps1
 
 The build uses an explicit runtime file allowlist, creates an archive under ignored `artifacts/`, checks its contents and outputs a SHA-256 hash. The archive deliberately omits test sources and private local data.
 
-**Validation boundaries:** Unit and mocked-worker tests cover extensive safety cases but do not prove real merchant behavior. The reliability branch adds named offline reproductions, log comparison and baseline CI configuration with package checks. CI execution and stronger stateful/browser layers are tracked separately in the [test improvement plan](docs/test-improvement.md); local simulation passes are not unattended payment acceptance.
+The complete deterministic check is `npm run test:ci` from the extension directory, after the pinned browser dependency/setup steps in the [local Chromium gate guide](outputs/tennis-local/chrome-extension/test/browser/README.md). It runs maintained tests, named module reproductions, actual-worker fault simulations, real Chromium integration against a local fake merchant, and ZIP/source checks. `npm run test:browser` runs just the browser gate; `npm run test:worker` runs worker fault injection.
+
+**Validation boundaries:** The local browser gate verifies simulated checkout, discount, cleanup, concurrent requests and payment reconciliation after a real Chromium restart. It substitutes the card boundary and controlled alarm clock, and cannot establish live Stripe/merchant compatibility, bank challenges or unattended midnight payment. Production packaging excludes all test substitutions. CI execution remains separate evidence from local passes. See the [test improvement plan](docs/test-improvement.md).
 
 ### Key source files
 

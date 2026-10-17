@@ -1,6 +1,6 @@
 # Release notes
 
-This is the historical change log for the **active Chrome extension** in [`outputs/tennis-local/chrome-extension/`](../outputs/tennis-local/chrome-extension/). The authoritative source version is [`manifest.json`](../outputs/tennis-local/chrome-extension/manifest.json), **0.8.9** at the 16 October 2026 review.
+This is the historical change log for the **active Chrome extension** in [`outputs/tennis-local/chrome-extension/`](../outputs/tennis-local/chrome-extension/). The authoritative source version is [`manifest.json`](../outputs/tennis-local/chrome-extension/manifest.json), **0.9.2** on the 17 October 2026 reliability branches; branch builds are not merged release claims.
 
 Notes below describe changes made *at each release*, not instructions to install or downgrade to older builds. Historical test counts and unverified behaviors are not current release-quality claims. For up-to-date setup, use the [project README](../README.md) and [extension usage guide](../outputs/tennis-local/chrome-extension/README.md). For original investigation and detailed timestamps, see [payment-system.md](payment-system.md).
 
@@ -18,6 +18,25 @@ Notes below describe changes made *at each release*, not instructions to install
 **Current acceptance limitation:** Source improvements and simulated tests do not establish an unattended successful midnight booking through paid receipt verification. Payment confirmation is also not proof that a reservation is still active after a cancellation.
 
 ## Changes by version
+
+### v0.9.2 — local Chromium release gate (17 October 2026)
+- Pinned Playwright/Chromium tests use production worker/content adapters with a separate synthetic merchant/profile, controlled clock, fake card boundary and a documented test-only popup-tab substitution.
+- Added browser scenarios for alarm-driven fake payment and account reconciliation across Chromium restart, no-repeat payment, concurrent discounted unpaid tests/cleanup, merchant errors, unrelated baskets, account-parser rejection and popup settings/DST.
+- A repeated browser run reproduced an absent checkout-progress reply during navigation. The worker now classifies only that read as `CHECKOUT_READ_UNAVAILABLE` and observes it within the existing readiness deadline; it does not repeat checkout opening. A failing-before-fix module regression and an actual-worker regression cover recovery with one opening/discount.
+- HTTP(S) traffic passes through a local denying proxy with independent page routing, negative page/frame/worker probes, and tests that unexpected external requests fail the gate. Chromium infrastructure probes remain blocked and reported.
+- Added `test:browser`, the complete `test:ci` command, a browser CI job and fake-only diagnostic artifact retention. Production ZIPs exclude all test overrides and match reviewed source entry hashes.
+- These are simulated checks. No live basket, discount, payment or midnight job was created by this implementation work. See the [browser guide](../outputs/tennis-local/chrome-extension/test/browser/README.md) for the precise acceptance boundaries.
+
+### v0.9.1 — actual-worker faults and safe recovery (17 October 2026)
+- Added a stateful independent merchant and 43 actual-worker VM fault tests covering durable intent/dispatch boundaries, interruption/restart, cleanup, competing invocations and payment reconciliation.
+- Reproduced and fixed stale preflight overwriting a newer arm by serializing mutation entry points. Persisted card-fill intent prevents blind refill after interruption, including legacy `card-filling` records.
+- Positively conflicting receipt evidence keeps its hold; independently matched account evidence may reconcile an unrelated/unavailable current page. Existing-purchase recovery assessment is read-only.
+- Local maintained and scenario tests passed; GitHub Reliability gate passed for commit `9210cb2336c832d44dbdf86909217c14bd744752`.
+
+### v0.9.0 — reproducible diagnostics and baseline CI (17 October 2026)
+- Added safe failure classifications, latest-action status, journal-bound manual attestation and explicit archive evidence provenance.
+- Added seven named module reproductions, local version-aware log comparison, production package/permission checks and baseline CI.
+- Production builds use an explicit runtime file list and verify ZIP entry/source hashes. GitHub Reliability gate passed for commit `7d02cd813c0d57bc957947de18ef07a950fcfecd`.
 
 ### v0.8.9 — checkout readiness and merchant error diagnosis
 - Bounded card-page readiness now waits up to 60 seconds for both scheduled and manual checkout-opening paths.

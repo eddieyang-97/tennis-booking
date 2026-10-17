@@ -1,10 +1,10 @@
 # Tennis booking: reliability and test improvement proposal
 
-**Status:** PR 1 implemented on the reliability branch; remaining layers are planned. See implementation progress below.
+**Status:** All three implementation layers are on stacked reliability branches. Local evidence and remaining acceptance limits are below; these are not merged/live-release claims.
 **Reviewed source:** `main` at `5aa63506a000d4adf05a7e8b8e635cab1b513dbd` (16 October 2026), extension v0.8.9  
 **Scope:** Chrome extension in `outputs/tennis-local/chrome-extension/`  
 **Evidence update:** Four private diagnostic exports from 16 October 2026, spanning installed versions v0.8.7–v0.8.9. Only sanitized findings are included here; original logs must not be committed.
-**Review update (17 October 2026):** Added existing-purchase-page recovery, P0 restart/concurrency coverage, an explicit receipt-source decision contract, baseline CI from PR 1 and enforceable browser network/package isolation. These remain proposed requirements, not implemented or live-verified behavior.
+**Review update (17 October 2026):** Added existing-purchase-page recovery, P0 restart/concurrency coverage, an explicit receipt-source decision contract, baseline CI from PR 1 and browser network/package isolation. The progress section records implementation; the original design requirements remain below for traceability. No new live verification was performed.
 
 ## Executive summary
 
@@ -12,9 +12,12 @@
 
 - **PR 1 implemented, simulated locally:** fixed failure classifications, latest action status separate from historical checkout results, archived-test evidence provenance, current-journal-bound owner attestation, seven named offline module reproductions, a local log comparison tool, production package/configuration checks and baseline CI configuration. No live mutation or payment acceptance was performed. CI execution is a separate gate from local passes.
 - **PR 2 implemented, simulated locally:** a stateful merchant model and isolated actual-worker VM harness exercise intent persistence, dispatch, acknowledgement-following writes, restarts, repeated recovery and concurrent popup/alarm operations. Regression tests reproduced and fixed stale preflight overwriting re-arm, and added a durable card-fill marker. Receipt-source conflict policy and existing-purchase read-only assessment are implemented. VM interruption exceptions are not a hard Chromium-process kill; the browser layer must cover real lifecycle behavior.
-- **Remaining:** fixture-backed browser adapter coverage, isolated real-extension browser execution and its network gate. Existing direct-module/VM reproductions do not satisfy those stronger layers. S14–S15 remain backed by the existing pure settings/date tests until the browser layer is added.
+- **PR 3 implemented, local Chromium simulation:** seven browser scenarios exercise actual worker/content adapters, controlled alarm callbacks, delayed selection, immutable popup settings, BST/GMT release dates, concurrent discounted unpaid tests/cleanup, merchant errors, unrelated baskets, account-parser rejection cases and fake Pay/reconciliation across Chromium close/relaunch. Two independent proxy tests and page/frame/worker probes verify the HTTP(S) deny boundary. Browser CI and fake-only artifacts are configured. See the [browser guide](../outputs/tennis-local/chrome-extension/test/browser/README.md) for exact substitutions and setup.
+- **Still unverified:** live merchant/Stripe compatibility for these changes, real midnight alarm delivery under surge, human/bank challenges, active reservation state and unattended payment. Browser restart uses close/relaunch, not a forced OS crash. The production sender-tab guard and real card filling are not exercised by this browser copy; maintained adapter/vault fixtures remain separate evidence. CI runs must be checked independently of local execution.
 
-Commands currently available: `npm test`, `npm run test:quick`, `npm run test:scenarios`, `npm run repro -- --scenario <name>` and `npm run analyze:logs -- <local-export.json> [...]`. Run them from the extension directory. Analyzer output is observed evidence and a proposed scenario, never a full merchant replay; it retains local run IDs and must remain private.
+A repeated browser run exposed a missing checkout-progress response during navigation. Its regression failed before the fix. Only this read-only command now receives `CHECKOUT_READ_UNAVAILABLE` and bounded observation; mutation command failures retain their stop behavior. An actual-worker regression asserts one opening, one discount and zero payments after two missing read replies.
+
+Commands currently available: `npm test`, `npm run test:quick`, `npm run test:scenarios`, `npm run test:browser`, `npm run test:ci`, `npm run repro -- --scenario <name>` and `npm run analyze:logs -- <local-export.json> [...]`. Run them from the extension directory; browser commands require the pinned setup in its guide. Analyzer output is observed evidence and a proposed scenario, never a full merchant replay; it retains local run IDs and must remain private.
 
 The current extension already has substantial defensive logic: exact slot and basket verification, durable payment-dispatch journaling, receipt reconciliation, strict spending limits, and bounded read retries. Keep those safeguards. The recurring problem is **test fidelity and recovery ergonomics**, not simply a shortage of unit tests.
 
@@ -320,7 +323,7 @@ Consider a **read-only recovery assessment** button that reports the next permit
 
 ## 7. Developer experience and CI
 
-Proposed commands (not yet implemented):
+Implemented commands (browser dependency setup is separate):
 
 ~~~bash
 npm run test:quick       # Pure/unit + DOM fixture tests

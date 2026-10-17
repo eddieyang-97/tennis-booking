@@ -12,6 +12,7 @@ const rules=[
  ['PAGE_LOADING',/still loading|DOM not ready|DOM not stable/i,'read-only-observation'],
  ['MERCHANT_CHECKOUT_ERROR',/Merchant reported Something went wrong/i,'manual-review'],
  ['CHECKOUT_READY_TIMEOUT',/Card checkout readiness timed out/i,'read-only-observation'],
+ ['CHECKOUT_READ_UNAVAILABLE',/Checkout read response unavailable/i,'read-only-observation'],
  ['CHECKOUT_OPEN_UNRESOLVED',/Checkout opening is unresolved/i,'read-only-observation'],
  ['BASKET_MISMATCH',/Basket.*mismatch|Unexpected basket item count|unrelated or changed items|Basket price/i,'manual-review'],
  ['BASKET_NOT_EMPTY',/Existing basket items|Remove.*selection|basket is not.*empty/i,'user-action'],
