@@ -4,7 +4,7 @@ import {payableSlot} from './discount.js';
 import {verifyBasket} from './stage-rules.js';
 import {waitPaymentState} from './page-read.js';
 import {temporaryTabError} from './retry.js';
-export async function openVerifiedCheckout(record,deps,{timeoutMs=15000}={}) {
+export async function openVerifiedCheckout(record,deps,{timeoutMs=15000,now=Date.now,delay}={}) {
  if(record.paymentDispatchedAt||record.manualPaymentReportedAt)throw Error('Payment requires reconciliation, not checkout opening');
  if(record.discountCode&&!record.discount)throw Error('Discount must be verified before checkout');
  const current=await deps.current();
@@ -15,7 +15,7 @@ export async function openVerifiedCheckout(record,deps,{timeoutMs=15000}={}) {
   record={...record,checkoutOpenDispatchedAt:new Date().toISOString()};await deps.save(record);
   try{await deps.command({kind:'payment-open',expected});}catch(error){if(!temporaryTabError(error)&&!/Checkout response unavailable/.test(error.message))throw error;}
  }
- const page=await waitPaymentState(deps.state,{timeoutMs,accept:state=>{if(state.totalGBP!==payableSlot(record).totalGBP||!/^\d+$/.test(state.reference||''))throw Error('Checkout amount or reference not verified');return true;}});
+ const page=await waitPaymentState(deps.state,{timeoutMs,now,...(delay?{delay}:{}),accept:state=>{if(state.totalGBP!==payableSlot(record).totalGBP||!/^\d+$/.test(state.reference||''))throw Error('Checkout amount or reference not verified');return true;}});
  return {record,page};
 }
 // The journal is committed before any payment submission. An interrupted or
