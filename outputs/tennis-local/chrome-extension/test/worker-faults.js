@@ -1,5 +1,51 @@
 import test from 'node:test';import assert from 'node:assert/strict';
 import {Merchant} from './merchant.js';import {startWorker} from './worker-harness.js';
+import {receiptResponse} from './receipt-fixture.js';
+
+const paidReceipt='Booking reference: 100001\nPayment received\nBethnal Green Gardens\n23 October 2026\nCourt 1\n8:00pm–9:59pm\nDuration: 2 hours\nTotal: £14.00';
+for(const marker of [{phase:'card-filling'},{phase:'checkout-opening',cardFillDispatchedAt:'2026-10-17T11:00:00Z'},{phase:'checkout-opening',cardFillRecoveryRequired:true}])test(`actual worker refuses enabled card of unknown provenance: ${JSON.stringify(marker)}`,async()=>{
+ const merchant=new Merchant(),record=merchant.record({checkoutTestOnly:false,reference:'100001',tabId:42,...marker}),state={checkoutRecords:[record]},worker=await startWorker(merchant,state);
+ merchant.readyAt=merchant.clock;worker.seedTab(42,'https://tennistowerhamlets.com/basket/pay/card');
+ for(let attempt=0;attempt<2;attempt++){const result=await worker.send({kind:'payCheckout'});assert.equal(result.reasonCode,'CARD_FILL_REVIEW_REQUIRED');assert.equal(result.status,'stopped');}
+ assert.deepEqual(state.checkoutRecords,[record]);assert.ok(Object.values(merchant.counts).every(count=>count===0));
+});
+for(const mode of ['exact','missing','unrelated','unrecognized'])test(`actual receipt adapter preserves ${mode} receipt reconciliation semantics`,async()=>{
+ const merchant=new Merchant();merchant.slot.venue='bethnal-green-gardens';
+ const record=merchant.record({checkoutTestOnly:false,reference:'100001',tabId:42,paymentDispatchedAt:new Date(merchant.clock).toISOString(),phase:'payment-uncertain'}),state={checkoutRecords:[record]};
+ const text=mode==='missing'?'':mode==='unrelated'?paidReceipt.replace('100001','100002').replace('Court 1','Court 2'):mode==='unrecognized'?'Booking reference: 100001\nPayment received':paidReceipt;
+ merchant.options.receiptResponse=request=>receiptResponse(request,text);merchant.purchases.set('100001',{state:'Confirmed',totalGBP:'14.00'});
+ const worker=await startWorker(merchant,state);worker.seedTab(42,'https://tennistowerhamlets.com/basket/receipt');
+ const result=await worker.send({kind:'verifyPayment'});assert.equal(result.status,'confirmed');assert.equal(result.receiptSource,mode==='exact'?'booking-receipt':'account-purchase');
+ assert.ok(Object.values(merchant.counts).every(count=>count===0));
+});
+for(const hung of ['query','message'])test(`bounded recovery assessment with hung ${hung} cannot starve release`,async()=>{
+ const merchant=new Merchant();merchant.clock=Date.parse('2026-10-16T23:00:00Z');merchant.options.timerDelay=ms=>ms>=1000?100:1;
+ const record=merchant.record({reference:'100001'}),state={checkoutRecords:[record],job:{day:'2026-10-24',when:merchant.clock,mode:'availability',prepared:true}},worker=await startWorker(merchant,state);
+ worker.seedTab(42,'https://tennistowerhamlets.com/purchase/card/100001');
+ let started;const entered=new Promise(resolve=>started=resolve),never=()=>{started();return new Promise(()=>{});};
+ if(hung==='query')worker.chrome.tabs.query=never;
+ else{const original=worker.chrome.tabs.sendMessage;worker.chrome.tabs.sendMessage=(id,request)=>request.kind==='checkout-progress'?never():original(id,request);}
+ let finished=false;const assessment=worker.send({kind:'assessRecovery'}).then(result=>{finished=true;return result;});await entered;
+ let timer;try{await Promise.race([worker.alarm({name:'release'}),new Promise((_,reject)=>timer=setTimeout(()=>reject(Error('Release starved')),70))]);}finally{clearTimeout(timer);}
+ assert.equal(finished,false);assert.equal(state.result.status,'complete');
+ const result=await assessment;assert.equal(result.observationIncomplete,true);assert.equal(result.paymentState,'unknown');assert.equal(result.automaticReplayAllowed,false);
+ assert.deepEqual(state.checkoutRecords,[record]);assert.equal(state.latestAction.kind,'release');assert.ok(Object.values(merchant.counts).every(count=>count===0));
+});
+test('independent recovery observation rejects a changed journal snapshot',async()=>{
+ const merchant=new Merchant(),record=merchant.record({reference:'100001'}),state={checkoutRecords:[record]},worker=await startWorker(merchant,state);
+ worker.seedTab(42,'https://tennistowerhamlets.com/purchase/card/100001');const original=worker.chrome.tabs.sendMessage;
+ worker.chrome.tabs.sendMessage=async(id,request)=>{const response=await original(id,request);if(request.kind==='checkout-progress')state.checkoutRecords=[{...record,reference:'100002'}];return response;};
+ const result=await worker.send({kind:'assessRecovery'});assert.equal(result.reasonCode,'RECOVERY_STATE_CHANGED');assert.equal(result.exactReferenceMatches,undefined);assert.equal(result.paymentState,'unknown');assert.equal(state.checkoutRecords[0].reference,'100002');
+ assert.ok(Object.values(merchant.counts).every(count=>count===0));
+});
+for(const [field,from,to] of [['court','Court 1','Court 2'],['venue','Bethnal Green Gardens','Victoria Park'],['date','23 October','24 October'],['year','2026','2027'],['duration','2 hours','1 hour'],['time','8:00pm','7:00pm'],['total','14.00','15.00']])test(`actual receipt adapter through worker holds conflicting ${field} despite paid account row`,async()=>{
+ const merchant=new Merchant();merchant.slot.venue='bethnal-green-gardens';const record=merchant.record({checkoutTestOnly:false,reference:'100001',tabId:42,paymentDispatchedAt:new Date(merchant.clock).toISOString(),phase:'payment-uncertain'}),state={checkoutRecords:[record]};
+ merchant.options.receiptResponse=request=>receiptResponse(request,paidReceipt.replace(from,to));merchant.purchases.set('100001',{state:'Confirmed',totalGBP:'14.00'});
+ let accountReads=0;const message=merchant.message.bind(merchant);merchant.message=async(...args)=>{if(args[1].kind==='purchase-read')accountReads++;return message(...args);};
+ const worker=await startWorker(merchant,state);worker.seedTab(42,'https://tennistowerhamlets.com/basket/receipt');
+ const result=await worker.send({kind:'verifyPayment'});assert.equal(result.status,'stopped');assert.equal(result.reasonCode,'RECEIPT_CONFLICT');assert.equal(result.paid,null);
+ assert.equal(accountReads,0);assert.deepEqual(state.checkoutRecords,[record]);assert.ok(Object.values(merchant.counts).every(count=>count===0));
+});
 test('actual worker: check, prepare, fake Pay and account reconciliation; repeat invocation cannot charge twice',async()=>{
  const merchant=new Merchant(),state={},worker=await startWorker(merchant,state);
  assert.equal((await worker.send({kind:'check',day:merchant.slot.date})).status,'complete');

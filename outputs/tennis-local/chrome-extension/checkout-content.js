@@ -1,6 +1,5 @@
 // Read-only receipt inspection. Never accesses Stripe frames or input values.
 function checkoutReceipt(slot,key,expectedReference) {
- if(slot.courts?.some(c=>c!==slot.court))throw Error('Mixed-court booking requires purchase-history reconciliation');
  if(location.origin!=='https://tennistowerhamlets.com' || !location.pathname.startsWith('/basket'))throw Error('Open the resulting Courtside receipt page');
  const heading=document.querySelector('h1')?.textContent.trim()||'';
  const text=document.querySelector('main')?.innerText || document.body.innerText;
@@ -14,7 +13,22 @@ function checkoutReceipt(slot,key,expectedReference) {
  const hour=+slot.start.slice(0,2),time=new RegExp(`\\b${hour%12||12}:00\\s*${hour>=12?'pm':'am'}\\b`,'i');
  const totals=[...text.matchAll(/Total\s*[:]?\s*£\s*(\d+\.\d{2})/gi)];
  const paid=/payment (?:successful|received)|payment status\s*:\s*paid/i.test(heading+'\n'+text);
- if(expectedReference&&reference===expectedReference&&paid&&totals.length===1&&totals[0][1]!==slot.totalGBP)return {status:'conflicting',key,reference,reasonCode:'RECEIPT_CONFLICT'};
+ // A positively identified paid receipt is contradictory evidence, not absent
+ // evidence. Only recognize explicit facts; missing/unfamiliar layout remains
+ // unverifiable. Never return the merchant text in diagnostics.
+ const months=['January','February','March','April','May','June','July','August','September','October','November','December'];
+ const dates=[...text.matchAll(/\b(\d{1,2})(?:st|nd|rd|th)?\s+(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{4})\b/gi)];
+ const courts=[...text.matchAll(/\b(?:Tennis court|Court)\s+(\d+)\b/gi)].map(m=>+m[1]);
+ const venues=['Victoria Park','Bethnal Green Gardens'].filter(name=>text.includes(name));
+ const durations=[...text.matchAll(/\bduration\s*:\s*(\d+)\s*hours?\b/gi)].map(m=>+m[1]);
+ const minute=m=>(+m[1]%12+(/pm/i.test(m[3])?12:0))*60+(+m[2]);
+ const ranges=[...text.matchAll(/\b(\d{1,2}):(\d{2})\s*(am|pm)\s*[–—-]\s*(\d{1,2}):(\d{2})\s*(am|pm)\b/gi)];
+ const allowedCourts=slot.courts||[slot.court];
+ const conflictingDate=dates.some(m=>+m[1]!==day||months.findIndex(name=>name.toLowerCase()===m[2].toLowerCase())!==date.getUTCMonth()||+m[3]!==date.getUTCFullYear());
+ const conflictingRange=ranges.some(m=>minute(m)!==hour*60||minute([null,m[4],m[5],m[6]])!==(hour+slot.hours)*60-1);
+ const contradictory=conflictingDate||conflictingRange||totals.some(m=>m[1]!==slot.totalGBP)||venues.some(name=>name!==venue)||courts.some(c=>!allowedCourts.includes(c))||durations.some(n=>n!==slot.hours);
+ if(expectedReference&&reference===expectedReference&&paid&&contradictory)return {status:'conflicting',key,reference,reasonCode:'RECEIPT_CONFLICT'};
+ if(slot.courts?.some(c=>c!==slot.court))throw Error('Mixed-court booking requires purchase-history reconciliation');
  if(!reference || !paid || !text.includes(venue) || !datePattern.test(text) || !courtPattern.test(text) || !time.test(text) || totals.length!==1 || totals[0][1]!==slot.totalGBP)throw Error('Receipt layout or booking details not verified; inspect manually');
  const duration=new RegExp(`duration\\s*:\\s*${slot.hours}\\s*hours?\\b`,'i');
  const lastHour=hour+slot.hours-1;

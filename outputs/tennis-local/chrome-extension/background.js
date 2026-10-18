@@ -3,13 +3,13 @@ import {verifyBasket,basketEvidence} from './stage-rules.js';
 import {retryTab} from './retry.js';
 import {startRun} from './run-log.js';
 import {prepareCheckout,checkoutCandidate,confirmCheckout,PAYMENT_TEST_SLOT,reconcileClearedSelection,basketTestKey,recoverPreparationTab} from './checkout.js';
-import {payCheckout,openVerifiedCheckout} from './payment.js';
+import {payCheckout,openVerifiedCheckout,assertCardFillProvenance} from './payment.js';
 import {checkoutKey} from './checkout.js';
 import {createLinkFrames} from './link-frames.js';
 import {paymentCard} from './card-vault-core.js';
 import {reconcilePaid,reportManualPayment} from './reconciliation.js';
 import {readGrid,gridReadPolicy} from './grid-read.js';
-import {readPageState,pageReadBudget,waitPaymentState} from './page-read.js';
+import {readPageState,pageReadBudget,waitPaymentState,responseWithin} from './page-read.js';
 import {normalizeDiscount,ensureDiscount,payableSlot} from './discount.js';
 import {normalizeSettings,pendingArmBlocker} from './booking-settings.js';
 import {clearUnpaidTest} from './test-cleanup.js';
@@ -130,6 +130,7 @@ async function automaticPayment(test=false,scheduled=false) {
    trace=newRun('payment-reconciliation',record.slot.date);await step('started');
    return await finishPaidRecord(record,scheduled);
   }
+  assertCardFillProvenance(record);
   if(test && checkoutRecords.some(r=>r.test&&r.status==='confirmed'))throw Error('This paid test is already confirmed; it cannot be charged again');
   if(test){tab=(await readTab(()=>chrome.tabs.query({active:true,currentWindow:true})))[0];if(![BASE+'/basket',BASE+'/basket/pay/card'].includes(tab?.url))throw Error('Open the £2.50 test basket or card checkout');}
   else if(record?.tabId)tab=await readTab(()=>chrome.tabs.get(record.tabId));
@@ -434,14 +435,21 @@ chrome.runtime.onMessage.addListener((message,sender,respond)=>{
     if(message.kind==='saveSettings'){const settings=normalizeSettings(message.settings);await chrome.storage.local.set({bookingSettings:settings});return {status:'preferences-saved',settings,armedJobChanged:false};}
     if(message.kind==='prepareCheckout')return checkout();
     if(message.kind==='assessRecovery'){
+     const unknown={status:'needs-user-action',paymentState:'unknown',merchantCancellationState:'unknown',automaticReplayAllowed:false};
+     const deadline=Date.now()+5000;
+     try{return await responseWithin(async()=>{
      const {checkoutRecords=[]}=await chrome.storage.local.get('checkoutRecords'),record=checkoutRecords.find(r=>r.status!=='confirmed');
      if(!record)return {status:'no-pending-checkout'};
-     const pages=[];
-     for(const tab of await chrome.tabs.query({url:BASE+'/*'})){
-      try{const response=await chrome.tabs.sendMessage(tab.id,{kind:'checkout-progress'});if(response?.ok&&response.value.stage==='existing-purchase')pages.push(response.value);}catch{}
+     const pages=[];let incomplete=false;
+     for(const tab of await responseWithin(()=>chrome.tabs.query({url:BASE+'/*'}),1000)){
+      if(Date.now()>=deadline){incomplete=true;break;}
+      try{const response=await responseWithin(()=>chrome.tabs.sendMessage(tab.id,{kind:'checkout-progress'}),1000);if(response?.ok&&response.value?.stage==='existing-purchase')pages.push(response.value);else incomplete=true;}catch{incomplete=true;}
      }
+     const current=(await chrome.storage.local.get('checkoutRecords')).checkoutRecords||[];
+     if(JSON.stringify(current.find(r=>r.status!=='confirmed'))!==JSON.stringify(record))return {...unknown,reasonCode:'RECOVERY_STATE_CHANGED'};
      const matching=pages.filter(p=>record.reference&&p.reference===record.reference&&p.totalGBP===payableSlot(record).totalGBP);
-     return {status:'needs-user-action',paymentState:'unknown',merchantCancellationState:'unknown',reasonCode:pages.length?(matching.length===1?'EXISTING_PURCHASE_READ_ONLY':'REFERENCE_UNAVAILABLE'):'RECOVERY_EVIDENCE_REQUIRED',referenceRecorded:!!record.reference,existingPurchasePages:pages.length,exactReferenceMatches:matching.length,automaticReplayAllowed:false};
+     return {...unknown,reasonCode:incomplete?'RECOVERY_EVIDENCE_REQUIRED':pages.length?(matching.length===1?'EXISTING_PURCHASE_READ_ONLY':'REFERENCE_UNAVAILABLE'):'RECOVERY_EVIDENCE_REQUIRED',observationIncomplete:incomplete,referenceRecorded:!!record.reference,existingPurchasePages:pages.length,exactReferenceMatches:matching.length};
+     },5000);}catch{return {...unknown,reasonCode:'RECOVERY_EVIDENCE_REQUIRED',observationIncomplete:true};}
     }
     if(message.kind==='daytimeBasketTest')return checkout(message.day,false,true);
     if(message.kind==='testDiscountCheckout')return testDiscountCheckout(message.discountCode);
@@ -483,7 +491,9 @@ chrome.runtime.onMessage.addListener((message,sender,respond)=>{
     }
     throw Error('Unknown action');
   };
-  const action=message.kind==='status'?run():enqueueAction(()=>executeAction(chrome.storage.local,message.kind,run,{version:chrome.runtime.getManifest?.().version||'unknown'}));
+  const tracked=()=>executeAction(chrome.storage.local,message.kind,run,{version:chrome.runtime.getManifest?.().version||'unknown'});
+  // Assessment only observes snapshots; it cannot occupy the mutation/alarm queue.
+  const action=message.kind==='status'?run():message.kind==='assessRecovery'?tracked():enqueueAction(tracked);
   action.then(respond,e=>{const uncertain=['verifyPayment','reconcileManualPayment','armPayment','payCheckout','resetUnpaidTest','testDiscountCheckout'].includes(message.kind);respond({status:'stopped',error:e.message,...failureFor(e,{operation:message.kind,paymentPossible:uncertain}),...(e.code?{errorCode:e.code}:{}),...(e.attemptedDay?{attemptedDay:e.attemptedDay}:{}),booked:uncertain?null:false,paid:uncertain?null:false});}); return true;
 });
 // Recreate one-shot alarms after restart without starting a missed release.

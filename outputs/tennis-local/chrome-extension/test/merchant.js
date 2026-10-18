@@ -32,7 +32,7 @@ export class Merchant{
   else if(request.kind==='card-fill'){this.counts.fill++;this.filled=true;response={ok:true};}
   else if(request.kind==='payment-submit'){
    this.counts.pay++;this.purchases.set(request.reference,{state:'Confirmed',totalGBP:request.totalGBP});response={ok:true};
-  }else if(request.kind==='receipt-read')response={ok:true,value:{status:'awaiting-payment'}};
+  }else if(request.kind==='receipt-read')response=this.options.receiptResponse?this.options.receiptResponse(request):{ok:true,value:{status:'awaiting-payment'}};
   else if(['purchase-read','test-purchase-state'].includes(request.kind)){
    const purchase=this.purchases.get(request.reference);
    response=!purchase?{ok:false,error:'Unique matching purchase not found for reference 100001: observed 0 matches'}:purchase.totalGBP!==request.slot.totalGBP?{ok:false,error:'Matching purchase is not confirmed paid at the expected amount'}:request.kind==='test-purchase-state'&&purchase.state==='Pending'?{ok:true,value:{status:'unpaid',reference:request.reference,totalGBP:purchase.totalGBP}}:purchase.state==='Confirmed'?{ok:true,value:{status:'confirmed',key:request.key,reference:request.reference,source:'account-purchase',bookingState:'unknown'}}:{ok:false,error:'Test purchase is paid or uncertain'};

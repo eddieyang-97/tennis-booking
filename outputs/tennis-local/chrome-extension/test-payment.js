@@ -19,14 +19,11 @@ test('Chrome storage key reordering preserves exact test authorization on resume
 });
 test('saved payment submits once after durable journal and confirms',async()=>{const f=fixture();const result=await payCheckout(f.record,f.deps);assert.equal(result.status,'confirmed');assert.equal(f.submits,1);assert.equal(f.links,0);});
 
-test('legacy possible card fill remains protected through repeated failed readiness and resume',async()=>{
- const f=fixture();let fills=0;
- f.deps.fillCard=async()=>{fills++;};f.deps.waitCardReady=async()=>{throw Error('Card still unready');};
- await assert.rejects(payCheckout({...f.record,reference:'100001',phase:'card-filling'},f.deps),/Card still unready/);
- await assert.rejects(payCheckout(f.record,f.deps),/Card still unready/);
- assert.equal(fills,0);assert.equal(f.submits,0);assert.equal(f.record.cardFillDispatchedAt,undefined);
- f.deps.waitCardReady=async()=>f.page;
- assert.equal((await payCheckout(f.record,f.deps)).status,'confirmed');assert.equal(fills,0);assert.equal(f.submits,1);
+for(const evidence of [{phase:'card-filling'},{phase:'checkout-opening',cardFillDispatchedAt:'2026-10-13T00:00:00Z'},{phase:'checkout-opening',cardFillRecoveryRequired:true}])test(`uncertain card provenance blocks enabled Pay on every resume: ${JSON.stringify(evidence)}`,async()=>{
+ const f=fixture(),record={...f.record,reference:'100001',...evidence},saved=structuredClone(record);let fills=0,reads=0,writes=0;
+ f.deps.fillCard=async()=>fills++;f.deps.waitCardReady=async()=>{reads++;return f.page;};f.deps.save=async()=>writes++;
+ for(let attempt=0;attempt<2;attempt++)await assert.rejects(payCheckout(record,f.deps),error=>error.reasonCode==='CARD_FILL_REVIEW_REQUIRED');
+ assert.equal(fills,0);assert.equal(f.submits,0);assert.equal(reads,0);assert.equal(writes,0);assert.deepEqual(record,saved);
 });
 test('unlocked local card uses card form instead of Link authentication',async()=>{const f=fixture();f.page.enabled=false;let fills=0;f.deps.fillCard=async()=>{assert.equal(f.record.phase,'card-filling');fills++;};f.deps.waitCardReady=async()=>({...f.page,enabled:true});assert.equal((await payCheckout(f.record,f.deps)).status,'confirmed');assert.equal(fills,1);assert.equal(f.links,0);assert.equal(f.submits,1);});
 test('amount or reference changes never submit',async()=>{const f=fixture();f.page.totalGBP='7.00';await assert.rejects(payCheckout(f.record,f.deps),/amount/);assert.equal(f.submits,0);});

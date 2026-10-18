@@ -1,6 +1,6 @@
 # Chrome extension: setup, testing and recovery
 
-This is the **operating guide** for the active Manifest V3 extension. The installed version is shown at the top of the popup; the source version is defined in [`manifest.json`](manifest.json) (**0.9.1**, reliability PR 2, 17 October 2026).
+This is the **operating guide** for the active Manifest V3 extension. The installed version is shown at the top of the popup; the source version is defined in [`manifest.json`](manifest.json) (**0.9.1**, reliability PR 2, 18 October 2026).
 
 - [Project overview and safety model](../../../README.md)
 - [Release history and observed live evidence](../../../docs/release-notes.md)
@@ -56,6 +56,8 @@ If the test succeeds, inspect the basket on the merchant site. **Remove the test
 
 ### Unpaid test: discount and opening the card page
 
+Cancel clears future alarms when its queued command executes. It does not preempt an already queued or running release, reverse merchant actions or revoke a dispatched payment. Check the journal before starting another run.
+
 1. Cancel any armed job. Use **Check availability now** with the intended released date and preferences.
 2. Enter the optional discount code (or leave it blank), then select **Test discount and open checkout (no payment)**. **Do not prepare a normal payable checkout first.**
 3. The extension uses the saved availability preferences, selects and verifies exact items, verifies any gross/discount/net accounting, and attempts one checkout-opening click. A successful result is `checkout-test-passed` with `paymentBlocked: true` and `cardFilled: false`. It does not unlock/fill the card or submit Pay.
@@ -79,7 +81,7 @@ Stripe's initial collapsed Card Element may show number/expiry/CVC before postco
 
 ## Tests and releases
 
-PR 2 adds `npm run test:worker`, a stateful fake merchant with isolated actual-worker VM restarts and fault injection. Popup/alarm mutation commands are serialized, and card filling now has a durable marker preventing blind repetition after interruption. **Assess recovery (read only)** identifies open existing-purchase pages without paying or cancelling them; a price match cannot establish identity. Positively conflicting paid receipt evidence retains its hold for investigation.
+PR 2 adds `npm run test:worker`, a stateful fake merchant with isolated actual-worker VM restarts and fault injection. Popup/alarm mutation commands are serialized, and card filling has a durable marker. Interrupted card filling stops with `CARD_FILL_REVIEW_REQUIRED`: an enabled button and matching amount/reference cannot prove which card is present, so recovery cannot refill or Pay automatically. **Assess recovery (read only)** identifies open existing-purchase pages without paying or cancelling them; a price match cannot establish identity. Positively conflicting paid receipt evidence retains its hold for investigation, including conflicting venue, date, court, time, duration or total. Recovery assessment runs independently of the mutation queue, with one-second tab reads and a five-second overall observation budget; incomplete evidence stays unknown.
 
 The reliability branch adds a **Latest action** line, separate from the current unresolved journal and historical `checkoutResult`. Stopped commands retain stable failure/recovery classifications even if they fail before a page read. Diagnostic downloads include this status. Test archives identify owner attestation, merchant-unpaid verification or an unsubmitted empty selection separately; none establishes merchant cancellation. Reopening the popup clears a stale attestation when its checkout identity changes.
 

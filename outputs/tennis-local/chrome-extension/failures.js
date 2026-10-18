@@ -23,6 +23,7 @@ const rules=[
 // Codes, including codes on worker Error objects, are authoritative. Regexes
 // only recognize legacy errors that have no known structured classification.
 const recoveryModes=Object.freeze({
+ CARD_FILL_REVIEW_REQUIRED:'user-action',
  RECEIPT_CONFLICT:'payment-reconciliation',EXISTING_PURCHASE_READ_ONLY:'user-action',
  UNCLASSIFIED_FAILURE:'manual-review',
  UNRESOLVED_CHECKOUT:'payment-reconciliation',

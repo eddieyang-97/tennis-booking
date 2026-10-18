@@ -20,18 +20,21 @@ export async function openVerifiedCheckout(record,deps,{timeoutMs=15000,now=Date
 }
 // The journal is committed before any payment submission. An interrupted or
 // unanswered submit is reconciled, never retried.
+export function assertCardFillProvenance(record){
+ if(record?.cardFillDispatchedAt||record?.cardFillRecoveryRequired===true||record?.phase==='card-filling')throw Object.assign(Error('Interrupted card filling requires manual checkout review; no automatic refill or Pay'),{reasonCode:'CARD_FILL_REVIEW_REQUIRED'});
+}
 export async function payCheckout(record,deps) {
  if(record?.basketOnly||record?.checkoutTestOnly)throw Error('Unpaid test cannot submit payment; clear and reconcile its basket');
  if(!record || record.status==='confirmed')throw Error('No pending checkout');
- const fillingMayHaveHappened=!!record.cardFillDispatchedAt||record.cardFillRecoveryRequired===true||record.phase==='card-filling';
- // A legacy phase is evidence of possible filling, not a known dispatch time.
- // Latch that evidence before another phase can overwrite it on a failed resume.
- const persist=async phase=>{const at=new Date().toISOString();record={...record,phase,updatedAt:at,...(fillingMayHaveHappened?{cardFillRecoveryRequired:true}:{}),...(phase==='payment-dispatched'?{paymentDispatchedAt:record.paymentDispatchedAt||at}:{}),...(phase==='card-filling'?{cardFillDispatchedAt:record.cardFillDispatchedAt||at}:{})};await deps.save(record);};
+ const persist=async phase=>{const at=new Date().toISOString();record={...record,phase,updatedAt:at,...(phase==='payment-dispatched'?{paymentDispatchedAt:record.paymentDispatchedAt||at}:{}),...(phase==='card-filling'?{cardFillDispatchedAt:record.cardFillDispatchedAt||at}:{})};await deps.save(record);};
  const confirm=receipt=>{if(record.reference && receipt.reference!==record.reference)throw Error('Paid receipt reference differs from provisional booking');return confirmCheckout(record,receipt);};
  if(record.manualPaymentReportedAt || record.paymentDispatchedAt || record.phase==='payment-dispatched' || record.phase==='payment-uncertain') {
   recoveryIdentity(record);
   const receipt=await deps.receipt();return confirm(receipt);
  }
+ // An enabled button proves readiness, not which card supplied it. Only the
+ // uninterrupted invocation that completes its own fill may proceed to Pay.
+ assertCardFillProvenance(record);
  if(checkoutKey(record.slot,record.test,record.settings) !== record.key)throw Error('Checkout identity changed');
  if(record.discountCode&&!record.discount)throw Error('Discount must be verified before payment');
  const amount=payableSlot(record).totalGBP;
@@ -42,7 +45,6 @@ export async function payCheckout(record,deps) {
  let page=await deps.state();
  if(page.totalGBP!==amount || !/^\d+$/.test(page.reference||''))throw Error('Payment amount or provisional reference not verified');
  if(record.reference && record.reference!==page.reference) {
-  if(fillingMayHaveHappened)throw Error('Reference changed after possible card filling; inspect without refilling');
   // Only reached before any payment dispatch and after exact basket/price
   // verification. A normal reload can replace an unpaid provisional reference.
   record={...record,priorReferences:[...(record.priorReferences||[]),{reference:record.reference,replacedAt:new Date().toISOString()}].slice(-10),reference:page.reference};
@@ -50,7 +52,7 @@ export async function payCheckout(record,deps) {
  }
  record={...record,reference:page.reference};await deps.save(record);
  if(deps.fillCard) {
-  if(!fillingMayHaveHappened){await persist('card-filling');await deps.fillCard();}
+  await persist('card-filling');await deps.fillCard();
   page=await deps.waitCardReady();
  } else if(!page.enabled) {
   await persist('link-opening');await deps.link();
