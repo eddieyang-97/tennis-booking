@@ -36,8 +36,8 @@ The controls below live in the popup's **Check and recover** section. Before tak
 
 | Situation | Use this control | Important boundary |
 | --- | --- | --- |
-| Check an already released date (today through 7 days ahead) | **Check availability now** | Read-only; does not select or pay |
-| Signed-in site blocked the last availability check | **Resume after site verification** | Resumes a retained, verified site tab; requires the previous failure context |
+| Check an already released date (today through 7 days ahead) | **Check availability now** | Read-only; paused while a job is armed so it cannot delay release |
+| Signed-in site blocked the last availability check | **Resume after site verification** | Requires previous failure context; also paused while a job is armed |
 | Need to prepare/pay the current result manually | **Prepare or resume checkout**, then **Pay or reconcile checkout** | The latter **can submit a real payment** if no payment dispatch has occurred; review basket, authorization and card readiness |
 | Earlier extension Pay was dispatched, receipt unclear | **Verify paid receipt** | Receipt/account observation only, **never another charge** |
 | You completed a normal pending checkout manually | Enter **Manually paid booking reference**, then **Verify manual payment** | Durable manual-payment hold first; exact reference, amount and paid history required; no Pay click |
@@ -57,6 +57,8 @@ If the test succeeds, inspect the basket on the merchant site. **Remove the test
 ### Unpaid test: discount and opening the card page
 
 Cancel clears future alarms when its queued command executes. It does not preempt an already queued or running release, reverse merchant actions or revoke a dispatched payment. Check the journal before starting another run.
+
+Manual availability checks and verification resumes return `MANUAL_CHECK_WHILE_ARMED` whenever a saved job exists, even hours before release. Cancel the job first if you want to check manually, then re-arm if appropriate. This admission policy protects the release queue without allowing concurrent writes to shared run/result state; it does not interrupt an already running operation. **Assess recovery (read only)** remains available independently.
 
 1. Cancel any armed job. Use **Check availability now** with the intended released date and preferences.
 2. Enter the optional discount code (or leave it blank), then select **Test discount and open checkout (no payment)**. **Do not prepare a normal payable checkout first.**

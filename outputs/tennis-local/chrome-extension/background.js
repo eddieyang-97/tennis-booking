@@ -38,6 +38,7 @@ async function account(scheduled=false) {
   if(!result.ok) throw Object.assign(Error(result.error),{diagnostic:{page:result.page,retainedTabId:result.retainedTabId}});
 }
 async function check(day, scheduled=false,settings=null) {
+  if(!scheduled)await admitManualCheck();
   if(busy) throw Error('A check is already running');
   busy=true;
   trace=newRun(scheduled?'release-check':'manual-check',day);
@@ -385,7 +386,12 @@ chrome.notifications?.onClicked.addListener(async id=>{
  const {checkoutRecords=[]}=await chrome.storage.local.get('checkoutRecords');const record=checkoutRecords.find(r=>r.status!=='confirmed');
  if(record?.tabId)await chrome.tabs.update(record.tabId,{active:true}).catch(()=>{});
 });
+async function admitManualCheck(){
+ const {job}=await chrome.storage.local.get('job');
+ if(job)throw Object.assign(Error('Manual availability checks are paused while a release job is armed; cancel the job before checking manually'),{reasonCode:'MANUAL_CHECK_WHILE_ARMED'});
+}
 async function resume(day) {
+  await admitManualCheck();
   if(busy) throw Error('A check is already running');
   const {result}=await chrome.storage.local.get('result');
   if(!result?.retainedTabId) throw Error('No retained verification tab to resume');

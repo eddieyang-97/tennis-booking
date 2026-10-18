@@ -3,6 +3,43 @@ import {Merchant} from './merchant.js';import {startWorker} from './worker-harne
 import {receiptResponse} from './receipt-fixture.js';
 
 const paidReceipt='Booking reference: 100001\nPayment received\nBethnal Green Gardens\n23 October 2026\nCourt 1\n8:00pm–9:59pm\nDuration: 2 hours\nTotal: £14.00';
+for(const [name,text,conflict,source] of [
+ ['processing date',paidReceipt.replace('23 October 2026','Playing date: 23 October 2026')+'\nPayment processed: 18 October 2026',false,'booking-receipt'],
+ ['metadata on separate lines',paidReceipt+'\nPayment processed:\n18 October 2026\nReceipt created:\n17 October 2026',false,'booking-receipt'],
+ ['wrong labelled start',paidReceipt.replace('8:00pm–9:59pm','Start time: 7:00pm'),true],
+ ['matching labelled start',paidReceipt.replace('8:00pm–9:59pm','Start time: 8:00pm'),false,'booking-receipt'],
+ ['wrong standalone start in booking details',paidReceipt.replace('8:00pm–9:59pm','7:00pm'),true],
+ ['split playing date and start labels',paidReceipt.replace('23 October 2026','Playing date:\n23 October 2026').replace('8:00pm–9:59pm','Start time:\n8:00pm'),false,'booking-receipt'],
+ ['processing time range',paidReceipt+'\nPayment processing window: 7:00pm–7:59pm',false,'booking-receipt'],
+ ['metadata cannot substitute for playing date',paidReceipt.replace('23 October 2026','Payment processed: 23 October 2026'),false,'account-purchase'],
+ ['contradictory playing dates',paidReceipt+'\nPlaying date: 24 October 2026',true],
+ ['wrong play date despite matching metadata',paidReceipt.replace('23 October 2026','Playing date: 24 October 2026')+'\nPayment processed: 23 October 2026',true],
+ ['unfamiliar start label',paidReceipt.replace('8:00pm–9:59pm','Recorded at: 7:00pm'),false,'account-purchase']
+])test(`scoped receipt fields through worker: ${name}`,async()=>{
+ const merchant=new Merchant();merchant.slot.venue='bethnal-green-gardens';
+ const record=merchant.record({checkoutTestOnly:false,reference:'100001',tabId:42,paymentDispatchedAt:new Date(merchant.clock).toISOString(),phase:'payment-uncertain'}),state={checkoutRecords:[record]};
+ merchant.options.receiptResponse=request=>receiptResponse(request,text);merchant.purchases.set('100001',{state:'Confirmed',totalGBP:'14.00'});
+ let accountReads=0;const message=merchant.message.bind(merchant);merchant.message=async(...args)=>{if(args[1].kind==='purchase-read')accountReads++;return message(...args);};
+ const worker=await startWorker(merchant,state);worker.seedTab(42,'https://tennistowerhamlets.com/basket/receipt');const result=await worker.send({kind:'verifyPayment'});
+ if(conflict){assert.equal(result.reasonCode,'RECEIPT_CONFLICT');assert.equal(result.status,'stopped');assert.equal(accountReads,0);assert.deepEqual(state.checkoutRecords,[record]);}
+ else{assert.equal(result.status,'confirmed');assert.equal(result.receiptSource,source);assert.equal(accountReads,source==='account-purchase'?1:0);}
+ assert.ok(Object.values(merchant.counts).every(count=>count===0));
+});
+test('manual check is admitted after queued cancellation, preserving checkout journals',async()=>{
+ const merchant=new Merchant(),record=merchant.record({paymentDispatchedAt:'2026-10-17T11:00:00Z'}),state={job:{day:'2026-10-25',when:merchant.clock+86400000},checkoutRecords:[record]},worker=await startWorker(merchant,state);
+ const cancel=worker.send({kind:'cancel'}),check=worker.send({kind:'check',day:merchant.slot.date});
+ assert.equal((await cancel).status,'cancelled');assert.equal((await check).status,'complete');assert.deepEqual(state.checkoutRecords,[record]);assert.equal(state.job,undefined);assert.equal(state.latestAction.kind,'check');assert.ok(Object.values(merchant.counts).every(count=>count===0));
+});
+for(const kind of ['check','resume'])test(`armed job refuses potentially slow manual ${kind} before reads and preserves release across worker recreation`,async()=>{
+ const merchant=new Merchant();merchant.clock=Date.parse('2026-10-16T22:59:59Z');
+ const job={day:'2026-10-24',when:merchant.clock+1000,mode:'availability',prepared:true},oldResult={status:'complete',day:'2026-10-22',results:[]},state={job,result:oldResult};
+ let reads=0;const message=merchant.message.bind(merchant);merchant.message=(tab,request,worker)=>{if(request.kind==='account'){reads++;if(reads===1)return new Promise(()=>{});}return message(tab,request,worker);};
+ let worker=await startWorker(merchant,state);let timer;
+ try{const result=await Promise.race([worker.send({kind,day:'2026-10-23'}),new Promise((_,reject)=>timer=setTimeout(()=>reject(Error('Manual read occupied release queue')),150))]);assert.equal(result.reasonCode,'MANUAL_CHECK_WHILE_ARMED');assert.equal(result.status,'stopped');}finally{clearTimeout(timer);}
+ assert.equal(reads,0);assert.deepEqual(state.result,oldResult);assert.deepEqual(state.job,job);assert.equal(state.running,undefined);
+ merchant.message=message;merchant.clock=job.when;worker=await startWorker(merchant,state,'recreated');await worker.alarm({name:'release'});
+ assert.equal(state.result.status,'complete');assert.equal(state.result.day,job.day);assert.equal(state.latestAction.kind,'release');assert.equal(state.job,undefined);assert.ok(Object.values(merchant.counts).every(count=>count===0));
+});
 for(const marker of [{phase:'card-filling'},{phase:'checkout-opening',cardFillDispatchedAt:'2026-10-17T11:00:00Z'},{phase:'checkout-opening',cardFillRecoveryRequired:true}])test(`actual worker refuses enabled card of unknown provenance: ${JSON.stringify(marker)}`,async()=>{
  const merchant=new Merchant(),record=merchant.record({checkoutTestOnly:false,reference:'100001',tabId:42,...marker}),state={checkoutRecords:[record]},worker=await startWorker(merchant,state);
  merchant.readyAt=merchant.clock;worker.seedTab(42,'https://tennistowerhamlets.com/basket/pay/card');
