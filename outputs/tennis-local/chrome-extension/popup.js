@@ -34,7 +34,7 @@ async function send(kind){output.textContent='Checking…';try{
  const result=await chrome.runtime.sendMessage(message);output.textContent=result.status==='stopped'?result.error:JSON.stringify(result,null,2);
  try{await refresh();}catch{/* Keep the completed action result visible. */}
 }catch(error){output.textContent=error.message;}}
-for(const kind of ['openCardVault','payCheckout','armPayment','check','resume','prepareCheckout','daytimeBasketTest','verifyPayment','cancel','reset','reconcileBasket','reconcileSelection','saveSettings','reconcileManualPayment','testDiscountCheckout','resetUnpaidTest'])field(kind).addEventListener('click',()=>send(kind));
+for(const kind of ['openCardVault','payCheckout','armPayment','check','resume','prepareCheckout','daytimeBasketTest','verifyPayment','cancel','reset','reconcileBasket','reconcileSelection','saveSettings','reconcileManualPayment','testDiscountCheckout','resetUnpaidTest','assessRecovery'])field(kind).addEventListener('click',()=>send(kind));
 for(const control of document.querySelectorAll('input,select'))control.addEventListener('input',()=>{formEdited=true;});
 field('preferredHours').addEventListener('change',()=>{if(Number(field('minHours').value)>Number(field('preferredHours').value))field('minHours').value=field('preferredHours').value;});
 field('showStatus').addEventListener('click',()=>refresh(false,true).catch(error=>output.textContent=error.message));

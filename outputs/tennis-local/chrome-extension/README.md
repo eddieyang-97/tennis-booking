@@ -1,6 +1,6 @@
 # Chrome extension: setup, testing and recovery
 
-This is the **operating guide** for the active Manifest V3 extension. The installed version is shown at the top of the popup; the source version is defined in [`manifest.json`](manifest.json) (**0.9.0**, reliability PR 1, 17 October 2026).
+This is the **operating guide** for the active Manifest V3 extension. The installed version is shown at the top of the popup; the source version is defined in [`manifest.json`](manifest.json) (**0.9.1**, reliability PR 2, 18 October 2026).
 
 - [Project overview and safety model](../../../README.md)
 - [Release history and observed live evidence](../../../docs/release-notes.md)
@@ -36,8 +36,8 @@ The controls below live in the popup's **Check and recover** section. Before tak
 
 | Situation | Use this control | Important boundary |
 | --- | --- | --- |
-| Check an already released date (today through 7 days ahead) | **Check availability now** | Read-only; does not select or pay |
-| Signed-in site blocked the last availability check | **Resume after site verification** | Resumes a retained, verified site tab; requires the previous failure context |
+| Check an already released date (today through 7 days ahead) | **Check availability now** | Read-only; paused while a job is armed so it cannot delay release |
+| Signed-in site blocked the last availability check | **Resume after site verification** | Requires previous failure context; also paused while a job is armed |
 | Need to prepare/pay the current result manually | **Prepare or resume checkout**, then **Pay or reconcile checkout** | The latter **can submit a real payment** if no payment dispatch has occurred; review basket, authorization and card readiness |
 | Earlier extension Pay was dispatched, receipt unclear | **Verify paid receipt** | Receipt/account observation only, **never another charge** |
 | You completed a normal pending checkout manually | Enter **Manually paid booking reference**, then **Verify manual payment** | Durable manual-payment hold first; exact reference, amount and paid history required; no Pay click |
@@ -55,6 +55,10 @@ Use **Test 09:00–11:00 basket (no payment)** on an eligible released date. It 
 If the test succeeds, inspect the basket on the merchant site. **Remove the test items manually**, then click **Reconcile cleared selection**. Partial or uncertain selection remains pending until evidence is resolved. This test does not produce a booking or payment.
 
 ### Unpaid test: discount and opening the card page
+
+Cancel clears future alarms when its queued command executes. It does not preempt an already queued or running release, reverse merchant actions or revoke a dispatched payment. Check the journal before starting another run.
+
+Manual availability checks and verification resumes return `MANUAL_CHECK_WHILE_ARMED` whenever a saved job exists, even hours before release. Cancel the job first if you want to check manually, then re-arm if appropriate. This admission policy protects the release queue without allowing concurrent writes to shared run/result state; it does not interrupt an already running operation. **Assess recovery (read only)** remains available independently.
 
 1. Cancel any armed job. Use **Check availability now** with the intended released date and preferences.
 2. Enter the optional discount code (or leave it blank), then select **Test discount and open checkout (no payment)**. **Do not prepare a normal payable checkout first.**
@@ -78,6 +82,8 @@ After a reload, close stale card-vault tabs and reopen setup from the popup. Sel
 Stripe's initial collapsed Card Element may show number/expiry/CVC before postcode. The form adapter re-resolves inputs as they appear and stops if required fields are missing, disabled, read-only or ambiguous. Do not bypass the stop by trying to replay Pay.
 
 ## Tests and releases
+
+PR 2 adds `npm run test:worker`, a stateful fake merchant with isolated actual-worker VM restarts and fault injection. Popup/alarm mutation commands are serialized, and card filling has a durable marker. Interrupted card filling stops with `CARD_FILL_REVIEW_REQUIRED`: an enabled button and matching amount/reference cannot prove which card is present, so recovery cannot refill or Pay automatically. **Assess recovery (read only)** identifies open existing-purchase pages without paying or cancelling them; a price match cannot establish identity. Positively conflicting paid receipt evidence retains its hold for investigation, including conflicting venue, date, court, time, duration or total. Recovery assessment runs independently of the mutation queue, with one-second tab reads and a five-second overall observation budget; incomplete evidence stays unknown.
 
 The reliability branch adds a **Latest action** line, separate from the current unresolved journal and historical `checkoutResult`. Stopped commands retain stable failure/recovery classifications even if they fail before a page read. Diagnostic downloads include this status. Test archives identify owner attestation, merchant-unpaid verification or an unsubmitted empty selection separately; none establishes merchant cancellation. Reopening the popup clears a stale attestation when its checkout identity changes.
 

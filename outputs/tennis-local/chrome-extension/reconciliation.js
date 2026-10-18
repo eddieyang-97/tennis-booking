@@ -31,12 +31,13 @@ export async function reconcilePaid(record,deps) {
  recoveryIdentity(record);
  // A stale tab must not block account history, and must never be navigated
  // away from a bank challenge merely to obtain a receipt.
- try {
-  const receipt=await deps.currentReceipt();
-  if(receipt?.status==='confirmed') {
-   if(receipt.key!==record.key||receipt.reference!==record.reference)throw Error('Receipt identity mismatch');
-   return receipt;
-  }
- } catch { /* Account evidence must independently match the durable identity. */ }
- return deps.accountReceipt();
+ let receipt;
+ try {receipt=await deps.currentReceipt();}
+ catch {await deps.step?.('receipt-source',{reasonCode:'RECEIPT_UNAVAILABLE'});}
+ if(receipt?.status==='conflicting'&&receipt.key===record.key&&receipt.reference===record.reference)throw Object.assign(Error('Conflicting paid receipt evidence; preserve the payment hold'),{reasonCode:'RECEIPT_CONFLICT'});
+ if(receipt?.status==='confirmed'&&receipt.key===record.key&&receipt.reference===record.reference)return receipt;
+ await deps.step?.('receipt-source',{reasonCode:receipt?.reference&&receipt.reference!==record.reference?'RECEIPT_UNRELATED':receipt?'RECEIPT_NOT_CONFIRMED':'RECEIPT_ABSENT'});
+ const account=await deps.accountReceipt();
+ if(account?.status!=='confirmed'||account.key!==record.key||account.reference!==record.reference)throw Object.assign(Error('Account receipt identity mismatch; preserve the payment hold'),{reasonCode:'RECEIPT_CONFLICT'});
+ return account;
 }

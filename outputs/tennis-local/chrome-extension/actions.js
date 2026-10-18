@@ -1,4 +1,7 @@
 import {failureFor} from './failures.js';
+// MV3 has one active worker. Serialize its mutation entry points; status and
+// frame discovery stay outside this queue to avoid deadlocking an active run.
+export function createSerialExecutor(){let tail=Promise.resolve();return run=>{const next=tail.then(run);tail=next.catch(()=>{});return next;};}
 // Serialize metadata read/check/write operations, not the actions themselves.
 // Chrome storage has no CAS: a separate get + conditional set without this
 // queue could still let an in-flight old set overwrite a newer start.

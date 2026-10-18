@@ -1,8 +1,10 @@
 // Only fixed classifications cross the diagnostic boundary; never copy arbitrary
 // merchant text, tokens, URLs or card fields into traces.
 const rules=[
+ ['RECEIPT_CONFLICT',/Conflicting paid receipt|Account receipt identity mismatch/i],
+ ['EXISTING_PURCHASE_READ_ONLY',/Existing-purchase payment page requires/i],
  ['PURCHASE_MISSING',/Unique matching purchase.*observed 0 matches|Unique matching purchase not found(?!.*observed)/i],
- ['PURCHASE_AMBIGUOUS',/Unique matching purchase.*observed [2-9]\d* matches/i],
+ ['PURCHASE_AMBIGUOUS',/Unique matching purchase.*observed (?:[2-9]|[1-9]\d+) matches/i],
  ['PURCHASE_LAYOUT_UNKNOWN',/Purchase history layout/i],
  ['PURCHASE_STATE_UNSAFE',/purchase is paid or uncertain|purchase is not confirmed paid|Test payment is paid or uncertain|payment state changed/i],
  ['REFERENCE_UNAVAILABLE',/reference unavailable|No recorded payment reference|Invalid recovery reference/i],
@@ -21,6 +23,9 @@ const rules=[
 // Codes, including codes on worker Error objects, are authoritative. Regexes
 // only recognize legacy errors that have no known structured classification.
 const recoveryModes=Object.freeze({
+ MANUAL_CHECK_WHILE_ARMED:'user-action',
+ CARD_FILL_REVIEW_REQUIRED:'user-action',
+ RECEIPT_CONFLICT:'payment-reconciliation',EXISTING_PURCHASE_READ_ONLY:'user-action',
  UNCLASSIFIED_FAILURE:'manual-review',
  UNRESOLVED_CHECKOUT:'payment-reconciliation',
  PURCHASE_MISSING:'manual-review',PURCHASE_AMBIGUOUS:'manual-review',PURCHASE_LAYOUT_UNKNOWN:'manual-review',

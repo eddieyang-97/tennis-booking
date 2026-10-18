@@ -1,6 +1,6 @@
 # Tennis booking: reliability and test improvement proposal
 
-**Status:** PR 1 implemented on the reliability branch; remaining layers are planned. See implementation progress below.
+**Status:** The observability milestone (GitHub PR #2) merged on 18 October 2026. The stateful-worker milestone (GitHub PR #3) now includes the reviewed main-branch fixes and is being validated separately. Browser integration remains the following milestone.
 **Reviewed source:** `main` at `5aa63506a000d4adf05a7e8b8e635cab1b513dbd` (16 October 2026), extension v0.8.9  
 **Scope:** Chrome extension in `outputs/tennis-local/chrome-extension/`  
 **Evidence update:** Four private diagnostic exports from 16 October 2026, spanning installed versions v0.8.7–v0.8.9. Only sanitized findings are included here; original logs must not be committed.
@@ -10,8 +10,13 @@
 
 ### Implementation progress (17 October 2026)
 
+**18 October update:** PR #2 merged with all three review findings resolved and CI passing. PR #3 preserves its structured classification, action metadata ordering, accurate alarm outcomes and Windows PowerShell build fixes. Review fixes stop uncertain card-fill recovery before Pay or refill, hold recognized same-reference receipt contradictions through the content-script/worker boundary, and keep bounded read-only assessment outside the mutation queue. Regressions include enabled cards of unknown provenance, contradictory receipts, hung tab reads overlapping alarms, changed journal snapshots and existing-purchase identity checks. VM faults are caught simulation exceptions; they do not establish behavior under hard process termination or live merchant conditions.
+
+The next PR #3 review round scopes receipt dates/times to recognized booking details, excludes processing metadata, and covers explicitly conflicting single starts through worker reconciliation. Armed-job admission rejects manual checks/resumes before reads; tests preserve release timing across worker recreation and permit checks after cancellation. These are offline regressions, not live receipt-layout or Chromium lifecycle acceptance.
+
 - **PR 1 implemented, simulated locally:** fixed failure classifications, latest action status separate from historical checkout results, archived-test evidence provenance, current-journal-bound owner attestation, seven named offline module reproductions, a local log comparison tool, production package/configuration checks and baseline CI configuration. No live mutation or payment acceptance was performed. CI execution is a separate gate from local passes.
-- **Remaining:** the full stateful merchant/worker fault matrix, fixture-backed browser adapter coverage, isolated real-extension browser execution and its network gate. Existing direct-module reproductions do not satisfy those stronger layers.
+- **PR 2 implemented, simulated locally:** a stateful merchant model and isolated actual-worker VM harness exercise intent persistence, dispatch, acknowledgement-following writes, restarts, repeated recovery and concurrent popup/alarm operations. Regression tests reproduced and fixed stale preflight overwriting re-arm, and added a durable card-fill marker. Receipt-source conflict policy and existing-purchase read-only assessment are implemented. VM interruption exceptions are not a hard Chromium-process kill; the browser layer must cover real lifecycle behavior.
+- **Remaining:** fixture-backed browser adapter coverage, isolated real-extension browser execution and its network gate. Existing direct-module/VM reproductions do not satisfy those stronger layers. S14–S15 remain backed by the existing pure settings/date tests until the browser layer is added.
 
 Commands currently available: `npm test`, `npm run test:quick`, `npm run test:scenarios`, `npm run repro -- --scenario <name>` and `npm run analyze:logs -- <local-export.json> [...]`. Run them from the extension directory. Analyzer output is observed evidence and a proposed scenario, never a full merchant replay; it retains local run IDs and must remain private.
 

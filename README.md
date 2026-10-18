@@ -2,7 +2,7 @@
 
 A Manifest V3 Chrome extension that checks and attempts to book tennis courts on [Tower Hamlets Courtside](https://tennistowerhamlets.com/) at the London midnight release, with configurable preferences, strict basket/payment verification, a local encrypted card file and recovery of uncertain payments.
 
-**Active implementation:** [`outputs/tennis-local/chrome-extension/`](outputs/tennis-local/chrome-extension/) · **Version:** [`0.9.0`](outputs/tennis-local/chrome-extension/manifest.json), reliability PR 1 (17 October 2026).
+**Active implementation:** [`outputs/tennis-local/chrome-extension/`](outputs/tennis-local/chrome-extension/) · **Version:** [`0.9.1`](outputs/tennis-local/chrome-extension/manifest.json), stateful-worker milestone under review (18 October 2026). The v0.9.0 observability milestone is merged into `main`.
 
 **Release status:** In active development, **not yet verified for unattended end-to-end midnight payment**. A real £2.50 one-hour card payment and its subsequent account-purchase reconciliation were verified on 13 October. Live two-hour basket selection was verified, but an automated two-hour Pay and a complete unattended midnight booking have not been established. See [release notes and live-evidence limits](docs/release-notes.md).
 
@@ -51,6 +51,8 @@ The popup initially suggests London today + 8 days; it does not automatically ch
 **Paying is not the same as holding an active booking.** Matching merchant purchase history establishes paid transaction status; `bookingState` can still be `unknown` if a reservation was cancelled. Cancellation also does not prove a refund.
 
 Read-only navigation uses bounded readiness/retry policies. An unknown grid, unauthenticated page, unexpected basket, changed price/reference, merchant error, or unresolved prior intent stops rather than guessing or repeating a mutation. These safeguards prioritize avoiding unintended bookings and duplicate charges over automatic success.
+
+Manual availability checks and verification resumes are paused while a release job is armed, so they cannot occupy its queue. Cancel the job before checking manually. Read-only recovery assessment remains independent; Cancel does not preempt a queued or running release.
 
 **Do not delete or reset `checkoutRecords` / `paymentDispatchedAt` / `manualPaymentReportedAt` to clear a stopped run.** Use the extension's guarded reconciliation controls. For recovery instructions, see the [usage guide](outputs/tennis-local/chrome-extension/README.md).
 

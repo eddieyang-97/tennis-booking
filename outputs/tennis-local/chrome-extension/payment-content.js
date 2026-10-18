@@ -12,6 +12,8 @@ chrome.runtime.onMessage.addListener((request,sender,respond)=>{
  try {
   if(request.kind==='payment-state')return respond({ok:true,value:paymentState()});
   if(request.kind==='checkout-progress'){
+   const text=document.body.innerText||'',existingRef=/Booking ref:\s*PT(\d+)/i.exec(text)?.[1],amount=/Amount due:\s*£\s*(\d+\.\d{2})/i.exec(text)?.[1];
+   if(existingRef&&amount)return respond({ok:true,value:{stage:'existing-purchase',reference:existingRef,totalGBP:amount,cancellationSupported:false,loadState:document.readyState}});
    const merchantError=/something went wrong/i.test(document.body.innerText||'');
    if(!merchantError&&location.pathname==='/basket/pay/card')return respond({ok:true,value:{stage:'card',loadState:document.readyState,...paymentState()}});
    return respond({ok:true,value:{stage:location.pathname==='/basket'?'basket':'other-page',loadState:document.readyState,merchantError}});

@@ -3,18 +3,19 @@ import {verifyBasket,basketEvidence} from './stage-rules.js';
 import {retryTab} from './retry.js';
 import {startRun} from './run-log.js';
 import {prepareCheckout,checkoutCandidate,confirmCheckout,PAYMENT_TEST_SLOT,reconcileClearedSelection,basketTestKey,recoverPreparationTab} from './checkout.js';
-import {payCheckout,openVerifiedCheckout} from './payment.js';
+import {payCheckout,openVerifiedCheckout,assertCardFillProvenance} from './payment.js';
 import {checkoutKey} from './checkout.js';
 import {createLinkFrames} from './link-frames.js';
 import {paymentCard} from './card-vault-core.js';
 import {reconcilePaid,reportManualPayment} from './reconciliation.js';
 import {readGrid,gridReadPolicy} from './grid-read.js';
-import {readPageState,pageReadBudget,waitPaymentState} from './page-read.js';
+import {readPageState,pageReadBudget,waitPaymentState,responseWithin} from './page-read.js';
 import {normalizeDiscount,ensureDiscount,payableSlot} from './discount.js';
 import {normalizeSettings,pendingArmBlocker} from './booking-settings.js';
 import {clearUnpaidTest} from './test-cleanup.js';
 import {failureFor} from './failures.js';
-import {executeAction} from './actions.js';
+import {executeAction,createSerialExecutor} from './actions.js';
+const enqueueAction=createSerialExecutor();
 const linkFrames=createLinkFrames(chrome.tabs,{step:(name,detail)=>step(name,detail)});
 const BASE='https://tennistowerhamlets.com';
 let busy=false;
@@ -37,6 +38,7 @@ async function account(scheduled=false) {
   if(!result.ok) throw Object.assign(Error(result.error),{diagnostic:{page:result.page,retainedTabId:result.retainedTabId}});
 }
 async function check(day, scheduled=false,settings=null) {
+  if(!scheduled)await admitManualCheck();
   if(busy) throw Error('A check is already running');
   busy=true;
   trace=newRun(scheduled?'release-check':'manual-check',day);
@@ -102,6 +104,7 @@ function checkoutCommands(tabId) {
   const evidence={stage:progress.stage,loadState:progress.loadState,merchantError:progress.merchantError===true,...(progress.reference?{reference:progress.reference,totalGBP:progress.totalGBP}:{})},fingerprint=JSON.stringify(evidence);
   if(fingerprint!==lastProgress){await step('checkout-page-progress',{tabId,...evidence});lastProgress=fingerprint;}
   if(progress.merchantError)throw Error('Merchant reported Something went wrong while opening checkout; no repeat request sent');
+  if(progress.stage==='existing-purchase')throw Error('Existing-purchase payment page requires read-only recovery assessment; no Pay or cancellation action sent');
   if(progress.stage==='other-page')throw Error('Checkout left supported payment pages; inspect retained tab');
   if(progress.stage!=='card')throw Error('Not the card checkout');return progress;
  };
@@ -128,6 +131,7 @@ async function automaticPayment(test=false,scheduled=false) {
    trace=newRun('payment-reconciliation',record.slot.date);await step('started');
    return await finishPaidRecord(record,scheduled);
   }
+  assertCardFillProvenance(record);
   if(test && checkoutRecords.some(r=>r.test&&r.status==='confirmed'))throw Error('This paid test is already confirmed; it cannot be charged again');
   if(test){tab=(await readTab(()=>chrome.tabs.query({active:true,currentWindow:true})))[0];if(![BASE+'/basket',BASE+'/basket/pay/card'].includes(tab?.url))throw Error('Open the £2.50 test basket or card checkout');}
   else if(record?.tabId)tab=await readTab(()=>chrome.tabs.get(record.tabId));
@@ -320,13 +324,14 @@ async function testDiscountCheckout(code='') {
 }
 async function readPaidEvidence(record,tabId=record.tabId,wait=false,scheduled=false) {
  return reconcilePaid(record,{
+  step,
   currentReceipt:async()=>{
    for(let i=0;i<(wait?10:1);i++) {
     try {
      const current=await readTab(()=>chrome.tabs.get(tabId));
      if(new URL(current.url).origin!==BASE||!new URL(current.url).pathname.startsWith('/basket'))return null;
-     const response=await readTab(()=>chrome.tabs.sendMessage(tabId,{kind:'receipt-read',slot:payableSlot(record),key:record.key}));
-     if(response?.ok&&response.value.status==='confirmed')return response.value;
+     const response=await readTab(()=>chrome.tabs.sendMessage(tabId,{kind:'receipt-read',slot:payableSlot(record),key:record.key,reference:record.reference}));
+     if(response?.ok&&['confirmed','conflicting'].includes(response.value.status))return response.value;
     }catch{ return null; }
     if(wait)await new Promise(r=>setTimeout(r,500));
    }
@@ -381,7 +386,12 @@ chrome.notifications?.onClicked.addListener(async id=>{
  const {checkoutRecords=[]}=await chrome.storage.local.get('checkoutRecords');const record=checkoutRecords.find(r=>r.status!=='confirmed');
  if(record?.tabId)await chrome.tabs.update(record.tabId,{active:true}).catch(()=>{});
 });
+async function admitManualCheck(){
+ const {job}=await chrome.storage.local.get('job');
+ if(job)throw Object.assign(Error('Manual availability checks are paused while a release job is armed; cancel the job before checking manually'),{reasonCode:'MANUAL_CHECK_WHILE_ARMED'});
+}
 async function resume(day) {
+  await admitManualCheck();
   if(busy) throw Error('A check is already running');
   const {result}=await chrome.storage.local.get('result');
   if(!result?.retainedTabId) throw Error('No retained verification tab to resume');
@@ -417,9 +427,9 @@ async function runAlarm(alarm){
       await chrome.storage.local.remove('job');
       return outcome;
     }
-  } catch(e) {if(!e.recorded)await save({status:'stopped',day:job.day,checkedAt:new Date().toISOString(),step:alarm.name,error:e.message,...e.diagnostic,booked:false,paid:false});await notifyPaymentResult({status:'stopped'});return {status:'stopped',...failureFor(e),error:e.message,paid:null,booked:null};}
+  } catch(e) {const {checkoutRecords=[]}=await chrome.storage.local.get('checkoutRecords'),possible=checkoutRecords.some(r=>r.status!=='confirmed'&&(r.paymentDispatchedAt||r.manualPaymentReportedAt));if(!e.recorded)await save({status:'stopped',day:job.day,checkedAt:new Date().toISOString(),step:alarm.name,error:e.message,...e.diagnostic,booked:possible?null:false,paid:possible?null:false});await notifyPaymentResult({status:'stopped'});return {status:'stopped',...failureFor(e,{paymentPossible:possible}),error:e.message,paid:possible?null:false,booked:possible?null:false};}
 }
-chrome.alarms.onAlarm.addListener(alarm=>executeAction(chrome.storage.local,alarm.name,()=>runAlarm(alarm),{version:chrome.runtime.getManifest?.().version||'unknown',source:'alarm'}));
+chrome.alarms.onAlarm.addListener(alarm=>enqueueAction(()=>executeAction(chrome.storage.local,alarm.name,()=>runAlarm(alarm),{version:chrome.runtime.getManifest?.().version||'unknown',source:'alarm'})));
 chrome.runtime.onMessage.addListener((message,sender,respond)=>{
   if(message.kind==='link-frame' && sender.id===chrome.runtime.id) {
    linkFrames.register(sender).then(ok=>respond({ok}),()=>respond({ok:false}));return true;
@@ -430,6 +440,23 @@ chrome.runtime.onMessage.addListener((message,sender,respond)=>{
     if(message.kind==='resume') return resume(message.day);
     if(message.kind==='saveSettings'){const settings=normalizeSettings(message.settings);await chrome.storage.local.set({bookingSettings:settings});return {status:'preferences-saved',settings,armedJobChanged:false};}
     if(message.kind==='prepareCheckout')return checkout();
+    if(message.kind==='assessRecovery'){
+     const unknown={status:'needs-user-action',paymentState:'unknown',merchantCancellationState:'unknown',automaticReplayAllowed:false};
+     const deadline=Date.now()+5000;
+     try{return await responseWithin(async()=>{
+     const {checkoutRecords=[]}=await chrome.storage.local.get('checkoutRecords'),record=checkoutRecords.find(r=>r.status!=='confirmed');
+     if(!record)return {status:'no-pending-checkout'};
+     const pages=[];let incomplete=false;
+     for(const tab of await responseWithin(()=>chrome.tabs.query({url:BASE+'/*'}),1000)){
+      if(Date.now()>=deadline){incomplete=true;break;}
+      try{const response=await responseWithin(()=>chrome.tabs.sendMessage(tab.id,{kind:'checkout-progress'}),1000);if(response?.ok&&response.value?.stage==='existing-purchase')pages.push(response.value);else incomplete=true;}catch{incomplete=true;}
+     }
+     const current=(await chrome.storage.local.get('checkoutRecords')).checkoutRecords||[];
+     if(JSON.stringify(current.find(r=>r.status!=='confirmed'))!==JSON.stringify(record))return {...unknown,reasonCode:'RECOVERY_STATE_CHANGED'};
+     const matching=pages.filter(p=>record.reference&&p.reference===record.reference&&p.totalGBP===payableSlot(record).totalGBP);
+     return {...unknown,reasonCode:incomplete?'RECOVERY_EVIDENCE_REQUIRED':pages.length?(matching.length===1?'EXISTING_PURCHASE_READ_ONLY':'REFERENCE_UNAVAILABLE'):'RECOVERY_EVIDENCE_REQUIRED',observationIncomplete:incomplete,referenceRecorded:!!record.reference,existingPurchasePages:pages.length,exactReferenceMatches:matching.length};
+     },5000);}catch{return {...unknown,reasonCode:'RECOVERY_EVIDENCE_REQUIRED',observationIncomplete:true};}
+    }
     if(message.kind==='daytimeBasketTest')return checkout(message.day,false,true);
     if(message.kind==='testDiscountCheckout')return testDiscountCheckout(message.discountCode);
     if(message.kind==='resetUnpaidTest')return resetUnpaidTest();
@@ -470,7 +497,9 @@ chrome.runtime.onMessage.addListener((message,sender,respond)=>{
     }
     throw Error('Unknown action');
   };
-  const action=message.kind==='status'?run():executeAction(chrome.storage.local,message.kind,run,{version:chrome.runtime.getManifest?.().version||'unknown'});
+  const tracked=()=>executeAction(chrome.storage.local,message.kind,run,{version:chrome.runtime.getManifest?.().version||'unknown'});
+  // Assessment only observes snapshots; it cannot occupy the mutation/alarm queue.
+  const action=message.kind==='status'?run():message.kind==='assessRecovery'?tracked():enqueueAction(tracked);
   action.then(respond,e=>{const uncertain=['verifyPayment','reconcileManualPayment','armPayment','payCheckout','resetUnpaidTest','testDiscountCheckout'].includes(message.kind);respond({status:'stopped',error:e.message,...failureFor(e,{operation:message.kind,paymentPossible:uncertain}),...(e.code?{errorCode:e.code}:{}),...(e.attemptedDay?{attemptedDay:e.attemptedDay}:{}),booked:uncertain?null:false,paid:uncertain?null:false});}); return true;
 });
 // Recreate one-shot alarms after restart without starting a missed release.
@@ -480,6 +509,6 @@ async function restoreReleaseJob() {
   await chrome.alarms.create('prepare',{when:Math.max(Date.now()+1000,job.when-300000)});
   await chrome.alarms.create('release',{when:job.when});
 }
-chrome.runtime.onStartup.addListener(restoreReleaseJob);
+chrome.runtime.onStartup.addListener(()=>enqueueAction(restoreReleaseJob));
 // Extension updates may clear alarms; retain the saved read-only job and date.
-chrome.runtime.onInstalled.addListener(restoreReleaseJob);
+chrome.runtime.onInstalled.addListener(()=>enqueueAction(restoreReleaseJob));
