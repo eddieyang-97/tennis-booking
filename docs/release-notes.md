@@ -1,6 +1,6 @@
 # Release notes
 
-This is the historical change log for the **active Chrome extension** in [`outputs/tennis-local/chrome-extension/`](../outputs/tennis-local/chrome-extension/). The authoritative source version is [`manifest.json`](../outputs/tennis-local/chrome-extension/manifest.json), **0.8.9** at the 16 October 2026 review.
+This is the historical change log for the **active Chrome extension** in [`outputs/tennis-local/chrome-extension/`](../outputs/tennis-local/chrome-extension/). The authoritative source version is [`manifest.json`](../outputs/tennis-local/chrome-extension/manifest.json), **0.9.1** on the stateful-testing branch (18 October 2026). `main` contains the merged v0.9.0 observability milestone; branch builds are not merged release claims.
 
 Notes below describe changes made *at each release*, not instructions to install or downgrade to older builds. Historical test counts and unverified behaviors are not current release-quality claims. For up-to-date setup, use the [project README](../README.md) and [extension usage guide](../outputs/tennis-local/chrome-extension/README.md). For original investigation and detailed timestamps, see [payment-system.md](payment-system.md).
 
@@ -18,6 +18,22 @@ Notes below describe changes made *at each release*, not instructions to install
 **Current acceptance limitation:** Source improvements and simulated tests do not establish an unattended successful midnight booking through paid receipt verification. Payment confirmation is also not proof that a reservation is still active after a cancellation.
 
 ## Changes by version
+
+### v0.9.1 — stateful worker faults and guarded recovery
+- An independent fake merchant and isolated actual-worker VM harness exercise intent persistence, dispatch, acknowledgement-following writes, repeated recovery and simulated worker recreation with retained storage. Mutation counts enforce no repeated Pay, discount or checkout opening.
+- Mutation entry points are serialized to prevent an older preflight overwriting a newer arm. This composes with v0.9.0's separate metadata ordering and retains its reviewed alarm outcomes, recovery classifications and PowerShell packaging fixes.
+- Card filling has a durable dispatch marker. Legacy `card-filling` uncertainty is latched as `cardFillRecoveryRequired` before phase changes, so repeated failed resumes cannot silently permit another fill. The latch does not invent a historical dispatch timestamp.
+- Receipt-source decisions distinguish unrelated/unavailable evidence from positively conflicting paid evidence. **Assess recovery (read only)** recognises existing-purchase pages only by saved reference and amount, never by price alone; payment/cancellation remain unknown and no mutation is issued.
+- New regressions cover the legacy-fill retry failure and exact/mismatched/missing-reference recovery assessment. The harness models merchant URL filtering for tab queries. All evidence here is offline simulation, not live payment or actual Chromium termination; browser integration remains the next milestone.
+
+### v0.9.0 — diagnosable recovery and offline reproductions
+- Added safe, centralized error-code/recovery mapping, including unresolved-checkout and page/grid readiness errors. Legacy messages provide classification only when no recognized structured code exists; possible payment always requires reconciliation and never automatic replay.
+- Latest-action identity and a persisted sequence keep older completions/failures from replacing newer status. Asynchronous status read/check/write operations are serialized within the active MV3 worker; interrupted status remains distinct from historical checkout results and payment journals.
+- Scheduled release status propagates the actual checkout/payment result instead of treating a discarded result as completion. Verification and automatic-payment failure traces retain reconciliation-only guidance for potentially paid journals, including manual-payment reports.
+- Test archives record merchant-unpaid evidence, owner attestation or unsubmitted-selection provenance separately. Attestation is bound to the current checkout identity and does not prove merchant cancellation.
+- Added seven named offline reproductions, private log comparison, production package/permission checks, exact runtime ZIP/source hashes and baseline GitHub Actions CI.
+- The documented Windows PowerShell build decodes the runtime list without nesting its array; CI verifies both that command and PowerShell 7 packaging. Focused worker-function regressions cover alarm result propagation and payment-failure trace consistency without introducing a merchant simulator.
+- Focused regressions use synthetic worker errors, out-of-order actions and delayed storage, including failures and worker recreation. These are local simulations; this release adds no live-site payment or unattended-midnight acceptance evidence. Stateful merchant and browser integration remain separate work.
 
 ### v0.8.9 — checkout readiness and merchant error diagnosis
 - Bounded card-page readiness now waits up to 60 seconds for both scheduled and manual checkout-opening paths.

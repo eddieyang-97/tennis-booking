@@ -18,6 +18,16 @@ test('Chrome storage key reordering preserves exact test authorization on resume
  assert.throws(()=>checkoutKey({...slot,court:'2'},true),/Unauthorized payment test/);
 });
 test('saved payment submits once after durable journal and confirms',async()=>{const f=fixture();const result=await payCheckout(f.record,f.deps);assert.equal(result.status,'confirmed');assert.equal(f.submits,1);assert.equal(f.links,0);});
+
+test('legacy possible card fill remains protected through repeated failed readiness and resume',async()=>{
+ const f=fixture();let fills=0;
+ f.deps.fillCard=async()=>{fills++;};f.deps.waitCardReady=async()=>{throw Error('Card still unready');};
+ await assert.rejects(payCheckout({...f.record,reference:'100001',phase:'card-filling'},f.deps),/Card still unready/);
+ await assert.rejects(payCheckout(f.record,f.deps),/Card still unready/);
+ assert.equal(fills,0);assert.equal(f.submits,0);assert.equal(f.record.cardFillDispatchedAt,undefined);
+ f.deps.waitCardReady=async()=>f.page;
+ assert.equal((await payCheckout(f.record,f.deps)).status,'confirmed');assert.equal(fills,0);assert.equal(f.submits,1);
+});
 test('unlocked local card uses card form instead of Link authentication',async()=>{const f=fixture();f.page.enabled=false;let fills=0;f.deps.fillCard=async()=>{assert.equal(f.record.phase,'card-filling');fills++;};f.deps.waitCardReady=async()=>({...f.page,enabled:true});assert.equal((await payCheckout(f.record,f.deps)).status,'confirmed');assert.equal(fills,1);assert.equal(f.links,0);assert.equal(f.submits,1);});
 test('amount or reference changes never submit',async()=>{const f=fixture();f.page.totalGBP='7.00';await assert.rejects(payCheckout(f.record,f.deps),/amount/);assert.equal(f.submits,0);});
 test('reload renews an unpaid reference only after exact basket verification',async()=>{

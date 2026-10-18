@@ -23,8 +23,10 @@ export async function openVerifiedCheckout(record,deps,{timeoutMs=15000,now=Date
 export async function payCheckout(record,deps) {
  if(record?.basketOnly||record?.checkoutTestOnly)throw Error('Unpaid test cannot submit payment; clear and reconcile its basket');
  if(!record || record.status==='confirmed')throw Error('No pending checkout');
- const fillingMayHaveHappened=!!record.cardFillDispatchedAt||record.phase==='card-filling';
- const persist=async phase=>{const at=new Date().toISOString();record={...record,phase,updatedAt:at,...(phase==='payment-dispatched'?{paymentDispatchedAt:record.paymentDispatchedAt||at}:{}),...(phase==='card-filling'?{cardFillDispatchedAt:record.cardFillDispatchedAt||at}:{})};await deps.save(record);};
+ const fillingMayHaveHappened=!!record.cardFillDispatchedAt||record.cardFillRecoveryRequired===true||record.phase==='card-filling';
+ // A legacy phase is evidence of possible filling, not a known dispatch time.
+ // Latch that evidence before another phase can overwrite it on a failed resume.
+ const persist=async phase=>{const at=new Date().toISOString();record={...record,phase,updatedAt:at,...(fillingMayHaveHappened?{cardFillRecoveryRequired:true}:{}),...(phase==='payment-dispatched'?{paymentDispatchedAt:record.paymentDispatchedAt||at}:{}),...(phase==='card-filling'?{cardFillDispatchedAt:record.cardFillDispatchedAt||at}:{})};await deps.save(record);};
  const confirm=receipt=>{if(record.reference && receipt.reference!==record.reference)throw Error('Paid receipt reference differs from provisional booking');return confirmCheckout(record,receipt);};
  if(record.manualPaymentReportedAt || record.paymentDispatchedAt || record.phase==='payment-dispatched' || record.phase==='payment-uncertain') {
   recoveryIdentity(record);

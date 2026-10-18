@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 $taskSource = Join-Path $PSScriptRoot 'outputs/tennis-local/chrome-extension'
 $taskManifest = Get-Content -LiteralPath (Join-Path $taskSource 'manifest.json') -Raw | ConvertFrom-Json
-$taskRuntime = @(Get-Content -LiteralPath (Join-Path $PSScriptRoot 'runtime-files.json') -Raw | ConvertFrom-Json)
+$taskRuntime = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'runtime-files.json') -Raw | ConvertFrom-Json
 $taskOutput = Join-Path $PSScriptRoot 'artifacts'
 New-Item -ItemType Directory -Path $taskOutput -Force | Out-Null
 $taskZip = Join-Path $taskOutput ('tennis-booking-v' + $taskManifest.version + '.zip')
