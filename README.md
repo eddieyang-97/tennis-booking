@@ -2,7 +2,7 @@
 
 A Manifest V3 Chrome extension that checks and attempts to book tennis courts on [Tower Hamlets Courtside](https://tennistowerhamlets.com/) at the London midnight release, with configurable preferences, strict basket/payment verification, a local encrypted card file and recovery of uncertain payments.
 
-**Active implementation:** [`outputs/tennis-local/chrome-extension/`](outputs/tennis-local/chrome-extension/) · **Version:** [`0.9.2`](outputs/tennis-local/chrome-extension/manifest.json), reliability PR 3 (17 October 2026).
+**Active implementation:** [`outputs/tennis-local/chrome-extension/`](outputs/tennis-local/chrome-extension/) · **Version:** [`0.9.2`](outputs/tennis-local/chrome-extension/manifest.json), isolated-browser milestone under review (18 October 2026). The v0.9.1 stateful-worker milestone is merged into `main`.
 
 **Release status:** In active development, **not yet verified for unattended end-to-end midnight payment**. A real £2.50 one-hour card payment and its subsequent account-purchase reconciliation were verified on 13 October. Live two-hour basket selection was verified, but an automated two-hour Pay and a complete unattended midnight booking have not been established. See [release notes and live-evidence limits](docs/release-notes.md).
 
@@ -52,6 +52,8 @@ The popup initially suggests London today + 8 days; it does not automatically ch
 
 Read-only navigation uses bounded readiness/retry policies. An unknown grid, unauthenticated page, unexpected basket, changed price/reference, merchant error, or unresolved prior intent stops rather than guessing or repeating a mutation. These safeguards prioritize avoiding unintended bookings and duplicate charges over automatic success.
 
+Manual availability checks and verification resumes are paused while a release job is armed, so they cannot occupy its queue. Cancel the job before checking manually. Read-only recovery assessment remains independent; Cancel does not preempt a queued or running release.
+
 **Do not delete or reset `checkoutRecords` / `paymentDispatchedAt` / `manualPaymentReportedAt` to clear a stopped run.** Use the extension's guarded reconciliation controls. For recovery instructions, see the [usage guide](outputs/tennis-local/chrome-extension/README.md).
 
 ## Development and validation
@@ -71,9 +73,9 @@ powershell -ExecutionPolicy Bypass -File .\build.ps1
 
 The build uses an explicit runtime file allowlist, creates an archive under ignored `artifacts/`, checks its contents and outputs a SHA-256 hash. The archive deliberately omits test sources and private local data.
 
-The complete deterministic check is `npm run test:ci` from the extension directory, after the pinned browser dependency/setup steps in the [local Chromium gate guide](outputs/tennis-local/chrome-extension/test/browser/README.md). It runs maintained tests, named module reproductions, actual-worker fault simulations, real Chromium integration against a local fake merchant, and ZIP/source checks. `npm run test:browser` runs just the browser gate; `npm run test:worker` runs worker fault injection.
+**Validation boundaries:** Unit and mocked-worker tests cover extensive safety cases but do not prove real merchant behavior. The reliability branch adds named offline reproductions, log comparison and baseline CI configuration with package checks. CI execution and stronger stateful/browser layers are tracked separately in the [test improvement plan](docs/test-improvement.md); local simulation passes are not unattended payment acceptance.
 
-**Validation boundaries:** The local browser gate verifies simulated checkout, discount, cleanup, concurrent requests and payment reconciliation after a real Chromium restart. It substitutes the card boundary and controlled alarm clock, and cannot establish live Stripe/merchant compatibility, bank challenges or unattended midnight payment. Production packaging excludes all test substitutions. CI execution remains separate evidence from local passes. See the [test improvement plan](docs/test-improvement.md).
+PR #4 adds `npm run test:ci`, including pinned Chromium with a loopback fake merchant, isolated profiles, denied external HTTP(S), actual content scripts and worker/process restart tests. See the [browser setup and test-only substitutions](outputs/tennis-local/chrome-extension/test/browser/README.md). Its synthetic card frame and controlled alarm callback do not establish live Stripe or midnight delivery behavior.
 
 ### Key source files
 

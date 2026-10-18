@@ -53,16 +53,21 @@ export async function startMerchant(){
    respond(res,shell({heading:'Basket checkout',count:state.items.length,html:`<p>We have received your provisional booking (ref: ${state.reference}), it will be confirmed once we receive payment.</p><iframe src="/v3/elements-inner-card-fake"></iframe><form method="post" action="/__pay"><button id="submit" disabled>Pay £${purchase.total.toFixed(2)}</button></form><a href="/basket">Cancel &amp; return to basket</a>`},'/site.js'));return;
   }
   if(url.pathname==='/v3/elements-inner-card-fake'){respond(res,shell({heading:'Local fake payment frame',html:'<p>No card information is accepted.</p>'}));return;}
-  if(url.pathname==='/__fill'){state.counts.fill++;res.writeHead(204);res.end();return;}
+  if(url.pathname==='/__fill'){state.counts.fill++;if(state.options.holdFillResponse)return;res.writeHead(204);res.end();return;}
   if(url.pathname==='/__pay'){
    state.counts.pay++;const purchase=state.purchases.find(p=>p.reference===state.reference);if(purchase)purchase.state='Confirmed';
    state.payObserved=true;if(state.options.holdPayResponse)return;
    respond(res,shell({heading:'Order received',html:'Consult account purchase history.'}));return;
   }
   if(url.pathname==='/account'){
+   if(state.options.holdAccountAfterPay&&state.payObserved)return;
    const rows=state.options.duplicatePurchases?[...state.purchases,...state.purchases]:state.purchases;
    const html=`<table><tr>${['Date','Ref','State','Info','Value',''].map(h=>`<th>${h}</th>`).join('')}</tr>${rows.map(p=>`<tr><td>Test date</td><td>PT${p.reference}</td><td>${p.state}</td><td>2 courts</td><td>£${p.total.toFixed(2)}</td><td>${p.state==='Confirmed'?'Paid ✔':`Pay £${p.total.toFixed(2)}`}</td></tr>`).join('')}</table>`;
    respond(res,shell({heading:'Welcome back, Test',html}));return;
+  }
+  if(url.pathname==='/basket/receipt'){
+   const escape=text=>text.replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');
+   respond(res,shell({heading:'Payment successful',html:'<main>'+String(state.options.receiptText||'').split('\n').map(line=>'<div>'+escape(line)+'</div>').join('')+'</main>'}));return;
   }
   if(url.pathname==='/purchase/card/100001'){respond(res,shell({heading:'Pay with card',html:'Booking ref: PT100001 <p>Amount due: £12.00</p><button disabled>Pay £12.00</button>'}));return;}
   respond(res,shell({heading:'Unknown local test page'}),404);

@@ -2,7 +2,7 @@ import {retryTab,temporaryTabError,tabErrorReason} from './retry.js';
 import {failureFor} from './failures.js';
 const BASE='https://tennistowerhamlets.com';
 export function pageReadBudget(scheduled=false){return scheduled?60000:15000;}
-async function responseWithin(operation,ms,timers){let timer;try{return await Promise.race([operation(),new Promise((_,reject)=>{timer=timers.setTimeout(()=>reject(Error('Read response timed out')),ms);})]);}finally{timers.clearTimeout(timer);}}
+export async function responseWithin(operation,ms,timers=globalThis){let timer;try{return await Promise.race([operation(),new Promise((_,reject)=>{timer=timers.setTimeout(()=>reject(Error('Read response timed out')),ms);})]);}finally{timers.clearTimeout(timer);}}
 export async function waitPaymentState(read,{timeoutMs=15000,accept=()=>true,now=Date.now,delay=ms=>new Promise(r=>setTimeout(r,ms)),timers=globalThis}={}) {
  const deadline=now()+timeoutMs;
  while(now()<deadline){

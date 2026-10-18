@@ -22,7 +22,8 @@ export class Merchant{
    this.counts.opening++;this.readyAt=this.clock+(this.options.cardDelay||0);this.purchases.set(this.reference,{state:'Pending',totalGBP:this.basket.totalGBP});response={ok:true};
   }else if(['checkout-progress','payment-state'].includes(request.kind)){
    if(request.kind==='checkout-progress'&&this.options.missingProgress>0){this.options.missingProgress--;return undefined;}
-   if(this.options.merchantError)response={ok:true,value:{stage:'other-page',merchantError:true,loadState:'complete'}};
+   if(request.kind==='checkout-progress'&&tab.url.includes('/purchase/card/'))response={ok:true,value:{stage:'existing-purchase',reference:this.reference,totalGBP:'14.00',cancellationSupported:false}};
+   else if(this.options.merchantError)response={ok:true,value:{stage:'other-page',merchantError:true,loadState:'complete'}};
    else if(this.clock<(this.readyAt||0)||!this.purchases.has(this.reference))response={ok:true,value:{stage:'basket',loadState:'loading'}};
    else response={ok:true,value:{stage:'card',reference:this.reference,totalGBP:this.purchases.get(this.reference).totalGBP,enabled:!!this.filled,loadState:'complete'}};
   }else if(request.kind==='link-discover'){
@@ -32,7 +33,7 @@ export class Merchant{
   else if(request.kind==='card-fill'){this.counts.fill++;this.filled=true;response={ok:true};}
   else if(request.kind==='payment-submit'){
    this.counts.pay++;this.purchases.set(request.reference,{state:'Confirmed',totalGBP:request.totalGBP});response={ok:true};
-  }else if(request.kind==='receipt-read')response={ok:true,value:{status:'awaiting-payment'}};
+  }else if(request.kind==='receipt-read')response=this.options.receiptResponse?this.options.receiptResponse(request):{ok:true,value:{status:'awaiting-payment'}};
   else if(['purchase-read','test-purchase-state'].includes(request.kind)){
    const purchase=this.purchases.get(request.reference);
    response=!purchase?{ok:false,error:'Unique matching purchase not found for reference 100001: observed 0 matches'}:purchase.totalGBP!==request.slot.totalGBP?{ok:false,error:'Matching purchase is not confirmed paid at the expected amount'}:request.kind==='test-purchase-state'&&purchase.state==='Pending'?{ok:true,value:{status:'unpaid',reference:request.reference,totalGBP:purchase.totalGBP}}:purchase.state==='Confirmed'?{ok:true,value:{status:'confirmed',key:request.key,reference:request.reference,source:'account-purchase',bookingState:'unknown'}}:{ok:false,error:'Test purchase is paid or uncertain'};

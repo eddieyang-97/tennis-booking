@@ -17,6 +17,9 @@ jobs:
       - name: Exact runtime package
         shell: pwsh
         run: ./build.ps1
+      - name: Documented Windows PowerShell package command
+        shell: pwsh
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File ./build.ps1
   browser:
     runs-on: windows-latest
     timeout-minutes: 15

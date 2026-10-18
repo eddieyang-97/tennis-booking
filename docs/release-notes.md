@@ -1,6 +1,6 @@
 # Release notes
 
-This is the historical change log for the **active Chrome extension** in [`outputs/tennis-local/chrome-extension/`](../outputs/tennis-local/chrome-extension/). The authoritative source version is [`manifest.json`](../outputs/tennis-local/chrome-extension/manifest.json), **0.9.2** on the 17 October 2026 reliability branches; branch builds are not merged release claims.
+This is the historical change log for the **active Chrome extension** in [`outputs/tennis-local/chrome-extension/`](../outputs/tennis-local/chrome-extension/). The authoritative source version is [`manifest.json`](../outputs/tennis-local/chrome-extension/manifest.json), **0.9.2** on the browser-testing branch (18 October 2026). `main` contains the merged v0.9.1 stateful-worker milestone; branch builds are not merged release claims.
 
 Notes below describe changes made *at each release*, not instructions to install or downgrade to older builds. Historical test counts and unverified behaviors are not current release-quality claims. For up-to-date setup, use the [project README](../README.md) and [extension usage guide](../outputs/tennis-local/chrome-extension/README.md). For original investigation and detailed timestamps, see [payment-system.md](payment-system.md).
 
@@ -19,24 +19,29 @@ Notes below describe changes made *at each release*, not instructions to install
 
 ## Changes by version
 
-### v0.9.2 — local Chromium release gate (17 October 2026)
-- Pinned Playwright/Chromium tests use production worker/content adapters with a separate synthetic merchant/profile, controlled clock, fake card boundary and a documented test-only popup-tab substitution.
-- Added browser scenarios for alarm-driven fake payment and account reconciliation across Chromium restart, no-repeat payment, concurrent discounted unpaid tests/cleanup, merchant errors, unrelated baskets, account-parser rejection and popup settings/DST.
-- A repeated browser run reproduced an absent checkout-progress reply during navigation. The worker now classifies only that read as `CHECKOUT_READ_UNAVAILABLE` and observes it within the existing readiness deadline; it does not repeat checkout opening. A failing-before-fix module regression and an actual-worker regression cover recovery with one opening/discount.
-- HTTP(S) traffic passes through a local denying proxy with independent page routing, negative page/frame/worker probes, and tests that unexpected external requests fail the gate. Chromium infrastructure probes remain blocked and reported.
-- Added `test:browser`, the complete `test:ci` command, a browser CI job and fake-only diagnostic artifact retention. Production ZIPs exclude all test overrides and match reviewed source entry hashes.
-- These are simulated checks. No live basket, discount, payment or midnight job was created by this implementation work. See the [browser guide](../outputs/tennis-local/chrome-extension/test/browser/README.md) for the precise acceptance boundaries.
+### v0.9.2 — isolated Chromium integration gate
+- Pinned Playwright/Chromium runs the actual worker, popup document and merchant content scripts against a loopback fake merchant in disposable test profiles. A denying proxy and page routing block external HTTP(S); negative page/frame/worker probes exercise the boundary.
+- Tests cover delayed selection/checkout, discounted unpaid cleanup, immutable settings/DST, account evidence, receipt booking dates/single starts and fake payment recovery after Chromium relaunch. A separate CDP worker-termination case interrupts card filling, then verifies that an independently enabled button cannot authorize Pay or another fill.
+- Missing checkout-progress responses are observed within the existing read-only readiness deadline; mutation messages are never retried. The browser fixture holds post-Pay account evidence until shutdown so its restart case cannot accidentally complete reconciliation first.
+- Runtime ZIP checks exclude fake adapters, profiles, clocks and test dependencies. Production sender validation stays intact; the headless test copy permits the popup document in a tab. This is local synthetic integration evidence, not live Stripe compatibility, real midnight alarm delivery, power-loss durability or unattended-booking acceptance.
 
-### v0.9.1 — actual-worker faults and safe recovery (17 October 2026)
-- Added a stateful independent merchant and 43 actual-worker VM fault tests covering durable intent/dispatch boundaries, interruption/restart, cleanup, competing invocations and payment reconciliation.
-- Reproduced and fixed stale preflight overwriting a newer arm by serializing mutation entry points. Persisted card-fill intent prevents blind refill after interruption, including legacy `card-filling` records.
-- Positively conflicting receipt evidence keeps its hold; independently matched account evidence may reconcile an unrelated/unavailable current page. Existing-purchase recovery assessment is read-only.
-- Local maintained and scenario tests passed; GitHub Reliability gate passed for commit `9210cb2336c832d44dbdf86909217c14bd744752`.
+### v0.9.1 — stateful worker faults and guarded recovery
+- An independent fake merchant and isolated actual-worker VM harness exercise intent persistence, dispatch, acknowledgement-following writes, repeated recovery and simulated worker recreation with retained storage. Mutation counts enforce no repeated Pay, discount or checkout opening.
+- Mutation entry points are serialized to prevent an older preflight overwriting a newer arm. This composes with v0.9.0's separate metadata ordering and retains its reviewed alarm outcomes, recovery classifications and PowerShell packaging fixes.
+- Card filling has a durable dispatch marker. Interrupted/legacy fills and existing uncertainty latches stop for manual review before further checkout actions: readiness alone cannot prove card provenance. Payment holds remain reconciliation-only.
+- Receipt-source decisions distinguish unrelated/unavailable evidence from positively conflicting paid evidence. **Assess recovery (read only)** recognises existing-purchase pages only by saved reference and amount, never by price alone; payment/cancellation remain unknown and no mutation is issued.
+- Receipt date/time interpretation is scoped to recognized booking fields and the legacy adjacent booking-detail layout. Processing/creation dates do not invent conflicts; contradictory single starts as well as ranges retain the payment hold. Unknown layouts remain unverifiable. Added actual-content-script/worker regressions for metadata, labelled/standalone starts and contradictory booking fields.
+- Manual availability checks and verification resumes are refused while any job is armed, before merchant reads or shared running/result changes. This admission policy protects release timing without concurrent check state; cancelling the saved job permits checks again. Offline tests cover a potentially stalled manual read at midnight, worker recreation and cancellation ordering.
+- Review regressions exercise unknown card provenance, same-reference receipt contradictions through the real content-script response and worker reconciliation boundary, and hung diagnostic reads overlapping release alarms. Recovery assessment runs outside the mutation queue with bounded reads and a five-second overall budget; changed journals invalidate snapshots. Cancel clears future alarms when its queued command executes and cannot preempt a queued/running release. The harness models merchant URL filtering for tab queries. All evidence here is offline simulation, not live payment or actual Chromium termination; browser integration remains the next milestone.
 
-### v0.9.0 — reproducible diagnostics and baseline CI (17 October 2026)
-- Added safe failure classifications, latest-action status, journal-bound manual attestation and explicit archive evidence provenance.
-- Added seven named module reproductions, local version-aware log comparison, production package/permission checks and baseline CI.
-- Production builds use an explicit runtime file list and verify ZIP entry/source hashes. GitHub Reliability gate passed for commit `7d02cd813c0d57bc957947de18ef07a950fcfecd`.
+### v0.9.0 — diagnosable recovery and offline reproductions
+- Added safe, centralized error-code/recovery mapping, including unresolved-checkout and page/grid readiness errors. Legacy messages provide classification only when no recognized structured code exists; possible payment always requires reconciliation and never automatic replay.
+- Latest-action identity and a persisted sequence keep older completions/failures from replacing newer status. Asynchronous status read/check/write operations are serialized within the active MV3 worker; interrupted status remains distinct from historical checkout results and payment journals.
+- Scheduled release status propagates the actual checkout/payment result instead of treating a discarded result as completion. Verification and automatic-payment failure traces retain reconciliation-only guidance for potentially paid journals, including manual-payment reports.
+- Test archives record merchant-unpaid evidence, owner attestation or unsubmitted-selection provenance separately. Attestation is bound to the current checkout identity and does not prove merchant cancellation.
+- Added seven named offline reproductions, private log comparison, production package/permission checks, exact runtime ZIP/source hashes and baseline GitHub Actions CI.
+- The documented Windows PowerShell build decodes the runtime list without nesting its array; CI verifies both that command and PowerShell 7 packaging. Focused worker-function regressions cover alarm result propagation and payment-failure trace consistency without introducing a merchant simulator.
+- Focused regressions use synthetic worker errors, out-of-order actions and delayed storage, including failures and worker recreation. These are local simulations; this release adds no live-site payment or unattended-midnight acceptance evidence. Stateful merchant and browser integration remain separate work.
 
 ### v0.8.9 — checkout readiness and merchant error diagnosis
 - Bounded card-page readiness now waits up to 60 seconds for both scheduled and manual checkout-opening paths.
