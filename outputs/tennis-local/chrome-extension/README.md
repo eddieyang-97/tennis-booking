@@ -67,6 +67,8 @@ Manual availability checks and verification resumes return `MANUAL_CHECK_WHILE_A
 
 Changing a test's discount code, checked date or search preferences can trigger the same guarded cleanup before restarting. If cleanup is blocked, inspect the record instead of forcing a reset. For the manual fallback, use the merchant's **Cancel & return to basket**, remove the test items/discount, attest **I did not submit payment** only if true, and use **Reconcile cleared selection**. **Never apply this unpaid-test cleanup to a paid or potentially paid checkout.**
 
+An unfinished checkout-page test can have no saved reference after opening was attempted. The popup now identifies that specific case and expands **Check and recover** with the manual steps above; it never ticks the attestation for you. A missing dispatch marker does not prove no payment occurred. If you are unsure, preserve the journal and inspect purchase history. The guidance does not remove items, archive a record or establish merchant cancellation; the existing worker checks still apply when you explicitly reconcile.
+
 ## Failure handling and diagnostics
 
 - For selection, the extension validates both hour/court cells before starting, clicks each hour once, waits for stable checkbox/basket-count acknowledgement, and verifies stable basket snapshots. A partial selection may become a one-hour scheduled booking only if all saved rules allow it. An uncertain click is not replayed.
