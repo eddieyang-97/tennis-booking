@@ -22,11 +22,28 @@ test('scheduled release reuses one freshly read grid and verified basket through
  assert.equal(gridNavigations.length,1,'availability grid must not be loaded again for selection');
  const gridReads=f.reads.filter(r=>r.kind==='grid');assert.equal(gridReads.length,2,'selection needs a fresh DOM observation');assert.equal(gridReads[0].id,gridReads[1].id);
  assert.equal(f.navigations.filter(n=>n.kind==='create'&&n.url.endsWith('/basket')).length,1,'one separate initial empty-basket read');
- assert.equal(f.navigations.filter(n=>n.kind==='update'&&n.url.endsWith('/basket')).length,1,'selection tab navigates to basket once');
+ assert.equal(f.navigations.filter(n=>n.kind==='update'&&n.url.endsWith('/basket')).length,2,'selected basket and pre-payment server refresh');
  assert.equal(f.reads.filter(r=>r.kind==='basket-read').length,4,'empty, selected, pre-payment and immediately pre-opening checks remain');
  assert.deepEqual(f.merchant.counts,{selection:2,discount:0,opening:1,fill:1,pay:1,removal:0});
  assert.ok(f.state.runHistory.some(run=>run.steps.some(step=>step.name==='grid-existing-read')));
  assert.equal(JSON.stringify(f.state).includes('gridTabId'),false,'tab handoff must not become durable authorization');
+});
+
+test('pre-payment refresh detects server basket changes hidden by an unchanged tab DOM',async()=>{
+ const f=await navigationRun(),snapshots=new Map(),{create,update,sendMessage}=f.worker.chrome.tabs;let selectedRead=false;
+ f.worker.chrome.tabs.create=async changes=>{const tab=await create(changes);if(changes.url.endsWith('/basket'))snapshots.set(tab.id,structuredClone(f.merchant.basket));return tab;};
+ f.worker.chrome.tabs.update=async(id,changes)=>{const tab=await update(id,changes);if(changes.url?.endsWith('/basket'))snapshots.set(id,structuredClone(f.merchant.basket));return tab;};
+ f.worker.chrome.tabs.sendMessage=async(id,request)=>{
+  if(request.kind!=='basket-read')return sendMessage(id,request);
+  const response={ok:true,value:structuredClone(snapshots.get(id))};
+  if(!selectedRead&&!response.value.empty){selectedRead=true;f.merchant.basket.items=f.merchant.basket.items.map(item=>({...item,court:4}));}
+  return response;
+ };
+ await f.worker.alarm({name:'release'});
+ assert.equal(f.state.checkoutResult.status,'stopped','an old DOM cannot authorize the changed server basket');
+ assert.equal(f.state.checkoutResult.reasonCode,'BASKET_MISMATCH');
+ assert.deepEqual(f.merchant.counts,{selection:2,discount:0,opening:0,fill:0,pay:0,removal:0});
+ assert.equal(f.state.checkoutRecords[0].slot.court,1);assert.equal(f.state.checkoutRecords[0].paymentDispatchedAt,undefined);
 });
 
 test('read-only progress response lost during navigation is observed again without reopening checkout',async()=>{
@@ -82,7 +99,7 @@ for(const readNumber of [3,4])for(const change of ['extra-item','price','route']
  assert.equal(f.state.checkoutResult.status,'stopped');assert.equal(f.merchant.counts.selection,2);
  assert.deepEqual([f.merchant.counts.opening,f.merchant.counts.fill,f.merchant.counts.pay,f.merchant.counts.removal],[0,0,0,0]);
  assert.equal(f.state.checkoutRecords.length,1);assert.equal(f.state.checkoutRecords[0].paymentDispatchedAt,undefined);
- assert.equal(f.navigations.filter(n=>n.kind==='update'&&n.url.endsWith('/basket')).length,1,'changed handoff must not cause a basket reload');
+ assert.equal(f.navigations.filter(n=>n.kind==='update'&&n.url.endsWith('/basket')).length,2,'exactly one pre-payment refresh, no additional reload after the mismatch');
 });
 
 for(const option of ['partial','discount','fallback-venue','empty'])test(`navigation reuse preserves ${option} release behavior`,async()=>{

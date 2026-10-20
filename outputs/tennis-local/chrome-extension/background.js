@@ -157,8 +157,11 @@ async function automaticPayment(test=false,scheduled=false,basketHandoff=null) {
   const readBasket=async slot=>{
    resumedTab=null;
    if(basketHandoff&&(basketHandoff.key!==record?.key||basketHandoff.tabId!==tab.id||record.checkoutOpenDispatchedAt))throw Object.assign(Error('Prepared basket handoff changed; inspect checkout'),{reasonCode:'AUTHORIZATION_INVALID'});
+   if(basketHandoff&&(await readTab(()=>chrome.tabs.get(tab.id))).url!==BASE+'/basket')throw Object.assign(Error('Prepared basket tab route changed; no navigation sent'),{pageCode:'PAGE_BASKET_ROUTE_CHANGED'});
    const response=basketHandoff
-    ?await readPageState(chrome.tabs,BASE+'/basket',{kind:'basket-read'},{tabId:tab.id,navigate:false,timeoutMs:pageReadBudget(scheduled),step})
+    // Refresh the shared merchant basket, not just the old DOM. Another tab
+    // can change the server basket without changing this tab's visible items.
+    ?await readPageState(chrome.tabs,BASE+'/basket',{kind:'basket-read'},{tabId:tab.id,timeoutMs:pageReadBudget(scheduled),step})
     :await readPage(BASE+'/basket',{kind:'basket-read'},{scheduled});
    if(!response.ok)throw Error(response.error);verifyBasket(response.value,slot,record?.discount);return response.value;
   };
