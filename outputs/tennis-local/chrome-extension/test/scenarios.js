@@ -11,6 +11,13 @@ export const slot=()=>({venue:'victoria-park',date:addDays(londonDay(),1),court:
 export function basket(s=slot()){return {empty:false,items:[20,21].map(hour=>({venue:NAMES[s.venue],court:1,day:Number(s.date.slice(8)),month:Number(s.date.slice(5,7)),hour,priceGBP:'7.00'})),subtotalGBP:'14.00',discountGBP:'0.00',totalGBP:'14.00',paymentBoundary:true};}
 export const journal=()=>{const s=slot();return {slot:s,key:slotKey(s),status:'pending',phase:'awaiting-payment',checkoutTestOnly:true};};
 export const scenarios={
+ 'selection-reverted-empty-no-replay':async()=>{
+  const s=slot();let records=[],clicks=0;
+  const deps={load:async()=>structuredClone(records),save:async r=>records=structuredClone(r),read:async()=>({empty:true,items:[]}),select:async()=>{clicks++;throw Object.assign(Error('Sanitized selection timeout'),{reasonCode:'SELECTION_ACK_TIMEOUT',selectionDiagnostic:{dispatchedHours:1,acknowledgedHours:0,checkboxReverted:true,merchantOutcome:'unknown'}});}};
+  await assert.rejects(prepareCheckout(s,deps),e=>failureFor(e).reasonCode==='SELECTION_ACK_TIMEOUT');
+  assert.equal(records[0].selectionFailure.reasonCode,'SELECTION_ACK_TIMEOUT');assert.equal(records[0].selectionDiagnostic.checkboxReverted,true);
+  await assert.rejects(prepareCheckout(s,deps),/Pending checkout basket is empty/);assert.equal(clicks,1);assert.equal(records[0].phase,'selection-dispatched');assert.equal(records[0].paymentDispatchedAt,undefined);
+ },
  'grid-usable-while-loading':async()=>{
   let mutations=0;const s=slot(),url=`https://tennistowerhamlets.com/book/courts/${s.venue}/${s.date}#book`;
   const tabs={create:async()=>({id:1}),get:async()=>({url,status:'loading'}),sendMessage:async()=>({ok:true,rows:[{time:'8pm',inputs:[]}]}),remove:async()=>{}};

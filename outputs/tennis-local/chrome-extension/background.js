@@ -14,6 +14,7 @@ import {normalizeDiscount,ensureDiscount,payableSlot} from './discount.js';
 import {normalizeSettings,pendingArmBlocker} from './booking-settings.js';
 import {clearUnpaidTest} from './test-cleanup.js';
 import {failureFor} from './failures.js';
+import {selectionEvidence,selectionFailure} from './selection-evidence.js';
 import {executeAction,createSerialExecutor} from './actions.js';
 const enqueueAction=createSerialExecutor();
 const linkFrames=createLinkFrames(chrome.tabs,{step:(name,detail)=>step(name,detail)});
@@ -289,10 +290,14 @@ async function checkout(expectedDay=null,scheduled=false,basketOnly=false,discou
     if(!grid.ok)throw Error(grid.error);
     if(reuseGrid&&!candidates(grid.rows,s.venue,s.date,{settings}).some(candidate=>candidate.totalGBP===s.totalGBP&&checkoutKey({...candidate,venue:s.venue},false,settings)===checkoutKey(s,false,settings)))throw Object.assign(Error('Selected slot availability or price changed; no selection sent'),{gridCode:'GRID_CANDIDATE_CHANGED'});
     // One mutation dispatch. Reconciliation occurs in prepareCheckout, never replay.
-    const response=await chrome.tabs.sendMessage(tab.id,{kind:'select-slot',slot:s,selectionTimeoutMs:pageReadBudget(scheduled)});const selectionDiagnostic=response?.selectionDiagnostic||response?.value?.selectionDiagnostic;
-    await step('selection-result',{ok:response?.ok===true,...(selectionDiagnostic?{selectionDiagnostic}:{})});
-    if(!response?.ok)throw Object.assign(Error(response?.error||'Selection response uncertain'),{selectionDiagnostic});
-    return response.value;
+    const timeoutMs=pageReadBudget(scheduled);await step('selection-message-dispatched',{timeoutMs});
+    const dispatched=Date.now();let response;
+    try{response=await chrome.tabs.sendMessage(tab.id,{kind:'select-slot',slot:s,selectionTimeoutMs:timeoutMs});}
+    catch{/* Lost acknowledgement remains uncertain; never replay this message. */}
+    const selectionDiagnostic=selectionEvidence(response?.selectionDiagnostic||response?.value?.selectionDiagnostic),failure=selectionFailure(response);
+    await step('selection-result',{ok:response?.ok===true,messageElapsedMs:Math.max(0,Date.now()-dispatched),selectionDiagnostic,...(response?.ok===true?{}:failureFor(failure))});
+    if(response?.ok!==true)throw Object.assign(failure,{selectionDiagnostic});
+    return {...response.value,selectionDiagnostic};
    },
    retain:async()=>{await chrome.tabs.update(tab.id,{active:true});return tab.id;},notify:basketOnly||checkoutTestOnly?async()=>{await chrome.action.setBadgeText({text:'TEST'});}:notifyCheckout
   },{test:pending?.test===true,basketOnly,allowPartial:scheduled&&!basketOnly,discountCode,settings,checkoutTestOnly});

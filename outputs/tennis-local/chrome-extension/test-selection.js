@@ -1,17 +1,41 @@
 import test from 'node:test';import assert from 'node:assert/strict';import vm from 'node:vm';import fs from 'node:fs';
 import {verifyBasket} from './stage-rules.js';import {prepareCheckout,reconcileClearedSelection} from './checkout.js';
+import {selectionEvidence,selectionFailure} from './selection-evidence.js';
+import {failureFor} from './failures.js';
 const source=fs.readFileSync(new URL('./stage-content.js',import.meta.url),'utf8');
 const slot={venue:'bethnal-green-gardens',date:'2026-10-22',court:4,start:'20:00',hours:2,totalGBP:'14.00'};
-function site({neverAck=false,disableSecond=false,mixed=false,extra=false}={}){
- let clock=0,server=extra?[99]:[],pending=[],clicks=[],boxes,listener;
+function site({neverAck=false,disableSecond=false,mixed=false,extra=false,timerStep=250,revert=false,resources=[],ackOnlyFirst=false,alertText=''}={}){
+ let clock=0,timers=0,server=extra?[99]:[],pending=[],clicks=[],boxes,listener;
  const courts=mixed?[4,2]:[4,4];
  const rebuild=()=>{boxes?.forEach(b=>b.detached=true);boxes=courts.map((court,i)=>({checked:server.includes(i),disabled:disableSecond&&server.length>0&&i===1,labels:[{textContent:`Tennis court ${court}£7`}],click(){assert.equal(this.detached,undefined,'Never click a stale input');this.checked=true;clicks.push(i);pending.push({at:clock+750,items:[...server,i]});}}));};rebuild();
- const tick=ms=>{clock+=ms;if(!neverAck)for(const update of pending.filter(p=>p.at<=clock)){server=update.items;rebuild();}pending=pending.filter(p=>p.at>clock);};
+ const tick=ms=>{clock+=ms;if(revert)boxes.forEach(b=>b.checked=false);if(!neverAck)for(const update of pending.filter(p=>p.at<=clock&&(!ackOnlyFirst||p.items.length===1))){server=update.items;rebuild();}pending=pending.filter(p=>p.at>clock);};
  const book={textContent:'Thursday 22nd October 2026',querySelectorAll:()=>boxes.map((box,i)=>({querySelector:()=>({textContent:i?'9pm':'8pm'}),querySelectorAll:()=>[box]}))};
- const context={location:{pathname:'/book/courts/bethnal-green-gardens/2026-10-22'},document:{querySelector:q=>q==='#book'?book:{getAttribute:()=>String(server.length)}},chrome:{runtime:{id:'own',onMessage:{addListener:f=>listener=f}}},Intl,Date,setTimeout:callback=>{tick(250);queueMicrotask(callback);}};
+ const context={location:{origin:'https://tennistowerhamlets.com',pathname:'/book/courts/bethnal-green-gardens/2026-10-22'},document:{visibilityState:'hidden',readyState:'complete',querySelectorAll:()=>alertText?[{innerText:alertText,getClientRects:()=>[{}]}]:[],querySelector:q=>q==='#book'?book:{getAttribute:()=>String(server.length)}},performance:{now:()=>clock,getEntriesByType:()=>resources},URL,chrome:{runtime:{id:'own',onMessage:{addListener:f=>listener=f}}},Intl,Date,setTimeout:callback=>{timers++;tick(timerStep);queueMicrotask(callback);}};
  vm.runInNewContext(source,context);
- return {get boxes(){return boxes;},get server(){return server;},clicks,tick,run:()=>new Promise(resolve=>listener({kind:'select-slot',slot:{...slot,...(mixed?{courts}: {})}},{id:'own'},resolve))};
+ return {get boxes(){return boxes;},get server(){return server;},get clock(){return clock;},get timers(){return timers;},clicks,tick,run:()=>new Promise(resolve=>listener({kind:'select-slot',slot:{...slot,...(mixed?{courts}: {})}},{id:'own'},resolve))};
 }
+test('throttled polling uses elapsed time and never dispatches the second hour after the deadline',async()=>{
+ const f=site({neverAck:true,timerStep:5000,revert:true}),response=await f.run();
+ assert.equal(response.ok,false);assert.equal(response.reasonCode,'SELECTION_ACK_TIMEOUT');assert.deepEqual(f.clicks,[0]);assert.equal(f.clock,15000);assert.equal(f.timers,3);
+ assert.equal(response.selectionDiagnostic.elapsedMs,15000);assert.equal(response.selectionDiagnostic.timeoutMs,15000);assert.equal(response.selectionDiagnostic.checkboxReverted,true);assert.equal(response.selectionDiagnostic.visibilityState,'hidden');
+ assert.equal(response.selectionDiagnostic.merchantOutcome,'unknown');
+ const paused=site({timerStep:20000}),late=await paused.run();assert.equal(late.reasonCode,'SELECTION_ACK_TIMEOUT');assert.deepEqual(paused.clicks,[0]);assert.equal(paused.timers,1);assert.equal(late.selectionDiagnostic.elapsedMs,20000);
+ const partial=site({ackOnlyFirst:true}),stopped=await partial.run();assert.equal(stopped.selectionDiagnostic.acknowledgedHours,1);assert.deepEqual(partial.clicks,[0,1]);assert.equal(partial.clock,15000,'both hours share one elapsed-time budget');
+});
+test('selection evidence is a closed sanitized schema and failure text is never copied from a response',()=>{
+ const supplied={expectedHours:2,dispatchedHours:1,acknowledgedHours:0,elapsedMs:15000,timeoutMs:15000,merchantOutcome:'rejected',responseBody:'PRIVATE',token:'PRIVATE',hourlyDispatches:[{court:1,hour:20,at:'PRIVATE',offsetMs:0}],network:{correlation:'same-origin-window-only',observedRequests:2,responses:[{status:409,completed:true,body:'PRIVATE',url:'PRIVATE'},{status:'PRIVATE'}]},checkedHours:[{hour:20,court:1,checked:false,disabled:false,password:'PRIVATE'}]};
+ const value=selectionEvidence(supplied);assert.equal(JSON.stringify(value).includes('PRIVATE'),false);assert.equal(value.merchantOutcome,'unknown');assert.equal(value.network.responses[0].status,409);assert.equal(value.network.responses[1].status,null);
+ const failure=selectionFailure({reasonCode:'SELECTION_ACK_TIMEOUT',error:'PRIVATE'});assert.equal(failureFor(failure).reasonCode,'SELECTION_ACK_TIMEOUT');assert.equal(failureFor(failure).recovery.mode,'read-only-observation');assert.equal(failureFor(failure,{paymentPossible:true}).recovery.mode,'payment-reconciliation');
+ assert.equal(selectionFailure({reasonCode:'made-up',error:'PRIVATE'}).reasonCode,'SELECTION_RESPONSE_UNCERTAIN');assert.equal(JSON.stringify(failure).includes('PRIVATE'),false);
+});
+test('passive resource evidence contains only bounded statuses/timing, never bodies, URLs or rejection authority',async()=>{
+ const resource=(name,responseStatus,startTime=1)=>({name,responseStatus,startTime,initiatorType:'fetch',responseEnd:5});
+ const resources=[resource('https://tennistowerhamlets.com/private?token=PRIVATE',409),resource('https://js.stripe.com/private',500),resource('https://tennistowerhamlets.com/old',403,-1),resource('https://tennistowerhamlets.com/loading',0),...Array.from({length:20},()=>resource('https://tennistowerhamlets.com/anything',200))];
+ const response=await site({neverAck:true,revert:true,resources,alertText:'Session expired: PRIVATE merchant token'}).run(),evidence=response.selectionDiagnostic;
+ assert.equal(evidence.network.correlation,'same-origin-window-only');assert.equal(evidence.network.observedRequests,22);assert.equal(evidence.network.responses.length,8);assert.equal(evidence.network.responses[0].status,409);assert.equal(evidence.network.responses[1].status,null);assert.equal(evidence.merchantOutcome,'unknown');
+ for(const secret of ['PRIVATE','stripe','private','anything'])assert.equal(JSON.stringify(response).includes(secret),false);
+ assert.equal(evidence.visibleAlertCategory,'session');
+});
 test('serialized hourly selection prevents lost server updates and resolves replacement DOM nodes',async()=>{
  const race=site();race.boxes[0].click();race.boxes[1].click();race.tick(750);assert.equal(race.server.length,1,'Concurrent writes based on an empty basket overwrite one hour');
  for(const mixed of [false,true]){const f=site({mixed});const response=await f.run();assert.equal(response.ok,true);assert.deepEqual(f.server,[0,1]);assert.deepEqual(f.clicks,[0,1]);assert.equal(response.value.selectionDiagnostic.acknowledgedHours,2);}

@@ -80,6 +80,10 @@ export async function prepareCheckout(slot,deps,{test=false,adopt=false,basketOn
   await persist('selection-dispatched');
   try{const selected=await deps.select(slot);if(selected?.selectionDiagnostic)record={...record,selectionDiagnostic:selected.selectionDiagnostic};}catch(error){
    if(error.selectionDiagnostic)record={...record,selectionDiagnostic:error.selectionDiagnostic};
+   record={...record,selectionFailure:failureFor(error)};
+   // Retain the observed failure before a further read can hang or lose the
+   // worker. This writes local evidence; it never repeats selection.
+   await persist('selection-dispatched');
    basket=await deps.read();
    if(basket.empty)throw Object.assign(Error('Selection uncertain; pending checkout retained; no retry'),failureFor(error));
    await verifySelected(basket);

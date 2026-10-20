@@ -1,6 +1,6 @@
 # Release notes
 
-This is the historical change log for the **active Chrome extension** in [`outputs/tennis-local/chrome-extension/`](../outputs/tennis-local/chrome-extension/). The authoritative source version is [`manifest.json`](../outputs/tennis-local/chrome-extension/manifest.json), **0.9.4** on the failed-checkout recovery branch (20 October 2026). `main` contains merged v0.9.3; branch builds are not merged release claims.
+This is the historical change log for the **active Chrome extension** in [`outputs/tennis-local/chrome-extension/`](../outputs/tennis-local/chrome-extension/). The authoritative source version is [`manifest.json`](../outputs/tennis-local/chrome-extension/manifest.json), **0.9.5** on the selection-diagnostics branch (21 October 2026), based on the v0.9.4 recovery work. Branch builds are not merged release claims.
 
 Notes below describe changes made *at each release*, not instructions to install or downgrade to older builds. Historical test counts and unverified behaviors are not current release-quality claims. For up-to-date setup, use the [project README](../README.md) and [extension usage guide](../outputs/tennis-local/chrome-extension/README.md). For original investigation and detailed timestamps, see [payment-system.md](payment-system.md).
 
@@ -18,6 +18,12 @@ Notes below describe changes made *at each release*, not instructions to install
 **Current acceptance limitation:** Source improvements and simulated tests do not establish an unattended successful midnight booking through paid receipt verification. Payment confirmation is also not proof that a reservation is still active after a cancellation.
 
 ## Changes by version
+
+### v0.9.5 — selection deadline and sanitized failure evidence (21 October 2026)
+- Replaces iteration-only selection waits with one monotonic elapsed deadline across both hours. Throttled callbacks stop on resumption without another hourly click; browser suspension itself cannot be time-bounded by this code.
+- Adds fixed selection failure codes, per-hour dispatch timestamps, message/selection elapsed time, checkbox-reversion and badge evidence. The original selection failure survives a later unreadable basket. Raw merchant/transport text is discarded at the worker boundary.
+- Optional passive resource timing retains only bounded same-origin fetch/XHR status/completion observations; generic alert text becomes a fixed category. Neither proves that a specific selection was rejected. URLs, headers and response bodies are excluded, and merchant outcome remains unknown.
+- Offline regressions reproduce delayed callbacks, first-hour reversion, shared duration budget, lost responses, privacy filtering and restart with the durable hold. The exact one-hour authorized basket fallback is retained without another selection; automatic alternate-court selection remains blocked pending a verified terminal rejection contract. No live mutation, payment or challenge bypass was performed; merchant compatibility and unattended acceptance remain unverified.
 
 ### v0.9.4 — explicit recovery of reference-less failed checkout opening (20 October 2026)
 - Adds a separate, owner-attested local archive for an ordinary checkout interrupted during opening before any reference, card-fill or payment intent. A verified empty basket and unchanged journal are required; original intent, phase and prior history are preserved. Merchant payment and cancellation remain unknown.

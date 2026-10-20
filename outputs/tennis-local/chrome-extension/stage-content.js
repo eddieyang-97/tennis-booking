@@ -38,65 +38,95 @@ async function stableBasketSummary() {
  return {notReady:true};
 }
 async function selectSequentially(s,timeoutMs=15000) {
- const progress={expectedHours:s.hours,dispatchedHours:0,acknowledgedHours:0,badgeCount:null};
+ const now=()=>globalThis.performance?.now?.()??Date.now(),started=now(),deadline=started+timeoutMs;
+ let firstDispatch=null;
+ const progress={expectedHours:s.hours,dispatchedHours:0,acknowledgedHours:0,badgeCount:null,peakBadgeCount:0,timeoutMs,polls:0,checkboxReverted:false,merchantOutcome:'unknown',hourlyDispatches:[]};
+ const observedChecked=new Set();
+ const stop=(reasonCode,message)=>Object.assign(Error(message),{reasonCode});
+ const finishEvidence=()=>{
+  progress.elapsedMs=Math.max(0,Math.round(now()-started));
+  progress.visibilityState=['hidden','visible'].includes(document.visibilityState)?document.visibilityState:'unknown';
+  progress.loadState=['loading','interactive','complete'].includes(document.readyState)?document.readyState:'unknown';
+  progress.visibleAlertCategory='none';
+  // Optional generic alert observation; layouts and messages are not a verified
+  // merchant rejection contract. Never retain the alert's text or identifiers.
+  try{
+   const notices=[...(document.querySelectorAll?.('[role="alert"], .alert-danger, .alert-error')||[])].slice(0,8).filter(node=>node.getClientRects?.().length);
+   for(const node of notices){const text=(node.innerText||'').slice(0,512);progress.visibleAlertCategory=/verify.*human|captcha|sign.?in|log.?in/i.test(text)?'authentication':/session.*expir/i.test(text)?'session':/unavailable|not available|already booked/i.test(text)?'availability':'other';if(progress.visibleAlertCategory!=='other')break;}
+  }catch{progress.visibleAlertCategory='unknown';}
+  // Passive window correlation only: these entries need not belong to the
+  // selection. No URL/body/header is returned and no status proves rejection.
+  try{
+   if(typeof globalThis.performance?.getEntriesByType!=='function')throw Error('Resource observation unavailable');
+   const entries=firstDispatch===null?[]:(globalThis.performance?.getEntriesByType?.('resource')||[]).filter(entry=>['fetch','xmlhttprequest'].includes(entry.initiatorType)&&entry.startTime>=firstDispatch&&entry.startTime<=now()&&new URL(entry.name).origin===location.origin);
+   progress.network={correlation:'same-origin-window-only',observedRequests:entries.length,responses:entries.slice(0,8).map(entry=>({status:Number.isInteger(entry.responseStatus)&&entry.responseStatus>=100&&entry.responseStatus<=599?entry.responseStatus:null,completed:entry.responseEnd>0}))};
+  }catch{progress.network={correlation:'unavailable',observedRequests:null,responses:[]};}
+ };
  try {
   const courts=Object.hasOwn(s,'courts')?s.courts:Array(s.hours).fill(s.court);
   if(![1,2].includes(s.hours)||!Array.isArray(courts)||courts.length!==s.hours||courts[0]!==s.court||!courts.every(c=>[1,2,3,4].includes(c)))throw Error('Invalid hourly court identity');
   const findCell=i=>{
-   if(!['bethnal-green-gardens','victoria-park'].includes(s.venue)||location.pathname!==`/book/courts/${s.venue}/${s.date}`)throw Error('Wrong selection page');
+   if(!['bethnal-green-gardens','victoria-park'].includes(s.venue)||location.pathname!==`/book/courts/${s.venue}/${s.date}`)throw stop('SELECTION_PAGE_CHANGED','Wrong selection page');
    const d=new Date(s.date+'T12:00:00Z'),book=document.querySelector('#book');
    const weekday=new Intl.DateTimeFormat('en-GB',{weekday:'long',timeZone:'UTC'}).format(d),month=new Intl.DateTimeFormat('en-GB',{month:'long',year:'numeric',timeZone:'UTC'}).format(d);
-   if(!book?.textContent.includes(`${weekday} ${d.getUTCDate()}`)||!book.textContent.includes(month))throw Error('Visible date mismatch');
+   if(!book?.textContent.includes(`${weekday} ${d.getUTCDate()}`)||!book.textContent.includes(month))throw stop('SELECTION_PAGE_CHANGED','Visible date mismatch');
    const h=+s.start.slice(0,2)+i,label=`${h%12||12}${h>=12?'pm':'am'}`,court=courts[i];
    const rows=[...book.querySelectorAll('tr')].filter(r=>r.querySelector('th')?.textContent.trim()===label);
-   if(rows.length!==1)throw Error('Hour unavailable');
+   if(rows.length!==1)throw stop('SELECTION_LAYOUT_UNKNOWN','Hour identity unavailable');
    const matches=[...rows[0].querySelectorAll('input[type=checkbox]')].filter(b=>new RegExp(`^(?:Tennis court|Court) ${court}(?!\\d)`).test(b.labels?.[0]?.textContent.trim()||''));
-   if(matches.length!==1)throw Error(`Court identity missing or ambiguous: court ${court}, ${label}`);
+   if(matches.length!==1)throw stop('SELECTION_LAYOUT_UNKNOWN','Court identity missing or ambiguous');
    return {box:matches[0],court,hour:h,label};
   };
   const badgeCount=()=>{
-   const badge=document.querySelector('#menu-basket');if(!badge)throw Error('Basket acknowledgement marker missing');
-   const count=badge.getAttribute('data-items');if(count!==null&&count!==''&&!/^\d+$/.test(count))throw Error('Unknown basket acknowledgement count');
-   return progress.badgeCount=Number(count||0);
+   const badge=document.querySelector('#menu-basket');if(!badge)throw stop('SELECTION_LAYOUT_UNKNOWN','Basket acknowledgement marker missing');
+   const count=badge.getAttribute('data-items');if(count!==null&&count!==''&&!/^\d+$/.test(count))throw stop('SELECTION_LAYOUT_UNKNOWN','Unknown basket acknowledgement count');
+   progress.badgeCount=Number(count||0);progress.peakBadgeCount=Math.max(progress.peakBadgeCount,progress.badgeCount);return progress.badgeCount;
   };
   const validateCell=(cell,price)=>{
-   if(cell.box.disabled)throw Error(`Slot unavailable: court ${cell.court}, ${cell.label}`);
-   if(cell.box.checked)throw Error(`Slot already selected: court ${cell.court}, ${cell.label}; no additional selection attempted`);
+   if(cell.box.disabled)throw stop('SELECTION_SLOT_UNAVAILABLE','Slot unavailable before selection');
+   if(cell.box.checked)throw stop('SELECTION_STATE_CHANGED','Slot already selected; no additional selection attempted');
    const match=/£(\d+(?:\.\d{1,2})?)$/.exec(cell.box.labels[0].textContent.trim());
-   if(!match)throw Error('Unknown price');const actual=Math.round(+match[1]*100);
-   if(price!==undefined&&actual!==price)throw Error('Price changed before selection');return actual;
+   if(!match)throw stop('SELECTION_LAYOUT_UNKNOWN','Unknown price');const actual=Math.round(+match[1]*100);
+   if(price!==undefined&&actual!==price)throw stop('SELECTION_PRICE_CHANGED','Price changed before selection');return actual;
   };
   // Validate every hour before the first mutation, but never retain DOM nodes
   // across site updates. Each later hour is resolved and validated afresh.
   const prices=Array.from({length:s.hours},(_,i)=>validateCell(findCell(i)));
-  if(prices.reduce((sum,p)=>sum+p,0)!==Math.round(+s.totalGBP*100))throw Error('Price changed before selection');
-  if(badgeCount()!==0)throw Error('Existing basket before selection; no clicks attempted');
+  if(prices.reduce((sum,p)=>sum+p,0)!==Math.round(+s.totalGBP*100))throw stop('SELECTION_PRICE_CHANGED','Price changed before selection');
+  if(badgeCount()!==0)throw stop('SELECTION_STATE_CHANGED','Existing basket before selection; no clicks attempted');
   for(let hour=0;hour<s.hours;hour++) {
-   if(badgeCount()!==hour||Array.from({length:hour},(_,i)=>findCell(i).box.checked).some(checked=>!checked))throw Error('Previous hour selection changed; no repeated clicks');
+   if(now()>=deadline)throw stop('SELECTION_ACK_TIMEOUT','Selection deadline reached; no further clicks');
+   if(badgeCount()!==hour||Array.from({length:hour},(_,i)=>findCell(i).box.checked).some(checked=>!checked))throw stop('SELECTION_STATE_CHANGED','Previous hour selection changed; no repeated clicks');
    const cell=findCell(hour);validateCell(cell,prices[hour]);
+   if(now()>=deadline)throw stop('SELECTION_ACK_TIMEOUT','Selection deadline reached; no further clicks');
+   firstDispatch??=now();progress.hourlyDispatches.push({hour:cell.hour,court:cell.court,at:new Date().toISOString(),offsetMs:Math.max(0,Math.round(now()-started))});
    progress.dispatchedHours++;cell.box.click();
    let stable=0,acknowledged=false;
-   for(let poll=0;poll<Math.ceil(timeoutMs/250);poll++) {
+   for(let poll=0;poll<Math.ceil(timeoutMs/250)&&now()<deadline;poll++) {
+    progress.polls++;
     const count=badgeCount();
-    if(count>hour+1)throw Error('Unexpected additional basket items during selection');
+    if(count>hour+1)throw stop('SELECTION_STATE_CHANGED','Unexpected additional basket items during selection');
     const cells=Array.from({length:hour+1},(_,i)=>findCell(i));
     progress.checkedHours=cells.map(c=>({hour:c.hour,court:c.court,checked:c.box.checked,disabled:c.box.disabled}));
+    for(const c of progress.checkedHours){if(c.checked)observedChecked.add(c.hour);else if(observedChecked.has(c.hour))progress.checkboxReverted=true;}
+    if(now()>=deadline)break;
     const ready=count===hour+1&&cells.every(c=>c.box.checked);
     stable=ready?stable+1:0;
     if(stable>=3){acknowledged=true;progress.acknowledgedHours=hour+1;break;}
-    await new Promise(r=>setTimeout(r,250));
+    await new Promise(r=>setTimeout(r,Math.max(0,Math.min(250,deadline-now()))));
    }
-   if(!acknowledged)throw Error('Hourly selection acknowledgement uncertain; no repeated clicks');
+   if(!acknowledged)throw stop('SELECTION_ACK_TIMEOUT','Hourly selection acknowledgement uncertain; no repeated clicks');
   }
+  finishEvidence();
   return {selected:true,selectionDiagnostic:progress};
- }catch(e){throw Object.assign(e,{selectionAttempted:progress.dispatchedHours>0,selectionDiagnostic:progress});}
+ }catch(e){finishEvidence();throw Object.assign(e,{reasonCode:e.reasonCode||'SELECTION_OBSERVATION_FAILED',selectionAttempted:progress.dispatchedHours>0,selectionDiagnostic:progress});}
 }
 chrome.runtime.onMessage.addListener((request,sender,respond)=>{
  if(sender.id!==chrome.runtime.id||!['basket-read','select-slot'].includes(request.kind))return;
  (async()=>{
-  if(/\/(verify-human|login|sign-in)(\/|$)/.test(location.pathname))throw Error('Human verification required; inspect retained tab');
+  if(/\/(verify-human|login|sign-in)(\/|$)/.test(location.pathname))throw Object.assign(Error('Human verification required; inspect retained tab'),{reasonCode:'AUTHENTICATION_REQUIRED'});
   if(request.kind==='basket-read')return stableBasketSummary();
   const timeout=[15000,60000].includes(request.selectionTimeoutMs)?request.selectionTimeoutMs:15000;
   return selectSequentially(request.slot,timeout);
- })().then(value=>respond(value.notReady?{ok:false,notReady:true,error:'Basket DOM not stable'}:{ok:true,value}),e=>respond(request.kind==='basket-read'&&document.readyState&&document.readyState!=='complete'&&/Unknown basket|Basket item layout/.test(e.message)?{ok:false,notReady:true,error:'Basket DOM not ready'}:{ok:false,error:e.message,selectionAttempted:!!e.selectionAttempted,...(e.selectionDiagnostic?{selectionDiagnostic:e.selectionDiagnostic}:{})}));return true;
+ })().then(value=>respond(value.notReady?{ok:false,notReady:true,error:'Basket DOM not stable'}:{ok:true,value}),e=>respond(request.kind==='basket-read'&&document.readyState&&document.readyState!=='complete'&&/Unknown basket|Basket item layout/.test(e.message)?{ok:false,notReady:true,error:'Basket DOM not ready'}:{ok:false,error:request.kind==='select-slot'?'Court selection stopped; inspect diagnostic evidence':e.message,...(request.kind==='select-slot'?{reasonCode:e.reasonCode||'SELECTION_OBSERVATION_FAILED'}:{}),selectionAttempted:!!e.selectionAttempted,...(e.selectionDiagnostic?{selectionDiagnostic:e.selectionDiagnostic}:{})}));return true;
 });
