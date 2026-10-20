@@ -29,15 +29,15 @@ async function notifyPaymentResult(result) {
  try {await chrome.notifications.create('tennis-payment-result',{type:'basic',iconUrl:chrome.runtime.getURL('notification.png'),title:result.paid===true?'Tennis payment confirmed':'Tennis booking needs attention',message:result.paid===true?`${result.slot.date} ${result.slot.start}, £${result.slot.totalGBP}. Payment verified; open the account to check the active booking.`:'Open the extension for the stopped run. An uncertain payment will not be charged again.'});}
  catch {await step('notification-unavailable');}
 }
-async function readPage(url, request,{scheduled=false}={}) {
-  if(request.kind==='grid')return readGrid(chrome.tabs,url,request,{tabId:resumedTab,step,...gridReadPolicy(scheduled)});
+async function readPage(url, request,{scheduled=false,retainGrid=false}={}) {
+  if(request.kind==='grid')return readGrid(chrome.tabs,url,request,{tabId:resumedTab,retain:retainGrid,step,...gridReadPolicy(scheduled)});
   return readPageState(chrome.tabs,url,request,{tabId:resumedTab,timeoutMs:pageReadBudget(scheduled),step});
 }
 async function account(scheduled=false) {
   const result=await readPage(BASE+'/account',{kind:'account'},{scheduled});
   if(!result.ok) throw Object.assign(Error(result.error),{diagnostic:{page:result.page,retainedTabId:result.retainedTabId}});
 }
-async function check(day, scheduled=false,settings=null) {
+async function check(day, scheduled=false,settings=null,retainForCheckout=false) {
   if(!scheduled)await admitManualCheck();
   if(busy) throw Error('A check is already running');
   busy=true;
@@ -54,18 +54,24 @@ async function check(day, scheduled=false,settings=null) {
     await chrome.storage.local.set({running:{day,started:Date.now()}});
     ownsRunning=true;
     await account(scheduled);
-    const results=[];
+    const results=[];let gridHandoff=null;
     for(const venue of (settings?.venues||VENUES)) {
-      const response=await readPage(`${BASE}/book/courts/${venue}/${day}#book`,{kind:'grid',venue,day},{scheduled});
+      const response=await readPage(`${BASE}/book/courts/${venue}/${day}#book`,{kind:'grid',venue,day},{scheduled,retainGrid:scheduled&&retainForCheckout});
       if(!response.ok) throw Object.assign(Error(response.error),{diagnostic:{page:response.page,retainedTabId:response.retainedTabId}});
       results.push({venue,candidates:candidates(response.rows,venue,day,{settings})});
       // The scheduled flow chooses this venue first anyway. Do not delay an
       // eligible preferred candidate behind a slow fallback-venue request.
-      if(scheduled) {try{checkoutCandidate(results,settings);await step('preferred-candidate-found',{venue});break;}catch{}}
+      if(scheduled) {
+       let eligible=false;try{checkoutCandidate(results,settings);eligible=true;}catch{}
+       if(eligible){if(retainForCheckout)gridHandoff={tabId:response.gridTabId,venue,day};await step('preferred-candidate-found',{venue});break;}
+       if(retainForCheckout)await chrome.tabs.remove(response.gridTabId).catch(()=>{});
+      }
     }
     await step('availability-complete');await trace.finish('complete');
     await save({status:'complete',day,checkedAt:new Date().toISOString(),runId:trace.record.id,results,...(settings?{settings}:{}),booked:false,paid:false});
     await chrome.storage.local.remove('running');
+    // An ephemeral tab hint, never persisted or accepted as authorization.
+    return gridHandoff;
   } catch(e) { await step('stopped',failureFor(e));await trace.finish('stopped');await save({status:'stopped',day,checkedAt:new Date().toISOString(),runId:trace.record.id,error:e.message,...e.diagnostic,booked:false,paid:false});e.recorded=true;throw e; }
   finally {
     // Known completion/failure clears only this invocation's read-only lock.
@@ -97,7 +103,17 @@ async function arm(day,mode='availability',code='',settings=null) {
   return {status:'armed',day,release:new Date(when).toISOString(),mode,paymentAutomatic:mode==='payment',discountRequested:!!discountCode,settings};
 }
 function checkoutCommands(tabId) {
- const command=async request=>{const response=await chrome.tabs.sendMessage(tabId,request);if(request.kind==='payment-open')await step('checkout-open-response',{tabId,ok:response?.ok===true,...(response?.routeCategory?{routeCategory:response.routeCategory}:{})});if(!response?.ok)throw Error(response?.error||'Checkout response unavailable');return response.value;};
+ const command=async request=>{
+  const response=await chrome.tabs.sendMessage(tabId,request);
+  if(request.kind==='payment-open')await step('checkout-open-response',{tabId,ok:response?.ok===true,...(response?.routeCategory?{routeCategory:response.routeCategory}:{})});
+  // Navigation may remove the read receiver before its reply. Only this
+  // read-only probe is eligible for the caller's bounded observation loop.
+  if(response==null&&request.kind==='checkout-progress'){
+   await step('checkout-read-unavailable',{tabId,reasonCode:'CHECKOUT_READ_UNAVAILABLE'});
+   throw Object.assign(Error('Checkout read response unavailable'),{code:'CHECKOUT_READ_UNAVAILABLE'});
+  }
+  if(!response?.ok)throw Error(response?.error||'Checkout response unavailable');return response.value;
+ };
  let lastProgress;
  const state=async()=>{const current=await readTab(()=>chrome.tabs.get(tabId));const url=new URL(current.url);if(url.origin!==BASE)throw Error('Checkout left the trusted site; inspect retained tab');
   const progress=await readTab(()=>command({kind:'checkout-progress'}));
@@ -119,7 +135,7 @@ async function openStoredCheckout(record,tabId,scheduled,save) {
  },{timeoutMs});
 }
 
-async function automaticPayment(test=false,scheduled=false) {
+async function automaticPayment(test=false,scheduled=false,basketHandoff=null) {
  if(busy)throw Error('Another run is active');busy=true;
  let tab,record;
  try {
@@ -138,7 +154,17 @@ async function automaticPayment(test=false,scheduled=false) {
   if(!tab)throw Error('No checkout tab');
   trace=newRun('automatic-payment',record?.slot.date||PAYMENT_TEST_SLOT.date);await step('started',{key:record?.key,preparationRunId:record?.preparationRunId});
   await step('local-card-preflight');const localCard=await paymentCard(chrome.storage,record);await step('local-card-ready',{reconciliationOnly:!localCard});
-  const readBasket=async slot=>{resumedTab=null;const response=await readPage(BASE+'/basket',{kind:'basket-read'},{scheduled});if(!response.ok)throw Error(response.error);verifyBasket(response.value,slot,record?.discount);return response.value;};
+  const readBasket=async slot=>{
+   resumedTab=null;
+   if(basketHandoff&&(basketHandoff.key!==record?.key||basketHandoff.tabId!==tab.id||record.checkoutOpenDispatchedAt))throw Object.assign(Error('Prepared basket handoff changed; inspect checkout'),{reasonCode:'AUTHORIZATION_INVALID'});
+   if(basketHandoff&&(await readTab(()=>chrome.tabs.get(tab.id))).url!==BASE+'/basket')throw Object.assign(Error('Prepared basket tab route changed; no navigation sent'),{pageCode:'PAGE_BASKET_ROUTE_CHANGED'});
+   const response=basketHandoff
+    // Refresh the shared merchant basket, not just the old DOM. Another tab
+    // can change the server basket without changing this tab's visible items.
+    ?await readPageState(chrome.tabs,BASE+'/basket',{kind:'basket-read'},{tabId:tab.id,timeoutMs:pageReadBudget(scheduled),step})
+    :await readPage(BASE+'/basket',{kind:'basket-read'},{scheduled});
+   if(!response.ok)throw Error(response.error);verifyBasket(response.value,slot,record?.discount);return response.value;
+  };
   const store=async r=>{record=r;checkoutRecords=[...checkoutRecords.filter(x=>x.key!==r.key),r];await chrome.storage.local.set({checkoutRecords});await step(r.phase);};
   if(!record){await readBasket(PAYMENT_TEST_SLOT);record={key:checkoutKey(PAYMENT_TEST_SLOT,true),slot:PAYMENT_TEST_SLOT,test:true,tabId:tab.id,status:'pending',phase:'basket-adopted'};await store(record);}
   const {command,state}=checkoutCommands(tab.id);
@@ -186,7 +212,7 @@ async function notifyCheckout(slot) {
  try {await chrome.notifications.create('tennis-checkout',{type:'basic',iconUrl:chrome.runtime.getURL('notification.png'),title:'Tennis checkout ready',message:`${slot.date} ${slot.start}, £${slot.totalGBP}. Verified basket ready; inspect the extension for payment status.`});}
  catch {await step('notification-unavailable');}
 }
-async function checkout(expectedDay=null,scheduled=false,basketOnly=false,discountCode='',settings=null,checkoutTestOnly=false) {
+async function checkout(expectedDay=null,scheduled=false,basketOnly=false,discountCode='',settings=null,checkoutTestOnly=false,gridHandoff=null) {
  if(busy)throw Error('Another run is active');
  busy=true;
  let tab,slot;
@@ -216,7 +242,12 @@ async function checkout(expectedDay=null,scheduled=false,basketOnly=false,discou
  if(!slot)throw Error('Check availability before preparing checkout');
  trace=trace||newRun('checkout-preparation',slot.date);
   await step('started',{slot,scheduled,basketOnly,...(settings?{settings}:{})});
-  if(pending?.tabId) {
+  const reuseGrid=scheduled&&!pending&&!basketOnly&&!checkoutTestOnly&&gridHandoff!==null;
+  if(reuseGrid){
+   if(gridHandoff.venue!==slot.venue||gridHandoff.day!==slot.date||!Number.isInteger(gridHandoff.tabId))throw Object.assign(Error('Selection grid handoff identity changed'),{reasonCode:'AUTHORIZATION_INVALID'});
+   tab=await readTab(()=>chrome.tabs.get(gridHandoff.tabId));
+  }
+  else if(pending?.tabId) {
    tab=await recoverPreparationTab(pending,{get:id=>readTab(()=>chrome.tabs.get(id))},async()=>{
     await step('closed-selection-tab-recovery',{previousTabId:pending.tabId});
     const replacement=await retryTab(()=>chrome.tabs.create({url:BASE+'/basket',active:false}),{navigation:true});
@@ -229,13 +260,34 @@ async function checkout(expectedDay=null,scheduled=false,basketOnly=false,discou
   resumedTab=tab.id;
   // Never navigate away from a card form or bank challenge to "resume" selection.
   if(pending && tab.url!==BASE+'/basket')throw Error('Checkout/payment is in progress; use Verify payment confirmation');
-  const read=async()=>{const response=await readPage(BASE+'/basket',{kind:'basket-read'},{scheduled});if(!response.ok)throw Error(response.error);await step('basket-observed',basketEvidence(response.value,slot));return response.value;};
+  let selectionStarted=false,basketLoaded=!pending&&!reuseGrid;
+  const read=async()=>{
+   let response;
+   if(reuseGrid&&!selectionStarted){
+    // Inspect the shared basket once without navigating away from the grid.
+    response=await readPageState(chrome.tabs,BASE+'/basket',{kind:'basket-read'},{timeoutMs:pageReadBudget(scheduled),step});
+   }else{
+    if(!basketLoaded){
+     const current=await readTab(()=>chrome.tabs.get(tab.id));
+     if(![BASE+'/basket',`${BASE}/book/courts/${slot.venue}/${slot.date}#book`].includes(current.url))throw Object.assign(Error('Checkout tab route changed; no basket navigation sent'),{pageCode:'PAGE_BASKET_ROUTE_CHANGED'});
+    }
+    response=await readPageState(chrome.tabs,BASE+'/basket',{kind:'basket-read'},{tabId:tab.id,navigate:!basketLoaded,timeoutMs:pageReadBudget(scheduled),step});
+    basketLoaded=true;
+   }
+   if(!response.ok)throw Error(response.error);await step('basket-observed',basketEvidence(response.value,slot));return response.value;
+  };
   const output=await prepareCheckout(slot,{
    tabId:tab.id,
    load:async()=> (await chrome.storage.local.get('checkoutRecords')).checkoutRecords||[],
    save:async records=>{const record={...records.at(-1),preparationRunId:trace.record.id};await chrome.storage.local.set({checkoutRecords:[...records.slice(0,-1),record]});await step(record.phase,{key:record.key,...(record.fallbackFrom?{fallbackFrom:record.fallbackFrom}:{})});},
    read,select:async s=>{
-    const grid=await readPage(`${BASE}/book/courts/${s.venue}/${s.date}#book`,{kind:'grid',venue:s.venue,day:s.date},{scheduled});if(!grid.ok)throw Error(grid.error);
+    selectionStarted=true;basketLoaded=false;
+    const url=`${BASE}/book/courts/${s.venue}/${s.date}#book`,request={kind:'grid',venue:s.venue,day:s.date};
+    const grid=reuseGrid
+     ?await readGrid(chrome.tabs,url,request,{tabId:tab.id,navigate:false,step,...gridReadPolicy(scheduled)})
+     :await readPage(url,request,{scheduled});
+    if(!grid.ok)throw Error(grid.error);
+    if(reuseGrid&&!candidates(grid.rows,s.venue,s.date,{settings}).some(candidate=>candidate.totalGBP===s.totalGBP&&checkoutKey({...candidate,venue:s.venue},false,settings)===checkoutKey(s,false,settings)))throw Object.assign(Error('Selected slot availability or price changed; no selection sent'),{gridCode:'GRID_CANDIDATE_CHANGED'});
     // One mutation dispatch. Reconciliation occurs in prepareCheckout, never replay.
     const response=await chrome.tabs.sendMessage(tab.id,{kind:'select-slot',slot:s,selectionTimeoutMs:pageReadBudget(scheduled)});const selectionDiagnostic=response?.selectionDiagnostic||response?.value?.selectionDiagnostic;
     await step('selection-result',{ok:response?.ok===true,...(selectionDiagnostic?{selectionDiagnostic}:{})});
@@ -247,7 +299,8 @@ async function checkout(expectedDay=null,scheduled=false,basketOnly=false,discou
   await trace.finish(output.status);await chrome.storage.local.set({checkoutResult:{...output,runId:trace.record.id,finishedAt:trace.record.finishedAt}});return output;
  } catch(e) {
   if(!trace)trace=newRun('checkout-preparation',slot?.date||londonDay());
-  await step('checkout-stopped',{...failureFor(e),...(e.basketDiagnostic?{basketDiagnostic:e.basketDiagnostic}:{}),...(e.diagnostic?{diagnostic:e.diagnostic}:{})});await trace.finish('stopped');const output={status:'stopped',error:e.message,...(e.basketDiagnostic?{basketDiagnostic:e.basketDiagnostic}:{}),...(e.diagnostic?{diagnostic:e.diagnostic}:{}),tabId:tab?.id,booked:false,paid:false,runId:trace.record.id};await chrome.storage.local.set({checkoutResult:output});
+  const failure=failureFor(e);
+  await step('checkout-stopped',{...failure,...(e.basketDiagnostic?{basketDiagnostic:e.basketDiagnostic}:{}),...(e.diagnostic?{diagnostic:e.diagnostic}:{})});await trace.finish('stopped');const output={status:'stopped',error:e.message,...failure,...(e.basketDiagnostic?{basketDiagnostic:e.basketDiagnostic}:{}),...(e.diagnostic?{diagnostic:e.diagnostic}:{}),tabId:tab?.id,booked:false,paid:false,runId:trace.record.id};await chrome.storage.local.set({checkoutResult:output});
   await chrome.action.setBadgeText({text:'!'});
   try{await chrome.notifications.create('tennis-checkout-stopped',{type:'basic',iconUrl:chrome.runtime.getURL('notification.png'),title:'Tennis checkout stopped',message:'Open the extension to inspect the result. No automatic payment was attempted.'});}catch{}
   return output;
@@ -418,11 +471,11 @@ async function runAlarm(alarm){
     if(alarm.name==='release') {
       if(!job.prepared) throw Error('Preflight did not complete; check stopped');
       if(job.mode==='payment'){await resolvePendingPayment(true);await paymentCard(chrome.storage,null);}
-      await check(job.day,true,job.settings||null);
+      const gridHandoff=await check(job.day,true,job.settings||null,['checkout','payment'].includes(job.mode));
       let outcome=(await chrome.storage.local.get('result')).result;
       if(['checkout','payment'].includes(job.mode)){
-       const prepared=await checkout(job.day,true,false,job.discountCode||'',job.settings||null);
-       outcome=job.mode==='payment'&&prepared.status==='awaiting-payment'?await automaticPayment(false,true):prepared;
+       const prepared=await checkout(job.day,true,false,job.discountCode||'',job.settings||null,false,gridHandoff);
+       outcome=job.mode==='payment'&&prepared.status==='awaiting-payment'?await automaticPayment(false,true,{tabId:prepared.tabId,key:prepared.key}):prepared;
       }
       await chrome.storage.local.remove('job');
       return outcome;

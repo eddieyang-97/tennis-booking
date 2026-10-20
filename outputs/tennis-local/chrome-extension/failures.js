@@ -12,6 +12,7 @@ const rules=[
  ['PAGE_LOADING',/still loading|DOM not ready|DOM not stable/i],
  ['MERCHANT_CHECKOUT_ERROR',/Merchant reported Something went wrong/i],
  ['CHECKOUT_READY_TIMEOUT',/Card checkout readiness timed out/i],
+ ['CHECKOUT_READ_UNAVAILABLE',/Checkout read response unavailable/i],
  ['CHECKOUT_OPEN_UNRESOLVED',/Checkout opening is unresolved/i],
  ['BASKET_MISMATCH',/Basket.*mismatch|Unexpected basket item count|unrelated or changed items|Basket price/i],
  ['BASKET_NOT_EMPTY',/Existing basket items|Remove.*selection|basket is not.*empty/i],
@@ -23,6 +24,7 @@ const rules=[
 // Codes, including codes on worker Error objects, are authoritative. Regexes
 // only recognize legacy errors that have no known structured classification.
 const recoveryModes=Object.freeze({
+ CHECKOUT_READ_UNAVAILABLE:'read-only-observation',
  MANUAL_CHECK_WHILE_ARMED:'user-action',
  CARD_FILL_REVIEW_REQUIRED:'user-action',
  RECEIPT_CONFLICT:'payment-reconciliation',EXISTING_PURCHASE_READ_ONLY:'user-action',
@@ -37,7 +39,7 @@ const recoveryModes=Object.freeze({
  PAGE_TAB_ERROR:'read-only-observation',PAGE_READY_TIMEOUT:'read-only-observation',PAGE_AUTHENTICATION_REQUIRED:'user-action',
  PAGE_UNEXPECTED_ORIGIN:'manual-review',PAGE_BASKET_ROUTE_CHANGED:'manual-review',
  GRID_TAB_ERROR:'read-only-observation',GRID_READY_TIMEOUT:'read-only-observation',GRID_AUTHENTICATION_REQUIRED:'user-action',
- GRID_UNEXPECTED_ORIGIN:'manual-review',GRID_LAYOUT_REJECTED:'manual-review'
+ GRID_UNEXPECTED_ORIGIN:'manual-review',GRID_LAYOUT_REJECTED:'manual-review',GRID_ROUTE_CHANGED:'manual-review',GRID_CANDIDATE_CHANGED:'manual-review'
 });
 export function failureFor(error,{operation,paymentPossible=false}={}){
  const message=typeof error==='string'?error:error?.message||error?.error||'';

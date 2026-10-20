@@ -1,6 +1,29 @@
 import test from 'node:test';import assert from 'node:assert/strict';import {readGrid,gridReadPolicy} from './grid-read.js';
 const request={kind:'grid',venue:'victoria-park',day:'2026-10-21'},url='https://tennistowerhamlets.com/book/courts/victoria-park/2026-10-21#book';
 function fixture(){let clock=0,created=0,reads=0;const removed=[],steps=[];const f={get created(){return created;},get reads(){return reads;},removed,steps,options:{timeoutMs:1000,now:()=>clock,delay:async ms=>clock+=ms,step:async(name,detail)=>steps.push({name,...detail})},tabs:{create:async()=>({id:++created}),get:async id=>({id,url,status:'loading'}),sendMessage:async()=>{reads++;return {ok:true,rows:[{time:'8pm',inputs:[]}]};},remove:async id=>removed.push(id),update:async id=>({id})}};return f;}
+
+test('a retained availability grid is freshly observed without navigation before selection',async()=>{
+ const f=fixture();const first=await readGrid(f.tabs,url,request,{...f.options,retain:true});
+ assert.equal(first.gridTabId,1);assert.deepEqual(f.removed,[]);
+ f.tabs.create=f.tabs.update=async()=>{throw Error('Unexpected navigation');};
+ f.tabs.sendMessage=async()=>({ok:true,rows:[{time:'8pm',inputs:[{label:'Court 2 booked',disabled:true}]}]});
+ const fresh=await readGrid(f.tabs,url,request,{...f.options,tabId:1,navigate:false,attempts:1});
+ assert.equal(fresh.rows[0].inputs[0].disabled,true);assert.equal(f.created,1);assert.deepEqual(f.removed,[]);
+ assert.ok(f.steps.some(s=>s.name==='grid-existing-read'));
+});
+
+for(const changed of ['https://tennistowerhamlets.com/book/courts/victoria-park/2026-10-22#book','https://tennistowerhamlets.com/basket/pay/card','https://tennistowerhamlets.com/verify-human','https://example.invalid/private'])test(`an existing grid on a changed route is never navigated or probed: ${changed}`,async()=>{
+ const f=fixture();f.tabs.create=f.tabs.update=f.tabs.sendMessage=async()=>{throw Error('Must not navigate or read another page');};
+ f.tabs.get=async()=>({id:42,url:changed,status:'complete'});
+ await assert.rejects(readGrid(f.tabs,url,request,{...f.options,tabId:42,navigate:false,attempts:1}),e=>['GRID_ROUTE_CHANGED','GRID_AUTHENTICATION_REQUIRED','GRID_UNEXPECTED_ORIGIN'].includes(e.diagnostic?.errorCode));
+ assert.equal(f.created,0);assert.deepEqual(f.removed,[]);
+});
+
+test('an existing grid timeout retains the tab without a read-only navigation retry',async()=>{
+ const f=fixture();let updates=0;f.tabs.update=async()=>{updates++;return {id:42};};f.tabs.sendMessage=async()=>{throw Error('Receiving end does not exist');};
+ await assert.rejects(readGrid(f.tabs,url,request,{...f.options,tabId:42,navigate:false}),e=>e.diagnostic?.errorCode==='GRID_READY_TIMEOUT');
+ assert.equal(updates,0);assert.equal(f.created,0);assert.deepEqual(f.removed,[]);assert.equal(f.options.now(),1000);
+});
 test('ready DOM is read while tab load remains pending; empty availability is not retried',async()=>{
  const f=fixture();const output=await readGrid(f.tabs,url,request,f.options);assert.equal(output.ok,true);assert.equal(output.rows[0].inputs.length,0);assert.equal(f.created,1);assert.equal(f.reads,1);assert.deepEqual(f.removed,[1]);assert.ok(f.steps.some(s=>s.name==='grid-read-ready'&&s.loadState==='loading'));
 });

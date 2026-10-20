@@ -2,7 +2,7 @@
 
 A Manifest V3 Chrome extension that checks and attempts to book tennis courts on [Tower Hamlets Courtside](https://tennistowerhamlets.com/) at the London midnight release, with configurable preferences, strict basket/payment verification, a local encrypted card file and recovery of uncertain payments.
 
-**Active implementation:** [`outputs/tennis-local/chrome-extension/`](outputs/tennis-local/chrome-extension/) · **Version:** [`0.9.1`](outputs/tennis-local/chrome-extension/manifest.json), stateful-worker milestone under review (18 October 2026). The v0.9.0 observability milestone is merged into `main`.
+**Active implementation:** [`outputs/tennis-local/chrome-extension/`](outputs/tennis-local/chrome-extension/) · **Version:** [`0.9.3`](outputs/tennis-local/chrome-extension/manifest.json), checkout-navigation branch (20 October 2026). `main` contains the merged v0.9.1 stateful-worker milestone; this branch is not a merged release claim.
 
 **Release status:** In active development, **not yet verified for unattended end-to-end midnight payment**. A real £2.50 one-hour card payment and its subsequent account-purchase reconciliation were verified on 13 October. Live two-hour basket selection was verified, but an automated two-hour Pay and a complete unattended midnight booking have not been established. See [release notes and live-evidence limits](docs/release-notes.md).
 
@@ -47,6 +47,8 @@ The popup initially suggests London today + 8 days; it does not automatically ch
 2. It checks the basket, records selection intent, dispatches hourly selection **sequentially**, and validates stable basket contents: venue, playing date, each hour/court, original prices, totals and payment boundary.
 3. If requested, it applies and verifies a discount once. It opens card checkout only from a verified basket, then checks the net amount and provisional merchant reference before attempting Pay.
 4. It **persists a payment dispatch marker before clicking Pay once**. An uncertain or interrupted payment is receipt/account-reconciliation-only, never an automatic second charge.
+
+The scheduled flow retains its selected availability grid for a fresh read before selection, rather than loading the grid twice. A separate initial basket read still verifies emptiness. After selection, the retained tab loads the basket to verify the selected items and refreshes it from the merchant before payment preparation; checkout opening freshly checks that same tab's stable DOM. The pre-payment server refresh detects basket changes that another tab could make without updating the old DOM. These tab handoffs exist only within the uninterrupted release invocation, carry no cached basket authorization, and are not restored after a restart. Navigation savings are tested offline; live checkout latency and merchant acceptance remain unverified.
 
 **Paying is not the same as holding an active booking.** Matching merchant purchase history establishes paid transaction status; `bookingState` can still be `unknown` if a reservation was cancelled. Cancellation also does not prove a refund.
 

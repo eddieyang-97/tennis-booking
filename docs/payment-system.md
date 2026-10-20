@@ -1,6 +1,6 @@
 # Payment system: merchant contracts, safety and incident evidence
 
-**Status:** Technical reference for the active Chrome Manifest V3 extension, source reviewed at v0.9.1 (18 October 2026). **Not** a release changelog or a claim of unattended production readiness.
+**Status:** Technical reference for the active Chrome Manifest V3 extension, source updated through the v0.9.3 checkout-navigation branch (20 October 2026). **Not** a release changelog or a claim of unattended production readiness.
 
 Use the [root README](../README.md) for current booking policy, the [extension guide](../outputs/tennis-local/chrome-extension/README.md) for operating/recovery controls, [release notes](release-notes.md) for version chronology, and [test improvement plan](test-improvement.md) for proposed reliability work. This document preserves **merchant-specific observations and recovery contracts**. Historical observations are labelled; site DOM and payment-provider behavior can change.
 
@@ -46,6 +46,10 @@ Source areas: `background.js`, `checkout.js`, `payment.js`, `reconciliation.js`,
 These are recorded observations, **not a guaranteed current merchant API**. The [test proposal](test-improvement.md) requires sanitized real DOM fixtures and a stateful fake merchant so site-layout drift does not surface only during paid live runs.
 
 ### Navigation and content-script transport
+
+- The scheduled release can hand its retained availability grid directly to selection in the same invocation. A fresh, route-checked grid read must still contain the exact saved hourly candidate and original price; the content script also revalidates every hour before clicking. This existing-document read does not navigate or retry navigation. Missing, moved or changed tabs stop safely.
+- The initial empty basket is independently loaded once while retaining the grid. After selection, the selection tab loads `/basket` for exact verification and refreshes it again from the merchant before payment preparation. This second server observation is necessary: another tab can change the shared basket without updating an old DOM. Immediately before checkout opening, a fresh stable DOM read verifies the same refreshed tab. Manual/pending recovery still uses its previous independently loaded basket observations; a fresh manual preparation avoids navigating an already newly created basket tab twice.
+- Tab handoffs are in-memory scheduling hints, not saved authorization or cached merchant evidence. They are not persisted in jobs/results and cannot be recovered to replay a mutation after interruption. Durable journal markers, immutable settings and all existing payment/discount/opening guards remain authoritative.
 
 - Install the navigation listener before `chrome.tabs.update`; a completion event from the *previous* page must not satisfy the new navigation. Check origin and expected route before accepting content-script evidence.
 - Read-only messages use known account, purchase and basket adapters. When a tab is `loading`, an existing usable DOM can be probed without waiting for `status:complete`. Known transient message/replaced-frame errors may be polled under bounded deadlines; an unknown route, authentication challenge or unrelated origin stops.

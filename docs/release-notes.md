@@ -1,6 +1,6 @@
 # Release notes
 
-This is the historical change log for the **active Chrome extension** in [`outputs/tennis-local/chrome-extension/`](../outputs/tennis-local/chrome-extension/). The authoritative source version is [`manifest.json`](../outputs/tennis-local/chrome-extension/manifest.json), **0.9.1** on the stateful-testing branch (18 October 2026). `main` contains the merged v0.9.0 observability milestone; branch builds are not merged release claims.
+This is the historical change log for the **active Chrome extension** in [`outputs/tennis-local/chrome-extension/`](../outputs/tennis-local/chrome-extension/). The authoritative source version is [`manifest.json`](../outputs/tennis-local/chrome-extension/manifest.json), **0.9.3** on the checkout-navigation branch (20 October 2026). `main` contains the merged v0.9.1 stateful-worker milestone; branch builds are not merged release claims.
 
 Notes below describe changes made *at each release*, not instructions to install or downgrade to older builds. Historical test counts and unverified behaviors are not current release-quality claims. For up-to-date setup, use the [project README](../README.md) and [extension usage guide](../outputs/tennis-local/chrome-extension/README.md). For original investigation and detailed timestamps, see [payment-system.md](payment-system.md).
 
@@ -18,6 +18,13 @@ Notes below describe changes made *at each release*, not instructions to install
 **Current acceptance limitation:** Source improvements and simulated tests do not establish an unattended successful midnight booking through paid receipt verification. Payment confirmation is also not proof that a reservation is still active after a cancellation.
 
 ## Changes by version
+
+### v0.9.3 — reuse scheduled grid and basket navigation (20 October 2026)
+- Retains the selected availability grid and freshly rechecks its route, exact candidate and original price before the single selection dispatch. The retained grid is not reloaded; a changed or unavailable tab stops instead of replaying selection.
+- Removes duplicate initial basket navigation and the grid reload before selection: two fewer navigations in the simulated scheduled success path. A fresh merchant basket load before payment preparation remains necessary to detect server changes hidden by an old DOM; it refreshes the checkout tab itself. Ephemeral tab handoffs are not saved or recovered after worker recreation; payment journals and one-shot mutation guards are unchanged.
+- Offline regressions exercise navigation counts, changed grid/basket state, one-hour fallback, discounts, fallback venues and mutation-boundary restarts. These establish simulated behavior, not live speed improvements, merchant checkout acceptance or an unattended paid reservation.
+- Missing responses to the read-only checkout-progress probe can be observed again within the existing readiness deadline, without repeating opening or another mutation. Structured grid refusals survive subsequent empty-basket reconciliation and reach the stopped action/result classification; diagnostics do not copy raw merchant responses.
+- Validation: 157 maintained Node tests, 105 worker fault tests and seven named module scenarios; exact runtime packaging under PowerShell 7 and Windows PowerShell 5.1. The branch also uses the isolated browser harness from `codex/reliability-browser-gate` at `b392097` in an ignored validation workspace with this branch's runtime files overlaid, rather than merging that milestone. Its network boundary and synthetic merchant remain separate from normal Chrome and live Courtside. The runtime retains that milestone's structured `CHECKOUT_READ_UNAVAILABLE` handling. A tab-snapshot regression separately reproduces a same-price server basket change hidden by unchanged DOM and rejects it before checkout opening or payment.
 
 ### Unreleased — unfinished unpaid-test guidance (19 October 2026)
 - A single checkout-page test without a saved reference now has specific readiness/arming guidance and automatically expanded recovery instructions. The owner must inspect checkout, empty the basket and explicitly attest that no payment was submitted before using the existing reconciliation control.
