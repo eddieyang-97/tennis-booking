@@ -19,6 +19,9 @@ async function refresh(initial=false,show=false){
  field('readiness').textContent=[view.summary,...view.lines].join('\n');
  field('armBlocker').textContent=view.armBlocker||'';
  const test=status.checkoutRecords?.find(r=>r.status!=='confirmed'&&r.checkoutTestOnly),identity=test?JSON.stringify([test.key,test.reference||'',test.checkoutOpenDispatchedAt||'']):'';
+ field('testRecoveryGuide').textContent=view.testRecoveryGuide;
+ field('testRecoveryGuide').hidden=!view.testRecoveryGuide;
+ if(view.testRecoveryGuide&&(initial||identity!==attestationIdentity))field('recoveryControls').open=true;
  if(identity!==attestationIdentity)field('unpaidTestConfirmed').checked=false;
  attestationIdentity=identity;
  field('cardStatus').textContent=status.localCardUnlocked?'Local card: unlocked for this Chrome session.':'Local card: locked. Open card setup and unlock the file first.';

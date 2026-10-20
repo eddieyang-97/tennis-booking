@@ -26,7 +26,8 @@
 <p class="note">Each arm saves a copy of these preferences. Editing the form does not change an armed run or a pending checkout. One booking per playing date; any playing day is supported.</p>
 <p>Unlock the card file before the run and keep Chrome open and the laptop awake. Payments use the local card directly; a locked card stops the run. Human verification or bank approval can stop a run. Uncertain payments are never submitted again.</p>
 <p class="note">A scheduled partial selection can proceed for one verified intended hour only when the saved minimum duration and one-hour cap permit it. Extra or mismatched items stop checkout.</p>
-<details><summary>Check and recover</summary>
+<details id="recoveryControls"><summary>Check and recover</summary>
+<p id="testRecoveryGuide" class="note" role="status" style="white-space:pre-line" hidden></p>
 <p><button id="assessRecovery">Assess recovery (read only)</button> Inspects the pending journal and open existing-purchase pages. Does not pay, cancel, remove items or infer a purchase from its price.</p>
 <p><button id="testDiscountCheckout">Test discount and open checkout (no payment)</button> First check availability using your chosen settings. This selects a candidate, applies the optional code above and stops at the card page. Changing the code or checked date automatically clears a verified unpaid test first. It does not fill or submit card details.</p>
 <p><button id="resetUnpaidTest">Clear unfinished unpaid test</button> Removes only verified test items. Paid or uncertain checkouts remain protected.</p>

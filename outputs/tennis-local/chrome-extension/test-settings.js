@@ -41,6 +41,15 @@ test('readiness shows saved settings and London release, and never marks unresol
  assert.equal(readiness(status,now).ready,true);assert.match(readiness(status,now).lines.join('\n'),/14 Oct 2026, 00:00 London/);
  for(const patch of [{localCardUnlocked:false},{job:{...status.job,prepared:false}},{checkoutRecords:[{status:'pending',phase:'payment-uncertain'}]},{job:{...status.job,when:now}},{job:null}])assert.equal(readiness({...status,...patch},now).ready,false);
 });
+
+test('unfinished checkout test without reference exposes conditional manual recovery, never proof of unpaid state',()=>{
+ const record={key:'synthetic-test-key',status:'pending',checkoutTestOnly:true,phase:'checkout-test-opening',checkoutOpenDispatchedAt:'2026-10-16T09:00:00Z',slot:{date:'2026-10-22',start:'11:00',hours:2,venue:'bethnal-green-gardens',court:3,totalGBP:'10.00'}};
+ const records=[{status:'confirmed',reference:'100001'},record,{status:'confirmed',reference:'100002'}],before=structuredClone(records),view=readiness({checkoutRecords:records});
+ assert.match(view.summary,/unfinished.*test/i);assert.match(view.armBlocker,/Reconcile cleared selection/);
+ assert.match(view.testRecoveryGuide,/no saved reference/i);assert.match(view.testRecoveryGuide,/does not prove/i);assert.match(view.testRecoveryGuide,/certain.*did not submit payment/i);assert.match(view.testRecoveryGuide,/items and discount/i);assert.equal(view.ready,false);assert.deepEqual(records,before);
+ for(const patch of [{checkoutTestOnly:false},{reference:'100003'},{phase:'payment-uncertain'},{phase:'card-filling'},{paymentDispatchedAt:'timestamp'},{manualPaymentReportedAt:'timestamp'},{cardFillDispatchedAt:'timestamp'},{cardFillRecoveryRequired:true},{paymentDispatchedAt:null}])assert.equal(readiness({checkoutRecords:[{...record,...patch}]}).testRecoveryGuide,'',JSON.stringify(patch));
+ assert.equal(readiness({checkoutRecords:[record,{...record,key:'another-test'}]}).testRecoveryGuide,'');
+});
 test('popup sends real settings, preserves edits across status refresh and exposes diagnostics separately',async()=>{
  const html=fs.readFileSync(new URL('./popup.html',import.meta.url),'utf8'),source=fs.readFileSync(new URL('./popup.js',import.meta.url),'utf8');
  const elements=Object.fromEntries([...html.matchAll(/id="([^"]+)"/g)].map(([,id])=>[id,{value:'',checked:false,textContent:'',listeners:{},append(){},addEventListener(event,fn){this.listeners[event]=fn;}}]));
@@ -49,6 +58,11 @@ test('popup sends real settings, preserves edits across status refresh and expos
  const context={normalizeSettings,DEFAULT_SETTINGS,diagnosticExport,diagnosticFilename,Blob,URL:{createObjectURL:blob=>{downloads.push({blob});return 'blob:test-log';},revokeObjectURL:url=>revoked.push(url)},setTimeout:fn=>fn(),londonDay:()=> '2026-10-13',addDays,readiness,releasePreview,document:{querySelector:q=>elements[q.slice(1)],querySelectorAll:()=>Object.values(elements),createElement:tag=>tag==='a'?{click(){Object.assign(downloads.at(-1),{href:this.href,filename:this.download});}}:{}},chrome:{runtime:{sendMessage:async message=>{calls.push(structuredClone(message));return message.kind==='status'?structuredClone(state):{status:'preferences-saved'};}}}};
  vm.createContext(context);vm.runInContext(source.replace(/^import .*;\r?\n/gm,''),context);await context.refresh(true);
  assert.equal(elements.earliestStart.value,'09:00');assert.equal(elements.day.value,'2026-10-21');assert.equal(elements.result.textContent,'');
+ state.checkoutRecords=[{key:'synthetic-test-key',status:'pending',checkoutTestOnly:true,phase:'checkout-test-opening',checkoutOpenDispatchedAt:'2026-10-16T09:00:00Z'}];
+ await context.refresh(true);assert.equal(elements.recoveryControls.open,true);assert.equal(elements.testRecoveryGuide.hidden,false);assert.match(elements.testRecoveryGuide.textContent,/Reconcile cleared selection/);assert.equal(elements.unpaidTestConfirmed.checked,false);assert.ok(calls.every(call=>call.kind==='status'));
+ elements.unpaidTestConfirmed.checked=true;await context.send('reconcileSelection');assert.equal(calls.at(-2).unpaidTestConfirmed,true);assert.equal(calls.at(-2).attestationIdentity,JSON.stringify(['synthetic-test-key','','2026-10-16T09:00:00Z']));
+ state.checkoutRecords[0].reference='100003';await context.refresh();assert.equal(elements.unpaidTestConfirmed.checked,false);assert.equal(elements.testRecoveryGuide.hidden,true);
+ elements.result.textContent='';
  state.checkoutRecords=[{status:'pending',checkoutTestOnly:true,phase:'awaiting-payment',discountCode:'TESTCODE'}];await context.refresh(true);assert.equal(elements.discountCode.value,'TESTCODE');
  elements.discountCode.value='EDITED';await context.refresh();assert.equal(elements.discountCode.value,'EDITED');
  state.checkoutRecords[0].discountCode='';await context.refresh(true);assert.equal(elements.discountCode.value,'');

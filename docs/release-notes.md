@@ -19,6 +19,10 @@ Notes below describe changes made *at each release*, not instructions to install
 
 ## Changes by version
 
+### Unreleased — unfinished unpaid-test guidance (19 October 2026)
+- A single checkout-page test without a saved reference now has specific readiness/arming guidance and automatically expanded recovery instructions. The owner must inspect checkout, empty the basket and explicitly attest that no payment was submitted before using the existing reconciliation control.
+- Presentation-only predicates exclude payment/manual-report/card-fill evidence, multiple pending records and unsupported phases. Attestation remains unchecked initially and resets when its existing key/reference/opening identity changes. Cleanup, payment and journal guards are unchanged; offline regression tests are not live recovery acceptance.
+
 ### v0.9.1 — stateful worker faults and guarded recovery
 - An independent fake merchant and isolated actual-worker VM harness exercise intent persistence, dispatch, acknowledgement-following writes, repeated recovery and simulated worker recreation with retained storage. Mutation counts enforce no repeated Pay, discount or checkout opening.
 - Mutation entry points are serialized to prevent an older preflight overwriting a newer arm. This composes with v0.9.0's separate metadata ordering and retains its reviewed alarm outcomes, recovery classifications and PowerShell packaging fixes.
