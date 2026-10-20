@@ -103,7 +103,17 @@ async function arm(day,mode='availability',code='',settings=null) {
   return {status:'armed',day,release:new Date(when).toISOString(),mode,paymentAutomatic:mode==='payment',discountRequested:!!discountCode,settings};
 }
 function checkoutCommands(tabId) {
- const command=async request=>{const response=await chrome.tabs.sendMessage(tabId,request);if(request.kind==='payment-open')await step('checkout-open-response',{tabId,ok:response?.ok===true,...(response?.routeCategory?{routeCategory:response.routeCategory}:{})});if(!response?.ok)throw Error(response?.error||(request.kind==='checkout-progress'?'Checkout progress response unavailable':'Checkout response unavailable'));return response.value;};
+ const command=async request=>{
+  const response=await chrome.tabs.sendMessage(tabId,request);
+  if(request.kind==='payment-open')await step('checkout-open-response',{tabId,ok:response?.ok===true,...(response?.routeCategory?{routeCategory:response.routeCategory}:{})});
+  // Navigation may remove the read receiver before its reply. Only this
+  // read-only probe is eligible for the caller's bounded observation loop.
+  if(response==null&&request.kind==='checkout-progress'){
+   await step('checkout-read-unavailable',{tabId,reasonCode:'CHECKOUT_READ_UNAVAILABLE'});
+   throw Object.assign(Error('Checkout read response unavailable'),{code:'CHECKOUT_READ_UNAVAILABLE'});
+  }
+  if(!response?.ok)throw Error(response?.error||'Checkout response unavailable');return response.value;
+ };
  let lastProgress;
  const state=async()=>{const current=await readTab(()=>chrome.tabs.get(tabId));const url=new URL(current.url);if(url.origin!==BASE)throw Error('Checkout left the trusted site; inspect retained tab');
   const progress=await readTab(()=>command({kind:'checkout-progress'}));
