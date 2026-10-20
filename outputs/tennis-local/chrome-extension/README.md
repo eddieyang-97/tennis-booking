@@ -1,6 +1,6 @@
 # Chrome extension: setup, testing and recovery
 
-This is the **operating guide** for the active Manifest V3 extension. The installed version is shown at the top of the popup; the source version is defined in [`manifest.json`](manifest.json) (**0.9.3**, checkout-navigation branch, 20 October 2026).
+This is the **operating guide** for the active Manifest V3 extension. The installed version is shown at the top of the popup; the source version is defined in [`manifest.json`](manifest.json) (**0.9.4**, failed-checkout recovery branch, 20 October 2026).
 
 - [Project overview and safety model](../../../README.md)
 - [Release history and observed live evidence](../../../docs/release-notes.md)
@@ -42,11 +42,14 @@ The controls below live in the popup's **Check and recover** section. Before tak
 | Earlier extension Pay was dispatched, receipt unclear | **Verify paid receipt** | Receipt/account observation only, **never another charge** |
 | You completed a normal pending checkout manually | Enter **Manually paid booking reference**, then **Verify manual payment** | Durable manual-payment hold first; exact reference, amount and paid history required; no Pay click |
 | Abandon an unsubmitted, unreferred selection | Remove its items on the site, then **Reconcile cleared selection** | Requires stable empty basket; cannot clear any reference or payment submission |
+| Ordinary checkout failed while opening, without a saved reference or card/payment intent | Inspect checkout and purchase history; if you did not pay, verify an empty basket, tick **I did not submit payment for the failed checkout shown above**, then **Archive failed checkout** | Explicit owner attestation; preserves original opening journal in history. Never cancels a merchant purchase or establishes unpaid status |
 | Clean up a *verified unpaid checkout test* | **Clear unfinished unpaid test** | Automatic guarded cleanup; will stop if paid/uncertain, account evidence missing or basket changed |
 | Stale interrupted availability check | **Reset interrupted availability check** | Clears the read-only availability lock, **not** payment records |
 | Leftover basket-only record from old versions | **Verify cleared legacy test basket** | Verifies emptiness; does not remove items or modify paid journals |
 
 A confirmed purchase in account history verifies **payment**, but does not by itself verify that a booking remains active. A cancelled booking may still have a paid purchase; refund status is separate. An ambiguous or missing paid receipt remains unresolved, not unpaid.
+
+The failed-checkout archive is separate from unpaid-test cleanup. It accepts only one ordinary pending `checkout-opening` journal with a valid saved slot/key and opening timestamp, no reference or prior-reference field, and no card-fill, payment-dispatch or manual-payment marker (even an empty marker blocks it). Its confirmation is bound to that exact opening. The worker checks unchanged journals/history after observing an empty basket and writes the preserved archive and remaining journals together. It never removes site items, repeats opening or submits payment. If anything changed, payment may have been submitted, or you are unsure, retain the hold and investigate. An empty basket alone is insufficient. Reloading the extension clears the unlocked card session; unlock again only after completing recovery and the final update.
 
 ### Unpaid test: two-hour daytime basket
 

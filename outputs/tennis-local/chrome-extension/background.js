@@ -2,7 +2,7 @@ import {VENUES, londonDay, addDays, releaseAt, candidates} from './core.js';
 import {verifyBasket,basketEvidence} from './stage-rules.js';
 import {retryTab} from './retry.js';
 import {startRun} from './run-log.js';
-import {prepareCheckout,checkoutCandidate,confirmCheckout,PAYMENT_TEST_SLOT,reconcileClearedSelection,basketTestKey,recoverPreparationTab} from './checkout.js';
+import {prepareCheckout,checkoutCandidate,confirmCheckout,PAYMENT_TEST_SLOT,reconcileClearedSelection,archiveFailedCheckout,assertFailedCheckoutAttestation,basketTestKey,recoverPreparationTab} from './checkout.js';
 import {payCheckout,openVerifiedCheckout,assertCardFillProvenance} from './payment.js';
 import {checkoutKey} from './checkout.js';
 import {createLinkFrames} from './link-frames.js';
@@ -518,6 +518,23 @@ chrome.runtime.onMessage.addListener((message,sender,respond)=>{
     if(message.kind==='openCardVault'){await chrome.tabs.create({url:chrome.runtime.getURL('card-vault.html'),active:true});return {status:'local-card-setup-opened'};}
     if(message.kind==='payCheckout')return automaticPayment();
     if(message.kind==='armPayment')return arm(message.day,'payment',message.discountCode,message.settings);
+    if(message.kind==='archiveFailedCheckout') {
+     if(busy)throw Error('Another run is active');busy=true;
+     try{
+      const snapshot=await chrome.storage.local.get(['checkoutRecords','abandonedCheckouts']);
+      const records=snapshot.checkoutRecords||[],options={noPaymentConfirmed:message.noPaymentConfirmed===true,attestationIdentity:message.attestationIdentity};
+      assertFailedCheckoutAttestation(records,options);
+      const response=await readPage(BASE+'/basket',{kind:'basket-read'});
+      if(!response.ok)throw Error('Basket could not be verified empty; failed checkout remains held');
+      const current=await chrome.storage.local.get(['checkoutRecords','abandonedCheckouts']);
+      if(JSON.stringify(current)!==JSON.stringify(snapshot))throw Error('Checkout history changed during recovery; inspect and confirm again');
+      const reconciled=archiveFailedCheckout(current.checkoutRecords||[],response.value,options);
+      // One durable write preserves all journals and the entire prior archive.
+      // No merchant mutation, reference invention or payment-status inference.
+      await chrome.storage.local.set({checkoutRecords:reconciled.checkoutRecords,abandonedCheckouts:[...(current.abandonedCheckouts||[]),reconciled.abandoned]});
+      return {status:'failed-checkout-archived',merchantPaymentState:'unknown',merchantCancellationState:'unknown',booked:null,paid:null};
+     }finally{busy=false;}
+    }
     if(message.kind==='reconcileSelection') {
      if(busy)throw Error('Another run is active');busy=true;
      try {

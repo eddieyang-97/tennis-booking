@@ -4,6 +4,37 @@ import {receiptResponse} from './receipt-fixture.js';
 
 const paidReceipt='Booking reference: 100001\nPayment received\nBethnal Green Gardens\n23 October 2026\nCourt 1\n8:00pm–9:59pm\nDuration: 2 hours\nTotal: £14.00';
 
+function failedOpening(merchant){return merchant.record({test:false,checkoutTestOnly:false,phase:'checkout-opening',checkoutOpenDispatchedAt:new Date(merchant.clock).toISOString()});}
+function archiveMessage(record){return {kind:'archiveFailedCheckout',noPaymentConfirmed:true,attestationIdentity:JSON.stringify([record.key,record.checkoutOpenDispatchedAt])};}
+test('failed ordinary opening recovery preserves history/results and executes no merchant mutations, including repeats and restart',async()=>{
+ const merchant=new Merchant(),record=failedOpening(merchant),confirmed=merchant.record({key:'paid-history',status:'confirmed',reference:'100002',paymentDispatchedAt:'preserved'}),history=[{key:'old-archive',paymentDispatchedAt:'preserved'}],result={status:'stopped',error:'prior checkout error'},state={checkoutRecords:[confirmed,record],abandonedCheckouts:history,checkoutResult:result};
+ let worker=await startWorker(merchant,state);const message=archiveMessage(record);
+ assert.equal((await worker.send(message)).status,'failed-checkout-archived');assert.deepEqual(state.checkoutRecords,[confirmed]);assert.deepEqual(state.checkoutResult,result);assert.deepEqual(state.abandonedCheckouts[0],history[0]);
+ assert.equal(state.abandonedCheckouts[1].phase,'checkout-opening');assert.equal(state.abandonedCheckouts[1].abandonmentEvidence.merchantPaymentState,'unknown');
+ worker=await startWorker(merchant,state);assert.equal((await worker.send(message)).status,'stopped');assert.equal(state.abandonedCheckouts.length,2);assert.ok(Object.values(merchant.counts).every(count=>count===0));
+});
+for(const when of ['before','after'])test(`failed checkout archive persistence interruption ${when} is recoverable without mutation or journal loss`,async()=>{
+ const merchant=new Merchant(),record=failedOpening(merchant),state={checkoutRecords:[record]},message=archiveMessage(record);merchant.fault(`persist:archive:${when}`);
+ let worker=await startWorker(merchant,state);assert.equal((await worker.send(message)).status,'stopped');
+ if(when==='before')assert.deepEqual(state.checkoutRecords,[record]);else assert.equal(state.abandonedCheckouts[0].checkoutOpenDispatchedAt,record.checkoutOpenDispatchedAt);
+ worker=await startWorker(merchant,state);assert.equal((await worker.send(message)).status,when==='before'?'failed-checkout-archived':'stopped');assert.equal(state.abandonedCheckouts.length,1);assert.ok(Object.values(merchant.counts).every(count=>count===0));
+});
+for(const change of ['reference','paymentDispatchedAt','manualPaymentReportedAt','cardFillDispatchedAt','archive','confirmed-history'])test(`failed checkout recovery rejects concurrent evidence change: ${change}`,async()=>{
+ const merchant=new Merchant(),record=failedOpening(merchant),state={checkoutRecords:[record]},worker=await startWorker(merchant,state),send=worker.chrome.tabs.sendMessage;let changed=false;
+ worker.chrome.tabs.sendMessage=async(id,request)=>{if(request.kind==='basket-read'&&!changed){changed=true;if(change==='archive')state.abandonedCheckouts=[{key:'concurrent'}];else if(change==='confirmed-history')state.checkoutRecords.push({key:'paid',status:'confirmed',paymentDispatchedAt:'preserved'});else state.checkoutRecords[0][change]=null;}return send(id,request);};
+ const result=await worker.send(archiveMessage(record));assert.equal(result.status,'stopped');assert.match(result.error,/changed/);assert.equal(state.checkoutRecords[0].phase,'checkout-opening');assert.ok(Object.values(merchant.counts).every(count=>count===0));
+});
+for(const evidence of ['not-confirmed','stale','not-empty','unknown-basket','unreadable','card-fill'])test(`failed checkout recovery retains journal when ${evidence}`,async()=>{
+ const merchant=new Merchant(),record=failedOpening(merchant),state={checkoutRecords:[record]},worker=await startWorker(merchant,state),message=archiveMessage(record);
+ if(evidence==='not-confirmed')message.noPaymentConfirmed=false;
+ if(evidence==='stale')message.attestationIdentity='stale';
+ if(evidence==='not-empty')merchant.selected();
+ if(evidence==='unknown-basket')merchant.basket={items:[]};
+ if(evidence==='card-fill')record.cardFillDispatchedAt=null;
+ if(evidence==='unreadable'){const send=worker.chrome.tabs.sendMessage;worker.chrome.tabs.sendMessage=async(id,request)=>request.kind==='basket-read'?{ok:false,error:'Unknown basket layout'}:send(id,request);}
+ const before=structuredClone(state.checkoutRecords);assert.equal((await worker.send(message)).status,'stopped');assert.deepEqual(state.checkoutRecords,before);assert.equal(state.abandonedCheckouts,undefined);assert.ok(Object.values(merchant.counts).every(count=>count===0));
+});
+
 async function navigationRun(merchant=new Merchant(),state={}){
  merchant.clock=Date.parse('2026-10-16T23:00:00Z');
  state.job={day:'2026-10-24',when:merchant.clock,mode:'payment',prepared:true};

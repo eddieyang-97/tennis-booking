@@ -31,10 +31,23 @@ export function unreferencedCheckoutTest(records=[]) {
  const pending=records.filter(record=>record.status!=='confirmed'),record=pending[0];
  return pending.length===1&&record.checkoutTestOnly===true&&typeof record.key==='string'&&record.key.length>0&&!record.reference&&['checkout-test-opening','checkout-test-ready','test-cleanup-checking','test-cleanup-removing'].includes(record.phase)&&!['paymentDispatchedAt','manualPaymentReportedAt','cardFillDispatchedAt','cardFillRecoveryRequired'].some(field=>Object.hasOwn(record,field));
 }
+// A separate owner-attested recovery for an ordinary opening interrupted before
+// any card/payment intent. Presence of even an empty legacy marker is a hold.
+export function failedCheckoutIdentity(records=[]) {
+ const pending=records.filter(record=>record.status!=='confirmed'),r=pending[0];
+ if(pending.length!==1||r.status!=='pending'||r.test!==false||r.basketOnly||r.checkoutTestOnly||r.phase!=='checkout-opening'||typeof r.checkoutOpenDispatchedAt!=='string'||!Number.isFinite(Date.parse(r.checkoutOpenDispatchedAt))||['reference','priorReferences','paymentDispatchedAt','manualPaymentReportedAt','cardFillDispatchedAt','cardFillRecoveryRequired'].some(field=>Object.hasOwn(r,field)))return '';
+ try{
+  const s=r.slot,courts=Object.hasOwn(s,'courts')?s.courts:Array(s.hours).fill(s.court);
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(s.date)||new Date(s.date+'T12:00:00Z').toISOString().slice(0,10)!==s.date||![1,2].includes(s.hours)||!Array.isArray(courts)||courts.length!==s.hours||courts[0]!==s.court||!courts.every(c=>[1,2,3,4].includes(c)))return '';
+  authorizeSettingsSlot(s,r.settings||DEFAULT_SETTINGS);
+  if(r.key!==JSON.stringify([s.venue,s.date,s.courts||s.court,s.start,s.hours]))return '';
+  return JSON.stringify([r.key,r.checkoutOpenDispatchedAt]);
+ }catch{return '';}
+}
 export function pendingArmBlocker(records=[]) {
  const pending=records.find(record=>record.status!=='confirmed');if(!pending)return '';
  const slot=pending.slot,description=slot?`${slot.date} at ${slot.start} (${slot.hours}h)`:'an earlier date';
- const recovery=pending.manualPaymentReportedAt||pending.paymentDispatchedAt||['payment-dispatched','payment-uncertain'].includes(pending.phase)?'Use Verify paid receipt to reconcile its payment.':unreferencedCheckoutTest(records)?'An unfinished unpaid checkout test has no saved reference. Follow the manual test recovery instructions in Check and recover, then use Reconcile cleared selection only if you are certain you did not submit payment.':'If you paid it manually, enter its confirmation reference and use Verify manual payment. Otherwise inspect or resume that earlier checkout.';
+ const recovery=pending.manualPaymentReportedAt||pending.paymentDispatchedAt||['payment-dispatched','payment-uncertain'].includes(pending.phase)?'Use Verify paid receipt to reconcile its payment.':failedCheckoutIdentity(records)?'This failed checkout has no saved reference or card/payment intent. Follow Check and recover and use Archive failed checkout only if you are certain you did not submit payment and the basket is empty.':unreferencedCheckoutTest(records)?'An unfinished unpaid checkout test has no saved reference. Follow the manual test recovery instructions in Check and recover, then use Reconcile cleared selection only if you are certain you did not submit payment.':'If you paid it manually, enter its confirmation reference and use Verify manual payment. Otherwise inspect or resume that earlier checkout.';
  return `Arming is blocked by an unresolved checkout for ${description}. ${recovery}`;
 }
 // No current-date check here: historical paid journals still need recovery.
