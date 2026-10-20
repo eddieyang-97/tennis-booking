@@ -14,22 +14,25 @@ async function boundedRead(operation,ms,timers) {
  finally{timers.clearTimeout(timer);}
 }
 // Only reads court grids. No selection, checkout, Stripe or payment messages.
-export async function readGrid(tabs,url,request,{tabId=null,attempts=2,timeoutMs=20000,retryDelayMs=500,messageTimeoutMs=2000,delay=ms=>new Promise(r=>setTimeout(r,ms)),now=Date.now,timers=globalThis,step=async()=>{}}={}) {
+export async function readGrid(tabs,url,request,{tabId=null,retain=false,navigate=true,attempts=2,timeoutMs=20000,retryDelayMs=500,messageTimeoutMs=2000,delay=ms=>new Promise(r=>setTimeout(r,ms)),now=Date.now,timers=globalThis,step=async()=>{}}={}) {
  if(request.kind!=='grid'||!['bethnal-green-gardens','victoria-park'].includes(request.venue)||url!==`${BASE}/book/courts/${request.venue}/${request.day}#book`)throw Error('Invalid read-only grid request');
+ if(!navigate&&tabId===null)throw Error('Existing grid read requires a tab');
+ if(!navigate)attempts=1; // Observe this document only; never reload a handoff.
  let tab,last={loadState:'unknown',routeCategory:'loading',readState:'not-probed'};
  const reused=tabId!==null;
  for(let attempt=1;attempt<=attempts;attempt++) {
   if(!reused)tab=null;
   last={loadState:'unknown',routeCategory:'loading',readState:'not-probed'};
-  await step('grid-navigation',{venue:request.venue,attempt,timeoutMs,retryDelayMs});
+  await step(navigate?'grid-navigation':'grid-existing-read',{venue:request.venue,attempt,timeoutMs,retryDelayMs});
   try {
-   tab=reused?await retryTab(()=>tabs.update(tabId,{url}),{navigation:true}):await retryTab(()=>tabs.create({url,active:false}),{navigation:true});
+   tab=!navigate?{id:tabId}:reused?await retryTab(()=>tabs.update(tabId,{url}),{navigation:true}):await retryTab(()=>tabs.create({url,active:false}),{navigation:true});
    const deadline=now()+timeoutMs;
    while(now()<deadline) {
     const current=await retryTab(()=>tabs.get(tab.id));
     last={...last,loadState:current.status||'unknown',routeCategory:route(current.url,url)};
     if(last.routeCategory==='authentication')throw Object.assign(Error('Grid requires sign-in or human verification'),{gridCode:'GRID_AUTHENTICATION_REQUIRED'});
     if(last.routeCategory==='other-origin')throw Object.assign(Error('Grid left the trusted site'),{gridCode:'GRID_UNEXPECTED_ORIGIN'});
+    if(!navigate&&last.routeCategory==='other-page')throw Object.assign(Error('Selection grid route changed; no navigation or selection sent'),{gridCode:'GRID_ROUTE_CHANGED'});
     if(last.routeCategory==='requested-grid') {
      // DOM readiness can precede tabs.status=complete, especially when an
      // unrelated resource keeps the load event pending. Probe without reload.
@@ -38,8 +41,8 @@ export async function readGrid(tabs,url,request,{tabId=null,attempts=2,timeoutMs
       if(response?.humanRequired)throw Object.assign(Error('Grid requires sign-in or human verification'),{gridCode:'GRID_AUTHENTICATION_REQUIRED'});
       if(response?.ok) {
        await step('grid-read-ready',{venue:request.venue,attempt,loadState:last.loadState});
-       if(!reused)await tabs.remove(tab.id).catch(()=>{});
-       return response;
+       if(!reused&&!retain)await tabs.remove(tab.id).catch(()=>{});
+       return retain?{...response,gridTabId:tab.id}:response;
       }
       if(response && !/Court grid missing|Empty grid/.test(response.error||''))throw Object.assign(Error(response.error||'Grid read failed'),{gridCode:'GRID_LAYOUT_REJECTED'});
       last.readState='dom-not-ready';

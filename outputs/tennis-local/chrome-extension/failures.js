@@ -37,7 +37,7 @@ const recoveryModes=Object.freeze({
  PAGE_TAB_ERROR:'read-only-observation',PAGE_READY_TIMEOUT:'read-only-observation',PAGE_AUTHENTICATION_REQUIRED:'user-action',
  PAGE_UNEXPECTED_ORIGIN:'manual-review',PAGE_BASKET_ROUTE_CHANGED:'manual-review',
  GRID_TAB_ERROR:'read-only-observation',GRID_READY_TIMEOUT:'read-only-observation',GRID_AUTHENTICATION_REQUIRED:'user-action',
- GRID_UNEXPECTED_ORIGIN:'manual-review',GRID_LAYOUT_REJECTED:'manual-review'
+ GRID_UNEXPECTED_ORIGIN:'manual-review',GRID_LAYOUT_REJECTED:'manual-review',GRID_ROUTE_CHANGED:'manual-review',GRID_CANDIDATE_CHANGED:'manual-review'
 });
 export function failureFor(error,{operation,paymentPossible=false}={}){
  const message=typeof error==='string'?error:error?.message||error?.error||'';

@@ -8,6 +8,8 @@
 
 ## Executive summary
 
+**20 October navigation regression:** The checkout-navigation branch retains a scheduled availability grid for a fresh existing-document read and avoids redundant basket navigation. The actual-worker regressions count navigations and mutation dispatches, reject changed route/date/price/availability and extra basket items, retain both pre-payment basket checks, and interrupt the scheduled path around selection/opening/Pay. Tab hints are never durable authorization. This is an offline regression contract; fewer simulated navigations do not prove faster live checkout or an unattended paid booking. The isolated browser gate remains a separate milestone.
+
 ### Implementation progress (17 October 2026)
 
 **18 October update:** PR #2 merged with all three review findings resolved and CI passing. PR #3 preserves its structured classification, action metadata ordering, accurate alarm outcomes and Windows PowerShell build fixes. Review fixes stop uncertain card-fill recovery before Pay or refill, hold recognized same-reference receipt contradictions through the content-script/worker boundary, and keep bounded read-only assessment outside the mutation queue. Regressions include enabled cards of unknown provenance, contradictory receipts, hung tab reads overlapping alarms, changed journal snapshots and existing-purchase identity checks. VM faults are caught simulation exceptions; they do not establish behavior under hard process termination or live merchant conditions.

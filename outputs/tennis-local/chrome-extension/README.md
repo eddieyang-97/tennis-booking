@@ -1,6 +1,6 @@
 # Chrome extension: setup, testing and recovery
 
-This is the **operating guide** for the active Manifest V3 extension. The installed version is shown at the top of the popup; the source version is defined in [`manifest.json`](manifest.json) (**0.9.1**, reliability PR 2, 18 October 2026).
+This is the **operating guide** for the active Manifest V3 extension. The installed version is shown at the top of the popup; the source version is defined in [`manifest.json`](manifest.json) (**0.9.3**, checkout-navigation branch, 20 October 2026).
 
 - [Project overview and safety model](../../../README.md)
 - [Release history and observed live evidence](../../../docs/release-notes.md)
@@ -72,7 +72,8 @@ An unfinished checkout-page test can have no saved reference after opening was a
 ## Failure handling and diagnostics
 
 - For selection, the extension validates both hour/court cells before starting, clicks each hour once, waits for stable checkbox/basket-count acknowledgement, and verifies stable basket snapshots. A partial selection may become a one-hour scheduled booking only if all saved rules allow it. An uncertain click is not replayed.
-- Read-only grid checks use 20-second manual or 60-second scheduled readiness budgets, with one bounded retry. Other scheduled page reads allow 60 seconds; manual account/basket reads generally use 15 seconds. Checkout card-page opening has a bounded **60-second** readiness wait for both manual and scheduled paths. A human verification page, changed route or merchant error is a stop, not a request to retry payment blindly.
+- Read-only grid navigation uses 20-second manual or 60-second scheduled readiness budgets, with one bounded retry. The scheduled selection reuses the availability tab and freshly reads its exact venue/date without navigation; a changed route, closed tab or timeout stops this handoff without reloading. Other scheduled page reads allow 60 seconds; manual account/basket reads generally use 15 seconds. Checkout card-page opening has a bounded **60-second** readiness wait for both manual and scheduled paths. A human verification page, changed route or merchant error is a stop, not a request to retry payment blindly.
+- After the initial empty-basket check and selection, the scheduled tab navigates to the basket once. Each following boundary performs a new stable DOM observation on that exact tab, including immediately before checkout opening. No previously parsed basket is used as permission to mutate. A worker restart loses these in-memory tab handoffs and uses the existing durable-journal recovery rules. This reduces navigation in offline tests; no live speed or booking-success improvement has been established.
 - Checkout can produce a **new provisional reference before Pay**, but only a fresh exact basket/amount check can authorize a pre-dispatch replacement. After `paymentDispatchedAt` or `manualPaymentReportedAt` is set, recovery must not reopen and resubmit a charge.
 - **Download diagnostic log** saves a locally redacted `tennis-booking-log-<timestamp>.json` including installed version, current job, basket/checkout evidence, references and bounded run history. Card details, passphrases and discount-code values are sanitized, but **booking references/slot details remain sensitive**. Nothing is automatically uploaded; do not publish the file to GitHub.
 - **Show diagnostic JSON** shows the **raw** local status, including potentially sensitive discount codes; use the downloaded sanitized log when requesting help.

@@ -8,7 +8,7 @@ export async function waitPaymentState(read,{timeoutMs=15000,accept=()=>true,now
  while(now()<deadline){
   let state;
   try{state=await responseWithin(read,Math.min(2000,deadline-now()),timers);}
-  catch(e){if(!temporaryTabError(e)&&!/Read response timed out|Not the card checkout|Unknown payment page|message port closed/i.test(e.message))throw e;}
+  catch(e){if(!temporaryTabError(e)&&!/Read response timed out|Not the card checkout|Unknown payment page|Checkout progress response unavailable|message port closed/i.test(e.message))throw e;}
   if(state&&accept(state))return state;
   await delay(Math.min(500,Math.max(0,deadline-now())));
  }

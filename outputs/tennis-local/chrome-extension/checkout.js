@@ -2,6 +2,7 @@ import {validateSlot,verifyBasket,sameSlot,basketEvidence} from './stage-rules.j
 import {londonDay,addDays,slotKey,slotCourts} from './core.js';
 import {normalizeDiscount} from './discount.js';
 import {normalizeSettings} from './booking-settings.js';
+import {failureFor} from './failures.js';
 export const PAYMENT_TEST_SLOT={venue:'victoria-park',date:'2026-10-17',court:2,start:'07:00',hours:1,totalGBP:'2.50'};
 export function checkoutKey(slot,test=false,settings=null) {
  if(test){if(!sameSlot(slot,PAYMENT_TEST_SLOT))throw Error('Unauthorized payment test');if(slot.date<londonDay() || slot.date>addDays(londonDay(),7))throw Error('Payment test outside booking window');}
@@ -80,7 +81,7 @@ export async function prepareCheckout(slot,deps,{test=false,adopt=false,basketOn
   try{const selected=await deps.select(slot);if(selected?.selectionDiagnostic)record={...record,selectionDiagnostic:selected.selectionDiagnostic};}catch(error){
    if(error.selectionDiagnostic)record={...record,selectionDiagnostic:error.selectionDiagnostic};
    basket=await deps.read();
-   if(basket.empty)throw Error('Selection uncertain; pending checkout retained; no retry');
+   if(basket.empty)throw Object.assign(Error('Selection uncertain; pending checkout retained; no retry'),failureFor(error));
    await verifySelected(basket);
   }
   basket=await deps.read();await verifySelected(basket);

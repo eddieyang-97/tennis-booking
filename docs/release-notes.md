@@ -1,6 +1,6 @@
 # Release notes
 
-This is the historical change log for the **active Chrome extension** in [`outputs/tennis-local/chrome-extension/`](../outputs/tennis-local/chrome-extension/). The authoritative source version is [`manifest.json`](../outputs/tennis-local/chrome-extension/manifest.json), **0.9.1** on the stateful-testing branch (18 October 2026). `main` contains the merged v0.9.0 observability milestone; branch builds are not merged release claims.
+This is the historical change log for the **active Chrome extension** in [`outputs/tennis-local/chrome-extension/`](../outputs/tennis-local/chrome-extension/). The authoritative source version is [`manifest.json`](../outputs/tennis-local/chrome-extension/manifest.json), **0.9.3** on the checkout-navigation branch (20 October 2026). `main` contains the merged v0.9.1 stateful-worker milestone; branch builds are not merged release claims.
 
 Notes below describe changes made *at each release*, not instructions to install or downgrade to older builds. Historical test counts and unverified behaviors are not current release-quality claims. For up-to-date setup, use the [project README](../README.md) and [extension usage guide](../outputs/tennis-local/chrome-extension/README.md). For original investigation and detailed timestamps, see [payment-system.md](payment-system.md).
 
@@ -18,6 +18,12 @@ Notes below describe changes made *at each release*, not instructions to install
 **Current acceptance limitation:** Source improvements and simulated tests do not establish an unattended successful midnight booking through paid receipt verification. Payment confirmation is also not proof that a reservation is still active after a cancellation.
 
 ## Changes by version
+
+### v0.9.3 — reuse scheduled grid and basket navigation (20 October 2026)
+- Retains the selected availability grid and freshly rechecks its route, exact candidate and original price before the single selection dispatch. The retained grid is not reloaded; a changed or unavailable tab stops instead of replaying selection.
+- Removes duplicate initial basket navigation and reuses the freshly verified scheduled basket through payment preparation, retaining new stable DOM checks at each mutation boundary. Ephemeral tab handoffs are not saved or recovered after worker recreation; payment journals and one-shot mutation guards are unchanged.
+- Offline regressions exercise navigation counts, changed grid/basket state, one-hour fallback, discounts, fallback venues and mutation-boundary restarts. These establish simulated behavior, not live speed improvements, merchant checkout acceptance or an unattended paid reservation.
+- Missing responses to the read-only checkout-progress probe can be observed again within the existing readiness deadline, without repeating opening or another mutation. Structured grid refusals survive subsequent empty-basket reconciliation and reach the stopped action/result classification; diagnostics do not copy raw merchant responses.
 
 ### Unreleased — unfinished unpaid-test guidance (19 October 2026)
 - A single checkout-page test without a saved reference now has specific readiness/arming guidance and automatically expanded recovery instructions. The owner must inspect checkout, empty the basket and explicitly attest that no payment was submitted before using the existing reconciliation control.

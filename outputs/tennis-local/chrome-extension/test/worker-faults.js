@@ -3,6 +3,115 @@ import {Merchant} from './merchant.js';import {startWorker} from './worker-harne
 import {receiptResponse} from './receipt-fixture.js';
 
 const paidReceipt='Booking reference: 100001\nPayment received\nBethnal Green Gardens\n23 October 2026\nCourt 1\n8:00pm–9:59pm\nDuration: 2 hours\nTotal: £14.00';
+
+async function navigationRun(merchant=new Merchant(),state={}){
+ merchant.clock=Date.parse('2026-10-16T23:00:00Z');
+ state.job={day:'2026-10-24',when:merchant.clock,mode:'payment',prepared:true};
+ const worker=await startWorker(merchant,state),navigations=[],reads=[];
+ const {create,update,sendMessage}=worker.chrome.tabs;
+ worker.chrome.tabs.create=async changes=>{const tab=await create(changes);navigations.push({kind:'create',id:tab.id,url:changes.url});return tab;};
+ worker.chrome.tabs.update=async(id,changes)=>{if(changes.url)navigations.push({kind:'update',id,url:changes.url});return update(id,changes);};
+ worker.chrome.tabs.sendMessage=async(id,request)=>{reads.push({id,kind:request.kind});return sendMessage(id,request);};
+ return {worker,state,merchant,navigations,reads};
+}
+
+test('scheduled release reuses one freshly read grid and verified basket through one fake payment',async()=>{
+ const f=await navigationRun();await f.worker.alarm({name:'release'});
+ assert.equal(f.state.checkoutResult?.status,'confirmed',f.state.checkoutResult?.error||f.state.result?.error);
+ const gridNavigations=f.navigations.filter(n=>n.url.includes('/book/courts/'));
+ assert.equal(gridNavigations.length,1,'availability grid must not be loaded again for selection');
+ const gridReads=f.reads.filter(r=>r.kind==='grid');assert.equal(gridReads.length,2,'selection needs a fresh DOM observation');assert.equal(gridReads[0].id,gridReads[1].id);
+ assert.equal(f.navigations.filter(n=>n.kind==='create'&&n.url.endsWith('/basket')).length,1,'one separate initial empty-basket read');
+ assert.equal(f.navigations.filter(n=>n.kind==='update'&&n.url.endsWith('/basket')).length,1,'selection tab navigates to basket once');
+ assert.equal(f.reads.filter(r=>r.kind==='basket-read').length,4,'empty, selected, pre-payment and immediately pre-opening checks remain');
+ assert.deepEqual(f.merchant.counts,{selection:2,discount:0,opening:1,fill:1,pay:1,removal:0});
+ assert.ok(f.state.runHistory.some(run=>run.steps.some(step=>step.name==='grid-existing-read')));
+ assert.equal(JSON.stringify(f.state).includes('gridTabId'),false,'tab handoff must not become durable authorization');
+});
+
+test('read-only progress response lost during navigation is observed again without reopening checkout',async()=>{
+ const f=await navigationRun(),original=f.worker.chrome.tabs.sendMessage;let progressReads=0;
+ f.worker.chrome.tabs.sendMessage=async(id,request)=>request.kind==='checkout-progress'&&++progressReads===1?undefined:original(id,request);
+ await f.worker.alarm({name:'release'});
+ assert.equal(f.state.checkoutResult.status,'confirmed',f.state.checkoutResult.error);assert.ok(progressReads>1);
+ assert.deepEqual(f.merchant.counts,{selection:2,discount:0,opening:1,fill:1,pay:1,removal:0});
+});
+
+test('persistent missing progress responses time out with the opening journal held and no fill or Pay',async()=>{
+ const f=await navigationRun(),original=f.worker.chrome.tabs.sendMessage;
+ f.worker.chrome.tabs.sendMessage=async(id,request)=>request.kind==='checkout-progress'?undefined:original(id,request);
+ await f.worker.alarm({name:'release'});
+ assert.equal(f.state.checkoutResult.reasonCode,'CHECKOUT_READY_TIMEOUT');assert.equal(f.state.checkoutResult.status,'stopped');
+ assert.ok(f.state.checkoutRecords[0].checkoutOpenDispatchedAt);assert.equal(f.state.checkoutRecords[0].paymentDispatchedAt,undefined);
+ assert.deepEqual(f.merchant.counts,{selection:2,discount:0,opening:1,fill:0,pay:0,removal:0});
+});
+
+for(const change of ['closed','other-date','card-page','verification','extra-basket-item','price','lower-price','unavailable'])test(`scheduled grid handoff rejects changed state without selection: ${change}`,async()=>{
+ const f=await navigationRun();const original=f.worker.chrome.tabs.sendMessage;let changed=false;
+ f.worker.chrome.tabs.sendMessage=async(id,request)=>{
+  const response=await original(id,request);
+  if(!changed&&request.kind==='basket-read'){
+   changed=true;const grid=[...f.worker.tabs.values()].find(t=>t.url.includes('/book/courts/'));
+   if(change==='closed')f.worker.tabs.delete(grid?.id);
+   if(change==='other-date'&&grid)grid.url=grid.url.replace('2026-10-24','2026-10-25');
+   if(change==='card-page'&&grid)grid.url='https://tennistowerhamlets.com/basket/pay/card';
+   if(change==='verification'&&grid)grid.url='https://tennistowerhamlets.com/verify-human';
+   if(change==='extra-basket-item')response.value={empty:false,items:[{court:4}],totalGBP:'7.00'};
+  }
+  if(changed&&request.kind==='grid'&&['price','lower-price','unavailable'].includes(change))return {ok:true,rows:[20,21].map(hour=>({time:hour===20?'8pm':'9pm',inputs:[{label:change==='lower-price'?'Court 1£6':'Court 1£8',disabled:change==='unavailable'}]}))};
+  return response;
+ };
+ await f.worker.alarm({name:'release'});assert.equal(f.state.latestAction.outcome,'stopped');
+ if(['price','lower-price','unavailable'].includes(change))assert.equal(f.state.latestAction.reasonCode,'GRID_CANDIDATE_CHANGED');
+ assert.ok(Object.values(f.merchant.counts).every(count=>count===0));
+ assert.equal(f.navigations.filter(n=>n.url.includes('/book/courts/')).length,1,'never reload an uncertain handoff');
+});
+
+for(const readNumber of [3,4])for(const change of ['extra-item','price','route'])test(`fresh basket handoff check ${readNumber} rejects ${change} before opening or card fill`,async()=>{
+ const f=await navigationRun(),original=f.worker.chrome.tabs.sendMessage;let reads=0;
+ f.worker.chrome.tabs.sendMessage=async(id,request)=>{
+  if(request.kind==='basket-read'&&++reads===readNumber){
+   if(change==='route'){f.worker.tabs.get(id).url='https://tennistowerhamlets.com/basket/pay/card';throw Error('Receiving end does not exist');}
+   const value=structuredClone(f.merchant.basket);
+   if(change==='extra-item')value.items.push({...value.items[0],court:4});else value.totalGBP='13.00';
+   return {ok:true,value};
+  }
+  return original(id,request);
+ };
+ await f.worker.alarm({name:'release'});
+ assert.equal(f.state.checkoutResult.status,'stopped');assert.equal(f.merchant.counts.selection,2);
+ assert.deepEqual([f.merchant.counts.opening,f.merchant.counts.fill,f.merchant.counts.pay,f.merchant.counts.removal],[0,0,0,0]);
+ assert.equal(f.state.checkoutRecords.length,1);assert.equal(f.state.checkoutRecords[0].paymentDispatchedAt,undefined);
+ assert.equal(f.navigations.filter(n=>n.kind==='update'&&n.url.endsWith('/basket')).length,1,'changed handoff must not cause a basket reload');
+});
+
+for(const option of ['partial','discount','fallback-venue','empty'])test(`navigation reuse preserves ${option} release behavior`,async()=>{
+ const f=await navigationRun(),original=f.worker.chrome.tabs.sendMessage;
+ if(option==='partial')f.merchant.options.partial=true;
+ if(option==='discount')f.state.job.discountCode='SYNTHETIC';
+ f.worker.chrome.tabs.sendMessage=async(id,request)=>{
+  if(request.kind==='grid'&&(option==='empty'||option==='fallback-venue'&&request.venue==='bethnal-green-gardens'))return {ok:true,rows:[]};
+  return original(id,request);
+ };
+ await f.worker.alarm({name:'release'});
+ if(option==='empty'){
+  assert.equal(f.state.checkoutResult.status,'stopped');assert.equal(f.worker.tabs.size,0);assert.ok(Object.values(f.merchant.counts).every(count=>count===0));
+ }else{
+  assert.equal(f.state.checkoutResult.status,'confirmed',f.state.checkoutResult.error);
+  assert.equal(f.merchant.counts.pay,1);assert.equal(f.merchant.counts.opening,1);
+  assert.equal(f.merchant.counts.discount,option==='discount'?1:0);
+  if(option==='partial'){assert.equal(f.state.checkoutResult.slot.hours,1);assert.equal(f.state.checkoutResult.totalPaidGBP,'7.00');}
+  if(option==='fallback-venue')assert.equal(f.state.checkoutResult.slot.venue,'victoria-park');
+ }
+});
+
+for(const fault of ['persist:selection:before','persist:selection:after','dispatch:selection:after','persist:opening:after','dispatch:opening:after','dispatch:pay:after'])test(`scheduled handoff interruption preserves journal on restart: ${fault}`,async()=>{
+ const f=await navigationRun();f.merchant.fault(fault);await f.worker.alarm({name:'release'});
+ assert.equal(f.merchant.faults.has(fault),false);const before=structuredClone(f.merchant.counts),records=structuredClone(f.state.checkoutRecords||[]);
+ const restarted=await startWorker(f.merchant,f.state,'recreated');await restarted.alarm({name:'release'});
+ assert.deepEqual(f.merchant.counts,before,'worker recreation cannot replay a release mutation');
+ assert.deepEqual(f.state.checkoutRecords||[],records);
+});
 for(const [name,text,conflict,source] of [
  ['processing date',paidReceipt.replace('23 October 2026','Playing date: 23 October 2026')+'\nPayment processed: 18 October 2026',false,'booking-receipt'],
  ['metadata on separate lines',paidReceipt+'\nPayment processed:\n18 October 2026\nReceipt created:\n17 October 2026',false,'booking-receipt'],
