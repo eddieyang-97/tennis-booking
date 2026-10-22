@@ -1,7 +1,8 @@
 import {validateSlot,verifyBasket,sameSlot,basketEvidence} from './stage-rules.js';
 import {londonDay,addDays,slotKey,slotCourts} from './core.js';
 import {normalizeDiscount} from './discount.js';
-import {normalizeSettings} from './booking-settings.js';
+import {normalizeSettings,failedCheckoutIdentity} from './booking-settings.js';
+import {failureFor} from './failures.js';
 export const PAYMENT_TEST_SLOT={venue:'victoria-park',date:'2026-10-17',court:2,start:'07:00',hours:1,totalGBP:'2.50'};
 export function checkoutKey(slot,test=false,settings=null) {
  if(test){if(!sameSlot(slot,PAYMENT_TEST_SLOT))throw Error('Unauthorized payment test');if(slot.date<londonDay() || slot.date>addDays(londonDay(),7))throw Error('Payment test outside booking window');}
@@ -79,8 +80,12 @@ export async function prepareCheckout(slot,deps,{test=false,adopt=false,basketOn
   await persist('selection-dispatched');
   try{const selected=await deps.select(slot);if(selected?.selectionDiagnostic)record={...record,selectionDiagnostic:selected.selectionDiagnostic};}catch(error){
    if(error.selectionDiagnostic)record={...record,selectionDiagnostic:error.selectionDiagnostic};
+   record={...record,selectionFailure:failureFor(error)};
+   // Retain the observed failure before a further read can hang or lose the
+   // worker. This writes local evidence; it never repeats selection.
+   await persist('selection-dispatched');
    basket=await deps.read();
-   if(basket.empty)throw Error('Selection uncertain; pending checkout retained; no retry');
+   if(basket.empty)throw Object.assign(Error('Selection uncertain; pending checkout retained; no retry'),failureFor(error));
    await verifySelected(basket);
   }
   basket=await deps.read();await verifySelected(basket);
@@ -112,4 +117,16 @@ export function reconcileClearedSelection(records,basket,{unpaidTestConfirmed=fa
 export function confirmCheckout(record,receipt) {
  if(!record || receipt?.status!=='confirmed' || receipt.key!==record.key || !/^\d+$/.test(receipt.reference||'') || (record.reference && receipt.reference!==record.reference))throw Error('A matching paid receipt has not been verified');
  return {...record,status:'confirmed',phase:'receipt-verified',reference:receipt.reference,receiptSource:receipt.source||'booking-receipt',bookingState:receipt.bookingState||'confirmed',confirmedAt:new Date().toISOString()};
+}
+export function assertFailedCheckoutAttestation(records,{noPaymentConfirmed=false,attestationIdentity=''}={}) {
+ const identity=failedCheckoutIdentity(records);
+ if(noPaymentConfirmed!==true)throw Error('Confirm that you did not submit payment for this failed checkout');
+ if(!identity||identity!==attestationIdentity)throw Error('Failed checkout changed or confirmation is stale; inspect the current journal');
+ return records.find(r=>r.status!=='confirmed');
+}
+export function archiveFailedCheckout(records,basket,options={}) {
+ const record=assertFailedCheckoutAttestation(records,options);
+ if(basket?.empty!==true||!Array.isArray(basket.items)||basket.items.length!==0)throw Error('Basket is not verified empty; no items were removed automatically');
+ const at=new Date().toISOString();
+ return {checkoutRecords:records.filter(r=>r!==record),abandoned:{...record,status:'abandoned',abandonedAt:at,abandonmentEvidence:{basis:'owner-attested-failed-checkout-no-payment',previousStatus:record.status,at,key:record.key,checkoutOpenDispatchedAt:record.checkoutOpenDispatchedAt,basketEmptyVerified:true,merchantPaymentState:'unknown',merchantCancellationState:'unknown'}}};
 }

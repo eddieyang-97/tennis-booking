@@ -67,7 +67,6 @@ test('hung read responses are bounded and leave payment untouched',async()=>{
  await assert.rejects(readPageState(f.tabs,f.url,{kind:'account'},{...f.options,timeoutMs:500,messageTimeoutMs:1}),e=>e.diagnostic.errorCode==='PAGE_READY_TIMEOUT'&&e.diagnostic.readState==='response-timeout');assert.deepEqual(f.removed,[]);assert.equal(f.created,1);
  await assert.rejects(waitPaymentState(()=>new Promise(()=>{}),{...f.options,timeoutMs:1}),/readiness timed out/);
 });
-
 test('missing checkout-read acknowledgements are observed within the deadline, without retrying mutations',async()=>{
  const f=fixture();let calls=0;
  const unavailable=()=>Object.assign(Error('Checkout read response unavailable'),{code:'CHECKOUT_READ_UNAVAILABLE'});

@@ -1,10 +1,11 @@
 import {londonDay,addDays} from './core.js';
-import {normalizeSettings,DEFAULT_SETTINGS} from './booking-settings.js';
+import {normalizeSettings,DEFAULT_SETTINGS,failedCheckoutIdentity} from './booking-settings.js';
 import {readiness,releasePreview} from './readiness.js';
 import {diagnosticExport,diagnosticFilename} from './diagnostics.js';
 const field=id=>document.querySelector('#'+id),day=field('day'),output=field('result');
 let formEdited=false;
 let attestationIdentity='';
+let failedAttestationIdentity='';
 day.value=addDays(londonDay(),8);
 field('releaseHelp').textContent=releasePreview(day.value);
 day.addEventListener('input',()=>field('releaseHelp').textContent=releasePreview(day.value));
@@ -19,8 +20,17 @@ async function refresh(initial=false,show=false){
  field('readiness').textContent=[view.summary,...view.lines].join('\n');
  field('armBlocker').textContent=view.armBlocker||'';
  const test=status.checkoutRecords?.find(r=>r.status!=='confirmed'&&r.checkoutTestOnly),identity=test?JSON.stringify([test.key,test.reference||'',test.checkoutOpenDispatchedAt||'']):'';
+ field('testRecoveryGuide').textContent=view.testRecoveryGuide;
+ field('testRecoveryGuide').hidden=!view.testRecoveryGuide;
+ if(view.testRecoveryGuide&&(initial||identity!==attestationIdentity))field('recoveryControls').open=true;
  if(identity!==attestationIdentity)field('unpaidTestConfirmed').checked=false;
  attestationIdentity=identity;
+ const failedIdentity=failedCheckoutIdentity(status.checkoutRecords);
+ field('failedCheckoutGuide').textContent=view.failedCheckoutGuide;
+ field('failedCheckoutRecovery').hidden=!view.failedCheckoutGuide;
+ if(view.failedCheckoutGuide&&(initial||failedIdentity!==failedAttestationIdentity))field('recoveryControls').open=true;
+ if(failedIdentity!==failedAttestationIdentity)field('failedCheckoutNoPayment').checked=false;
+ failedAttestationIdentity=failedIdentity;
  field('cardStatus').textContent=status.localCardUnlocked?'Local card: unlocked for this Chrome session.':'Local card: locked. Open card setup and unlock the file first.';
  if(initial&&!formEdited){const pendingTest=status.checkoutRecords?.find(record=>record.status!=='confirmed'&&record.checkoutTestOnly);writeSettings(status.job?.settings||status.bookingSettings||DEFAULT_SETTINGS);field('discountCode').value=status.job?.discountCode??pendingTest?.discountCode??'';}
  if(show)output.textContent=JSON.stringify(status,null,2);
@@ -30,11 +40,12 @@ async function send(kind){output.textContent='Checking…';try{
  if(['armPayment','check','saveSettings'].includes(kind))message.settings=readSettings();
  if(['armPayment','testDiscountCheckout'].includes(kind))message.discountCode=field('discountCode').value;
  if(kind==='reconcileSelection'){message.unpaidTestConfirmed=field('unpaidTestConfirmed').checked;message.attestationIdentity=attestationIdentity;}
+ if(kind==='archiveFailedCheckout'){message.noPaymentConfirmed=field('failedCheckoutNoPayment').checked;message.attestationIdentity=failedAttestationIdentity;}
  if(kind==='reconcileManualPayment')message.reference=field('manualReference').value;
  const result=await chrome.runtime.sendMessage(message);output.textContent=result.status==='stopped'?result.error:JSON.stringify(result,null,2);
  try{await refresh();}catch{/* Keep the completed action result visible. */}
 }catch(error){output.textContent=error.message;}}
-for(const kind of ['openCardVault','payCheckout','armPayment','check','resume','prepareCheckout','daytimeBasketTest','verifyPayment','cancel','reset','reconcileBasket','reconcileSelection','saveSettings','reconcileManualPayment','testDiscountCheckout','resetUnpaidTest','assessRecovery'])field(kind).addEventListener('click',()=>send(kind));
+for(const kind of ['openCardVault','payCheckout','armPayment','check','resume','prepareCheckout','daytimeBasketTest','verifyPayment','cancel','reset','reconcileBasket','reconcileSelection','archiveFailedCheckout','saveSettings','reconcileManualPayment','testDiscountCheckout','resetUnpaidTest','assessRecovery'])field(kind).addEventListener('click',()=>send(kind));
 for(const control of document.querySelectorAll('input,select'))control.addEventListener('input',()=>{formEdited=true;});
 field('preferredHours').addEventListener('change',()=>{if(Number(field('minHours').value)>Number(field('preferredHours').value))field('minHours').value=field('preferredHours').value;});
 field('showStatus').addEventListener('click',()=>refresh(false,true).catch(error=>output.textContent=error.message));

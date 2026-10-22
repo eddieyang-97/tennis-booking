@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';import vm from 'node:vm';import fs from 'node:fs';
-import {DEFAULT_SETTINGS,normalizeSettings,gbpPence,pendingArmBlocker} from './booking-settings.js';import {candidates,addDays} from './core.js';import {checkoutKey,prepareCheckout,singleHourFallback} from './checkout.js';import {payCheckout} from './payment.js';import {recoveryIdentity} from './reconciliation.js';import {readiness,releasePreview} from './readiness.js';
+import {DEFAULT_SETTINGS,normalizeSettings,gbpPence,pendingArmBlocker,failedCheckoutIdentity} from './booking-settings.js';import {candidates,addDays} from './core.js';import {checkoutKey,prepareCheckout,singleHourFallback} from './checkout.js';import {payCheckout} from './payment.js';import {recoveryIdentity} from './reconciliation.js';import {readiness,releasePreview} from './readiness.js';
 import {diagnosticExport,diagnosticFilename} from './diagnostics.js';
 const preferences=()=>normalizeSettings({venues:['victoria-park'],earliestStart:'09:00',latestFinish:'12:00',preferredHours:2,minHours:1,maxTotalGBP:'20.00',maxOneHourGBP:'10.00',allowCourtSwitch:true});
 const slot={venue:'victoria-park',date:'2026-10-20',court:1,start:'09:00',hours:2,totalGBP:'18.00'};
@@ -41,14 +41,34 @@ test('readiness shows saved settings and London release, and never marks unresol
  assert.equal(readiness(status,now).ready,true);assert.match(readiness(status,now).lines.join('\n'),/14 Oct 2026, 00:00 London/);
  for(const patch of [{localCardUnlocked:false},{job:{...status.job,prepared:false}},{checkoutRecords:[{status:'pending',phase:'payment-uncertain'}]},{job:{...status.job,when:now}},{job:null}])assert.equal(readiness({...status,...patch},now).ready,false);
 });
+
+test('unfinished checkout test without reference exposes conditional manual recovery, never proof of unpaid state',()=>{
+ const record={key:'synthetic-test-key',status:'pending',checkoutTestOnly:true,phase:'checkout-test-opening',checkoutOpenDispatchedAt:'2026-10-16T09:00:00Z',slot:{date:'2026-10-22',start:'11:00',hours:2,venue:'bethnal-green-gardens',court:3,totalGBP:'10.00'}};
+ const records=[{status:'confirmed',reference:'100001'},record,{status:'confirmed',reference:'100002'}],before=structuredClone(records),view=readiness({checkoutRecords:records});
+ assert.match(view.summary,/unfinished.*test/i);assert.match(view.armBlocker,/Reconcile cleared selection/);
+ assert.match(view.testRecoveryGuide,/no saved reference/i);assert.match(view.testRecoveryGuide,/does not prove/i);assert.match(view.testRecoveryGuide,/certain.*did not submit payment/i);assert.match(view.testRecoveryGuide,/items and discount/i);assert.equal(view.ready,false);assert.deepEqual(records,before);
+ for(const patch of [{checkoutTestOnly:false},{reference:'100003'},{phase:'payment-uncertain'},{phase:'card-filling'},{paymentDispatchedAt:'timestamp'},{manualPaymentReportedAt:'timestamp'},{cardFillDispatchedAt:'timestamp'},{cardFillRecoveryRequired:true},{paymentDispatchedAt:null}])assert.equal(readiness({checkoutRecords:[{...record,...patch}]}).testRecoveryGuide,'',JSON.stringify(patch));
+ assert.equal(readiness({checkoutRecords:[record,{...record,key:'another-test'}]}).testRecoveryGuide,'');
+});
 test('popup sends real settings, preserves edits across status refresh and exposes diagnostics separately',async()=>{
  const html=fs.readFileSync(new URL('./popup.html',import.meta.url),'utf8'),source=fs.readFileSync(new URL('./popup.js',import.meta.url),'utf8');
  const elements=Object.fromEntries([...html.matchAll(/id="([^"]+)"/g)].map(([,id])=>[id,{value:'',checked:false,textContent:'',listeners:{},append(){},addEventListener(event,fn){this.listeners[event]=fn;}}]));
  let state={localCardUnlocked:false,checkoutRecords:[],bookingSettings:preferences()},calls=[];
  const downloads=[],revoked=[];
- const context={normalizeSettings,DEFAULT_SETTINGS,diagnosticExport,diagnosticFilename,Blob,URL:{createObjectURL:blob=>{downloads.push({blob});return 'blob:test-log';},revokeObjectURL:url=>revoked.push(url)},setTimeout:fn=>fn(),londonDay:()=> '2026-10-13',addDays,readiness,releasePreview,document:{querySelector:q=>elements[q.slice(1)],querySelectorAll:()=>Object.values(elements),createElement:tag=>tag==='a'?{click(){Object.assign(downloads.at(-1),{href:this.href,filename:this.download});}}:{}},chrome:{runtime:{sendMessage:async message=>{calls.push(structuredClone(message));return message.kind==='status'?structuredClone(state):{status:'preferences-saved'};}}}};
+ const context={normalizeSettings,DEFAULT_SETTINGS,failedCheckoutIdentity,diagnosticExport,diagnosticFilename,Blob,URL:{createObjectURL:blob=>{downloads.push({blob});return 'blob:test-log';},revokeObjectURL:url=>revoked.push(url)},setTimeout:fn=>fn(),londonDay:()=> '2026-10-13',addDays,readiness,releasePreview,document:{querySelector:q=>elements[q.slice(1)],querySelectorAll:()=>Object.values(elements),createElement:tag=>tag==='a'?{click(){Object.assign(downloads.at(-1),{href:this.href,filename:this.download});}}:{}},chrome:{runtime:{sendMessage:async message=>{calls.push(structuredClone(message));return message.kind==='status'?structuredClone(state):{status:'preferences-saved'};}}}};
  vm.createContext(context);vm.runInContext(source.replace(/^import .*;\r?\n/gm,''),context);await context.refresh(true);
  assert.equal(elements.earliestStart.value,'09:00');assert.equal(elements.day.value,'2026-10-21');assert.equal(elements.result.textContent,'');
+ state.checkoutRecords=[{key:'synthetic-test-key',status:'pending',checkoutTestOnly:true,phase:'checkout-test-opening',checkoutOpenDispatchedAt:'2026-10-16T09:00:00Z'}];
+ await context.refresh(true);assert.equal(elements.recoveryControls.open,true);assert.equal(elements.testRecoveryGuide.hidden,false);assert.match(elements.testRecoveryGuide.textContent,/Reconcile cleared selection/);assert.equal(elements.unpaidTestConfirmed.checked,false);assert.ok(calls.every(call=>call.kind==='status'));
+ elements.unpaidTestConfirmed.checked=true;await context.send('reconcileSelection');assert.equal(calls.at(-2).unpaidTestConfirmed,true);assert.equal(calls.at(-2).attestationIdentity,JSON.stringify(['synthetic-test-key','','2026-10-16T09:00:00Z']));
+ state.checkoutRecords[0].reference='100003';await context.refresh();assert.equal(elements.unpaidTestConfirmed.checked,false);assert.equal(elements.testRecoveryGuide.hidden,true);
+ const failedSlot={venue:'bethnal-green-gardens',date:'2026-10-27',court:1,start:'20:00',hours:2,totalGBP:'14.00'};
+ state.checkoutRecords=[{key:JSON.stringify([failedSlot.venue,failedSlot.date,1,'20:00',2]),slot:failedSlot,test:false,status:'pending',phase:'checkout-opening',checkoutOpenDispatchedAt:'2026-10-19T23:00:43Z'}];
+ await context.refresh();assert.equal(elements.failedCheckoutRecovery.hidden,false);assert.equal(elements.failedCheckoutNoPayment.checked,false);assert.equal(elements.recoveryControls.open,true);
+ elements.failedCheckoutNoPayment.checked=true;await context.send('archiveFailedCheckout');assert.equal(calls.at(-2).noPaymentConfirmed,true);assert.equal(calls.at(-2).attestationIdentity,failedCheckoutIdentity(state.checkoutRecords));
+ state.checkoutRecords[0].checkoutOpenDispatchedAt='2026-10-19T23:00:44Z';await context.refresh();assert.equal(elements.failedCheckoutNoPayment.checked,false);
+ state.checkoutRecords[0].cardFillDispatchedAt=null;await context.refresh();assert.equal(elements.failedCheckoutRecovery.hidden,true);
+ elements.result.textContent='';
  state.checkoutRecords=[{status:'pending',checkoutTestOnly:true,phase:'awaiting-payment',discountCode:'TESTCODE'}];await context.refresh(true);assert.equal(elements.discountCode.value,'TESTCODE');
  elements.discountCode.value='EDITED';await context.refresh();assert.equal(elements.discountCode.value,'EDITED');
  state.checkoutRecords[0].discountCode='';await context.refresh(true);assert.equal(elements.discountCode.value,'');

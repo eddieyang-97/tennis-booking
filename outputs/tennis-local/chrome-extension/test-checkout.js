@@ -11,6 +11,14 @@ function fixture(){
  return {get records(){return records;},set records(x){records=x;},set current(x){current=x;},get clicks(){return clicks;},get notices(){return notices;},deps:{load:async()=>structuredClone(records),save:async x=>records=structuredClone(x),read:async()=>current,select:async()=>{clicks++;assert.equal(records[0].phase,'selection-dispatched');current=basket;},retain:async()=>42,notify:async()=>notices++}};
 }
 async function fixed(fn){const now=Date.now;Date.now=()=>Date.parse('2026-10-13T12:00:00Z');try{return await fn();}finally{Date.now=now;}}
+
+test('empty-basket reconciliation preserves a structured grid refusal without logging its raw response',()=>fixed(async()=>{
+ const f=fixture(),historical={key:'historical',slot:{...slot,date:'2026-10-19'},status:'confirmed',paymentDispatchedAt:'2026-10-12T12:00:00Z',reference:'100001'};
+ f.records=[historical];f.deps.select=async()=>{throw Object.assign(Error('merchant private response SECRET'),{gridCode:'GRID_CANDIDATE_CHANGED'});};
+ await assert.rejects(prepareCheckout(slot,f.deps),error=>error.reasonCode==='GRID_CANDIDATE_CHANGED'&&error.recovery.automaticReplayAllowed===false&&!error.message.includes('SECRET'));
+ assert.equal(f.clicks,0);assert.deepEqual(f.records[0],historical);assert.equal(f.records[1].phase,'selection-dispatched');assert.equal(f.records[1].recoveryRequired,true);assert.equal(JSON.stringify(f.records).includes('SECRET'),false);
+ await assert.rejects(prepareCheckout(slot,f.deps),/empty/);assert.equal(f.clicks,0);
+}));
 test('Friday through Sunday evening slots permit checkout and historical payment recovery',()=>fixed(()=>{
  for(const date of ['2026-10-16','2026-10-17','2026-10-18']){
   const s={...slot,date},key=checkoutKey(s);

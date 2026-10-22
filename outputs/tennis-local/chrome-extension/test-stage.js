@@ -57,9 +57,9 @@ test('page selection rechecks all adjacent hours before first click; duplicate c
  const context={chrome:{runtime:{id:'test',onMessage:{addListener:f=>listener=f}}},location:{pathname:'/book/courts/victoria-park/2026-10-19'},document:{querySelector:q=>q==='#book'?book:{textContent:'',getAttribute:()=> String(boxes.filter(b=>b.checked).length)}},Intl,Date,setTimeout:callback=>queueMicrotask(callback)};
  vm.runInNewContext(code,context);
  const invoke=s=>new Promise(resolve=>listener({kind:'select-slot',slot:s},{id:'test'},resolve));
- let response=await invoke({...slot,start:'20:00',hours:2,totalGBP:'14.00'});assert.equal(response.ok,false);assert.match(response.error,/Slot unavailable/);assert.equal(clicks,0);
+ let response=await invoke({...slot,start:'20:00',hours:2,totalGBP:'14.00'});assert.equal(response.ok,false);assert.equal(response.reasonCode,'SELECTION_SLOT_UNAVAILABLE');assert.equal(clicks,0);
  boxes[1].disabled=false;response=await invoke({...slot,start:'20:00',hours:2,totalGBP:'14.00'});assert.equal(response.ok,true);assert.equal(clicks,2);
- response=await invoke({...slot,start:'20:00',hours:2,totalGBP:'14.00'});assert.equal(response.ok,false);assert.match(response.error,/Slot already selected/);assert.equal(clicks,2);
+ response=await invoke({...slot,start:'20:00',hours:2,totalGBP:'14.00'});assert.equal(response.ok,false);assert.equal(response.reasonCode,'SELECTION_STATE_CHANGED');assert.equal(clicks,2);
  boxes.forEach(b=>b.checked=false);boxes[1].labels[0].textContent='Court 3£7';response=await invoke({...slot,start:'20:00',hours:2,totalGBP:'14.00',courts:[2,3]});assert.equal(response.ok,true);assert.equal(clicks,4);
 });
 
@@ -92,5 +92,5 @@ test('live booked label is identified without a price and stops before any click
  vm.runInNewContext(code,{chrome:{runtime:{id:'test',onMessage:{addListener:f=>listener=f}}},location:{pathname:'/book/courts/bethnal-green-gardens/2026-10-18'},document:{querySelector:()=>book},Intl,Date,setTimeout});
  const sundaySlot={venue:'bethnal-green-gardens',date:'2026-10-18',court:4,start:'07:00',hours:1,totalGBP:'7.00'};
  const response=await new Promise(resolve=>listener({kind:'select-slot',slot:sundaySlot},{id:'test'},resolve));
- assert.equal(response.ok,false);assert.equal(response.error,'Slot unavailable: court 4, 7am');assert.equal(clicks,0);
+ assert.equal(response.ok,false);assert.equal(response.reasonCode,'SELECTION_SLOT_UNAVAILABLE');assert.equal(clicks,0);
 });

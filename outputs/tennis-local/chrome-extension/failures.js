@@ -24,6 +24,10 @@ const rules=[
 // Codes, including codes on worker Error objects, are authoritative. Regexes
 // only recognize legacy errors that have no known structured classification.
 const recoveryModes=Object.freeze({
+ SELECTION_ACK_TIMEOUT:'read-only-observation',SELECTION_RESPONSE_UNCERTAIN:'read-only-observation',
+ SELECTION_OBSERVATION_FAILED:'read-only-observation',SELECTION_PAGE_CHANGED:'manual-review',
+ SELECTION_SLOT_UNAVAILABLE:'manual-review',SELECTION_STATE_CHANGED:'manual-review',
+ SELECTION_PRICE_CHANGED:'manual-review',SELECTION_LAYOUT_UNKNOWN:'manual-review',
  CHECKOUT_READ_UNAVAILABLE:'read-only-observation',
  MANUAL_CHECK_WHILE_ARMED:'user-action',
  CARD_FILL_REVIEW_REQUIRED:'user-action',
@@ -39,7 +43,7 @@ const recoveryModes=Object.freeze({
  PAGE_TAB_ERROR:'read-only-observation',PAGE_READY_TIMEOUT:'read-only-observation',PAGE_AUTHENTICATION_REQUIRED:'user-action',
  PAGE_UNEXPECTED_ORIGIN:'manual-review',PAGE_BASKET_ROUTE_CHANGED:'manual-review',
  GRID_TAB_ERROR:'read-only-observation',GRID_READY_TIMEOUT:'read-only-observation',GRID_AUTHENTICATION_REQUIRED:'user-action',
- GRID_UNEXPECTED_ORIGIN:'manual-review',GRID_LAYOUT_REJECTED:'manual-review'
+ GRID_UNEXPECTED_ORIGIN:'manual-review',GRID_LAYOUT_REJECTED:'manual-review',GRID_ROUTE_CHANGED:'manual-review',GRID_CANDIDATE_CHANGED:'manual-review'
 });
 export function failureFor(error,{operation,paymentPossible=false}={}){
  const message=typeof error==='string'?error:error?.message||error?.error||'';
