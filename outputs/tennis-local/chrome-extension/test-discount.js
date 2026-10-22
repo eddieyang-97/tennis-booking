@@ -1,12 +1,25 @@
 import test from 'node:test';import assert from 'node:assert/strict';import vm from 'node:vm';import fs from 'node:fs';
 import {ensureDiscount,verifiedDiscount,payableSlot,normalizeDiscount} from './discount.js';
 import {checkoutKey,prepareCheckout,reconcileClearedSelection} from './checkout.js';import {verifyBasket} from './stage-rules.js';import {payCheckout} from './payment.js';import {recoveryIdentity} from './reconciliation.js';
+import {failureFor} from './failures.js';
 const slot={venue:'bethnal-green-gardens',date:'2026-10-20',court:1,start:'20:00',hours:2,totalGBP:'14.00'};
 const gross={empty:false,items:[20,21].map(hour=>({venue:'Bethnal Green Gardens',court:1,day:20,month:10,hour,priceGBP:'7.00'})),subtotalGBP:'14.00',discountGBP:'0.00',discountApplied:false,totalGBP:'14.00',paymentBoundary:true};
 const net={...gross,totalGBP:'11.50',discountGBP:'2.50',discountApplied:true};
 const initial=()=>({slot,key:JSON.stringify([slot.venue,slot.date,slot.court,slot.start,slot.hours]),discountCode:'SAVE-TEST',status:'pending',phase:'awaiting-payment'});
 async function fixed(fn){const now=Date.now;Date.now=()=>Date.parse('2026-10-13T12:00:00Z');try{return await fn();}finally{Date.now=now;}}
 function fixture(){let saved=initial(),basket=gross,clicks=0;return {get saved(){return saved;},set saved(value){saved=value;},get clicks(){return clicks;},set basket(value){basket=value;},deps:{save:async record=>saved=structuredClone(record),read:async()=>structuredClone(basket),apply:async()=>{clicks++;assert.ok(saved.discountDispatchedAt);basket=net;}}};}
+test('discount rejects valid evidence returned at or beyond its own deadline and retains dispatch intent',async()=>{
+ for(const elapsed of [1000,1500]){
+  const f=fixture();let clock=0;
+  f.deps.read=async()=>{if(f.saved.discountDispatchedAt){clock+=elapsed;return structuredClone(net);}return structuredClone(gross);};
+  await assert.rejects(ensureDiscount(initial(),f.deps,{timeoutMs:1000,now:()=>clock}),error=>failureFor(error).reasonCode==='DISCOUNT_OBSERVATION_TIMEOUT'&&failureFor(error).recovery.mode==='read-only-observation'&&failureFor(error,{paymentPossible:true}).recovery.mode==='payment-reconciliation');
+  assert.equal(f.clicks,1);assert.equal(f.saved.phase,'discount-dispatched');assert.ok(f.saved.discountDispatchedAt);assert.equal(f.saved.discount,undefined);
+ }
+});
+test('discount still accepts exact valid evidence just before its deadline without another dispatch',async()=>{
+ const f=fixture();let clock=0;f.deps.read=async()=>{if(f.saved.discountDispatchedAt){clock=999;return structuredClone(net);}return structuredClone(gross);};
+ const record=await ensureDiscount(initial(),f.deps,{timeoutMs:1000,now:()=>clock});assert.equal(record.discount.totalGBP,'11.50');assert.equal(record.phase,'awaiting-payment');assert.equal(f.clicks,1);
+});
 test('code is optional, bounded by the observed merchant field, and preserved in the checkout snapshot',()=>fixed(async()=>{
  assert.equal(normalizeDiscount('  SAVE-TEST  '),'SAVE-TEST');assert.equal(normalizeDiscount(''),'');for(const value of [null,123,'X'.repeat(11),'a b','<code>'])assert.throws(()=>normalizeDiscount(value));
  let records=[],basket={empty:true,items:[]};const deps={load:async()=>records,save:async value=>records=value,read:async()=>basket,select:async()=>{basket=gross;},retain:async()=>42,notify:async()=>{}};

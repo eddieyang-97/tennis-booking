@@ -1,6 +1,6 @@
 # Release notes
 
-This is the historical change log for the **active Chrome extension** in [`outputs/tennis-local/chrome-extension/`](../outputs/tennis-local/chrome-extension/). The authoritative source version is [`manifest.json`](../outputs/tennis-local/chrome-extension/manifest.json), **0.9.5** on `main` after merged recovery and selection-diagnostics PRs #7 and #8 (22 October 2026). Isolated-browser verification is a separate integration gate.
+This is the historical change log for the **active Chrome extension** in [`outputs/tennis-local/chrome-extension/`](../outputs/tennis-local/chrome-extension/). The authoritative source version is [`manifest.json`](../outputs/tennis-local/chrome-extension/manifest.json), **0.9.6** on the discount-read recovery branch (22 October 2026), based on v0.9.5. Branch builds are not merged release claims.
 
 Notes below describe changes made *at each release*, not instructions to install or downgrade to older builds. Historical test counts and unverified behaviors are not current release-quality claims. For up-to-date setup, use the [project README](../README.md) and [extension usage guide](../outputs/tennis-local/chrome-extension/README.md). For original investigation and detailed timestamps, see [payment-system.md](payment-system.md).
 
@@ -22,6 +22,12 @@ Notes below describe changes made *at each release*, not instructions to install
 The PR #4 Chromium gate is ported onto the current v0.9.5 runtime without changing production booking or payment logic. The runtime is exercised with a synthetic merchant, controlled alarm and fake payment frame, browser process restart during fake Pay, service-worker termination during fake card fill, denied external HTTP(S), and a synthetic rejected-selection/checkbox-reversion scenario. CI verifies the production ZIP excludes test adapters. These are synthetic observations, not real midnight alarm, Stripe, merchant-booking or unattended-payment acceptance.
 
 ## Changes by version
+
+### v0.9.6 — bounded post-discount message-read observation (22 October 2026)
+- Addresses a confirmed early-stop boundary in the installed v0.9.5 release: after five successful loading basket reads, an unclassified message failure escaped with approximately 54 seconds still available. Its exact Chrome exception and merchant discount outcome were not captured.
+- Discount reconciliation may observe the same trusted loading basket tab again under its remaining budget, without navigation or code replay. Authentication/route changes, closed/denied/invalidated contexts, complete-tab unknown errors and rejected basket evidence remain stops. Exact gross/discount/net authorization remains mandatory.
+- Adds sanitized bounded retry progress/counts and elapsed/remaining time, prevents diagnostic/storage failures being treated as transport errors, and rejects evidence arriving after the read deadline. The budget includes awaited setup/navigation/tab reads and successful-response logging; `ensureDiscount()` independently rejects evidence after its caller deadline with `DISCOUNT_OBSERVATION_TIMEOUT`.
+- Permanent module/worker/named regressions cover recovery, persistence, ambiguity, delayed setup/logging and restart with mutation-count assertions. The discount case is invoked by the now-integrated Chromium runner and CI, injecting the unknown message fault. Simulation does not establish the original transport cause, actual merchant discount success or unattended paid-booking acceptance. No installed-extension, live basket/journal or armed-job changes were performed.
 
 ### v0.9.5 — selection deadline and sanitized failure evidence (21 October 2026)
 - Replaces iteration-only selection waits with one monotonic elapsed deadline across both hours. Throttled callbacks stop on resumption without another hourly click; browser suspension itself cannot be time-bounded by this code.

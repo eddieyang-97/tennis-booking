@@ -2,7 +2,7 @@
 
 A Manifest V3 Chrome extension that checks and attempts to book tennis courts on [Tower Hamlets Courtside](https://tennistowerhamlets.com/) at the London midnight release, with configurable preferences, strict basket/payment verification, a local encrypted card file and recovery of uncertain payments.
 
-**Active implementation:** [`outputs/tennis-local/chrome-extension/`](outputs/tennis-local/chrome-extension/) · **Version:** [`0.9.5`](outputs/tennis-local/chrome-extension/manifest.json), merged recovery and selection-diagnostics milestones (22 October 2026).
+**Active implementation:** [`outputs/tennis-local/chrome-extension/`](outputs/tennis-local/chrome-extension/) · **Version:** [`0.9.6`](outputs/tennis-local/chrome-extension/manifest.json), discount-read recovery branch (22 October 2026), based on the v0.9.5 selection-diagnostics work. This branch is not a merged release claim.
 
 **Release status:** In active development, **not yet verified for unattended end-to-end midnight payment**. A real £2.50 one-hour card payment and its subsequent account-purchase reconciliation were verified on 13 October. Live two-hour basket selection was verified, but an automated two-hour Pay and a complete unattended midnight booking have not been established. See [release notes and live-evidence limits](docs/release-notes.md).
 
@@ -53,6 +53,8 @@ The scheduled flow retains its selected availability grid for a fresh read befor
 **Paying is not the same as holding an active booking.** Matching merchant purchase history establishes paid transaction status; `bookingState` can still be `unknown` if a reservation was cancelled. Cancellation also does not prove a refund.
 
 Read-only navigation uses bounded readiness/retry policies. An unknown grid, unauthenticated page, unexpected basket, changed price/reference, merchant error, or unresolved prior intent stops rather than guessing or repeating a mutation. These safeguards prioritize avoiding unintended bookings and duplicate charges over automatic success.
+
+After a journaled discount attempt, unclassified message failures on the same trusted, loading basket tab may be observed again within the remaining discount budget. This does not navigate or reapply the code. Closed/denied/invalidated contexts, changed routes and returned basket rejection still stop. Retry counts and elapsed/remaining time are sanitized; a loading tab is permission for another read, not evidence of discount success. See the [22 October incident evidence](docs/payment-system.md#22-october-release-post-discount-basket-read-failure).
 
 Selection acknowledgement shares one elapsed-time budget across both hours (60 seconds scheduled, 15 seconds manual). A suspended/throttled tab checks the deadline when it runs again; it cannot guarantee callback delivery at exactly the deadline. Diagnostics retain per-hour dispatch timestamps, elapsed time, checkbox reversion, badge counts and safe page/alert categories. Optional same-origin fetch/XHR status observations cover the selection window only; they do not identify the add-to-basket request or prove rejection. Raw URLs, headers, response bodies and alert text are excluded. An empty basket or HTTP error does not automatically authorize switching courts; the uncertain journal stays held. Exact authorized one-hour basket fallback remains supported without another selection click.
 

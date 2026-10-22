@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';import path from 'node:path';import {fileURLToPath} from 'node:url';import assert from 'node:assert/strict';
 import {chromium} from 'playwright';
 import {startMerchant} from './server.js';import {networkGate} from './isolation.js';import {testBundle} from './bundle.js';
+import {discountReadBrowserCase} from '../browser-discount-read.js';
 const artifacts=fileURLToPath(new URL('../../../../../artifacts/',import.meta.url));await fs.mkdir(artifacts,{recursive:true});
 const output=await fs.mkdtemp(path.join(artifacts,'browser-gate-'));
 const merchant=await startMerchant(),gate=await networkGate(merchant.origin),bundle=path.join(output,'test-extension');
@@ -149,6 +150,7 @@ try{
   else{assert.equal(result.status,'confirmed',result.error);assert.equal(result.receiptSource,source);assert.equal(result.booked,source==='booking-receipt'?true:null);}
   assert.ok(Object.values(merchant.state.counts).every(count=>count===0));reports.push({scenario:'actual-dom-receipt-'+name,outcome:'passed',evidence:'synthetic-receipt-html'});
  }
+ await discountReadBrowserCase({fresh,send,currentWorker:()=>worker,merchant,reports});
  // DST and validation use the real popup and worker settings boundary.
  await fresh('settings-profile');await popup.locator('#day').fill('2026-11-02');await popup.locator('#armPayment').click();await popup.waitForFunction(()=>document.querySelector('#result').textContent.includes('"armed"'));
  assert.equal((await send({kind:'status'})).job.when,Date.parse('2026-10-26T00:00:00Z'));

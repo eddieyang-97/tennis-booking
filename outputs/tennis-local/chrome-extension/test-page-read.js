@@ -41,6 +41,50 @@ test('persistent message disconnects are bounded by the read deadline',async()=>
  await assert.rejects(readPageState(f.tabs,f.url,{kind:'basket-read'},{...f.options,timeoutMs:1500}),e=>e.diagnostic.errorCode==='PAGE_READY_TIMEOUT'&&e.diagnostic.readState==='message-channel-closed');
  assert.equal(f.clock,1500);assert.equal(calls,3);assert.equal(f.created,1);assert.deepEqual(f.removed,[]);
 });
+test('discount observation survives an unclassified loading message failure on the same tab',async()=>{
+ const f=fixture('basket-read');let calls=0;f.tabs.create=f.tabs.update=f.tabs.remove=async()=>assert.fail('Observation must not navigate or remove');
+ f.tabs.sendMessage=async(id,request)=>{assert.equal(id,42);assert.equal(request.kind,'basket-read');if(++calls===1)throw Error('Unknown Chrome failure containing PRIVATE');return {ok:true,value:{empty:false}};};
+ const result=await readPageState(f.tabs,f.url,{kind:'basket-read'},{...f.options,tabId:42,navigate:false,observeLoadingMessageErrors:true,timeoutMs:2000});
+ assert.equal(result.ok,true);assert.equal(calls,2);assert.equal(f.clock,500);assert.ok(f.steps.some(s=>s.name==='page-message-read-retry'&&s.reason==='unclassified-tab-error'));
+ assert.equal(JSON.stringify(f.steps).includes('PRIVATE'),false);
+});
+test('persistent unclassified discount reads exhaust the original budget with safe retry evidence',async()=>{
+ const f=fixture('basket-read');let calls=0;f.tabs.sendMessage=async()=>{calls++;throw Error('PRIVATE merchant token');};
+ await assert.rejects(readPageState(f.tabs,f.url,{kind:'basket-read'},{...f.options,tabId:42,navigate:false,observeLoadingMessageErrors:true,timeoutMs:1500}),e=>e.diagnostic.errorCode==='PAGE_READY_TIMEOUT'&&e.diagnostic.readState==='unclassified-tab-error'&&e.diagnostic.elapsedMs===1500&&e.diagnostic.remainingMs===0&&e.diagnostic.messageReadRetries===3);
+ assert.equal(calls,3);assert.equal(f.created,0);assert.deepEqual(f.removed,[]);assert.equal(JSON.stringify(f.steps).includes('PRIVATE'),false);
+});
+test('loading error recovery is opt-in and stops on complete, closed, denied or invalidated contexts',async()=>{
+ for(const [message,status,enabled] of [['Unknown PRIVATE','loading',false],['Unknown PRIVATE','complete',true],['No tab with id: 42.','loading',true],['Cannot access PRIVATE','loading',true],['Extension context invalidated.','loading',true]]){
+  const f=fixture('basket-read');let calls=0;f.tabs.get=async()=>({url:f.url,status});f.tabs.sendMessage=async()=>{calls++;throw Error(message);};
+  await assert.rejects(readPageState(f.tabs,f.url,{kind:'basket-read'},{...f.options,tabId:42,navigate:false,observeLoadingMessageErrors:enabled}),e=>e.diagnostic.errorCode==='PAGE_TAB_ERROR');assert.equal(calls,1);assert.equal(f.clock,0);
+ }
+ for(const kind of ['account','purchase-read','payment-submit','discount-apply']){
+  const f=fixture(kind);await assert.rejects(readPageState(f.tabs,f.url,{kind},{...f.options,observeLoadingMessageErrors:true}));assert.equal(f.created,0);
+ }
+});
+test('each post-error observation rechecks origin/authentication/route and never retries rejected DOM evidence',async()=>{
+ for(const [url,code] of [['https://other.example/basket','PAGE_UNEXPECTED_ORIGIN'],['https://tennistowerhamlets.com/verify-human','PAGE_AUTHENTICATION_REQUIRED'],['https://tennistowerhamlets.com/basket/pay/card','PAGE_BASKET_ROUTE_CHANGED']]){
+  const f=fixture('basket-read');let gets=0,calls=0;f.tabs.get=async()=>({url:++gets===1?f.url:url,status:'loading'});f.tabs.sendMessage=async()=>{calls++;throw Error('Unknown error');};
+  await assert.rejects(readPageState(f.tabs,f.url,{kind:'basket-read'},{...f.options,tabId:42,navigate:false,observeLoadingMessageErrors:true}),e=>e.diagnostic.errorCode===code);assert.equal(calls,1);
+ }
+ const f=fixture('basket-read');let calls=0;f.tabs.sendMessage=async()=>{if(++calls===1)throw Error('Unknown error');return {ok:false,reasonCode:'BASKET_MISMATCH',error:'Invalid basket'};};
+ const result=await readPageState(f.tabs,f.url,{kind:'basket-read'},{...f.options,tabId:42,navigate:false,observeLoadingMessageErrors:true});assert.equal(result.reasonCode,'BASKET_MISMATCH');assert.equal(calls,2);
+});
+test('read logging failures are not retried as transport failures and late evidence cannot succeed',async()=>{
+ const f=fixture('basket-read');let calls=0;f.tabs.sendMessage=async()=>{calls++;return {ok:true};};
+ await assert.rejects(readPageState(f.tabs,f.url,{kind:'basket-read'},{...f.options,tabId:42,navigate:false,observeLoadingMessageErrors:true,step:async name=>{if(name==='page-read')throw Error('Unknown storage failure');}}),e=>e.diagnostic.operation==='read-diagnostics');assert.equal(calls,1);
+ const g=fixture('basket-read');g.tabs.sendMessage=async()=>{await g.options.delay(2000);return {ok:true};};
+ await assert.rejects(readPageState(g.tabs,g.url,{kind:'basket-read'},{...g.options,timeoutMs:1500}),e=>e.diagnostic.errorCode==='PAGE_READY_TIMEOUT'&&e.diagnostic.readState==='response-after-deadline');
+});
+for(const slow of ['initial-step','tab-state','successful-log','navigation'])test(`read budget includes awaited ${slow} and rejects evidence after expiry`,async()=>{
+ const f=fixture('basket-read');let calls=0;const send=f.tabs.sendMessage;
+ f.tabs.sendMessage=async(...args)=>{calls++;return send(...args);};
+ if(slow==='initial-step'||slow==='successful-log')f.options.step=async name=>{if(name===(slow==='initial-step'?'existing-basket-read':'page-read'))await f.options.delay(1000);};
+ if(slow==='tab-state'){const get=f.tabs.get;f.tabs.get=async(...args)=>{await f.options.delay(1000);return get(...args);};}
+ if(slow==='navigation'){const create=f.tabs.create;f.tabs.create=async(...args)=>{await f.options.delay(1000);return create(...args);};}
+ await assert.rejects(readPageState(f.tabs,f.url,{kind:'basket-read'},{...f.options,timeoutMs:1000,...(slow==='navigation'?{}:{tabId:42,navigate:false})}),e=>e.diagnostic.errorCode==='PAGE_READY_TIMEOUT');
+ assert.equal(calls,slow==='successful-log'?1:0);assert.equal(f.clock,1000);
+});
 test('scheduled account and basket reads survive 45-second readiness delay without a navigation retry',async()=>{
  for(const kind of ['account','basket-read'])for(const scheduled of [true,false]){
   const f=fixture(kind);f.tabs.sendMessage=async()=>f.clock<45000?{ok:false,notReady:true}:{ok:true};

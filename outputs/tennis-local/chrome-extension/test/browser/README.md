@@ -11,7 +11,7 @@ npm --prefix outputs/tennis-local/chrome-extension run test:ci
 
 Playwright 1.62.1 and its lockfile pin Chromium (revision 1234). Installation needs network access; execution uses only a new local test profile and the loopback merchant. A sandbox that denies Chromium loopback access reports `ERR_PROXY_CONNECTION_FAILED`; run the same isolated command with local networking permitted. There is no dependency on normal Chrome, its extension installation, account, encrypted card file or unlocked card session.
 
-`npm run test:browser` runs two proxy boundary tests and twelve browser scenarios. `test:ci` also runs maintained tests, module reproductions, worker faults, and the production ZIP/source hash check (`test:package`). CI installs dependencies before running that exact complete command, including the network-isolated browser phase. Packaging uses .NET hashing rather than depending on PowerShell module autoload in npm's child environment.
+`npm run test:browser` runs two proxy boundary tests and fourteen browser scenarios. `test:ci` also runs maintained tests, module reproductions, worker faults, and the production ZIP/source hash check (`test:package`). CI installs dependencies before running that exact complete command, including the network-isolated browser phase. Packaging uses .NET hashing rather than depending on PowerShell module autoload in npm's child environment.
 
 ## Coverage and evidence
 
@@ -27,6 +27,7 @@ The synthetic merchant independently owns hourly items, prices, discount, pendin
 - Real receipt HTML/content-script messaging through worker reconciliation: processing metadata, conflicting playing date, conflicting single start and unfamiliar layout. All receipts are synthetic.
 - Concurrent unpaid-test requests, delayed checkout, discount once, positively verified unpaid cleanup and an account Pending purchase that remains after the basket clears.
 - Merchant error after opening: no repeated opening/discount or payment. Unrelated basket: no selection, removal or payment.
+- The permanent discount-read scenario advances through five synthetic gross-basket replies while loading, injects one unclassified Chrome-boundary message error, then uses real content scripts to verify the final loopback discount and complete one fake payment. It asserts exactly one discount/open/fill/Pay and bounded sanitized retry evidence. Fake-clock module/worker tests separately exercise expiry during diagnostics, tab reads and successful-response logging; the injected error does not identify the original Chrome exception.
 - Denied page, frame and service-worker external requests, plus an unknown route and wrong loopback port that must fail the network gate.
 
 Pass/failure JSON and a failure screenshot go under ignored `artifacts/browser-gate-*/`. Failures include the fake worker's journal/run history and counters. CI retains only these JSON/PNG files for seven days, never browser profiles. Reproduce with the same command; the fast worker-fault layer provides individual mutation-boundary diagnosis.

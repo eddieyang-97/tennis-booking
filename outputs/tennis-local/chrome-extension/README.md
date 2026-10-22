@@ -1,6 +1,6 @@
 # Chrome extension: setup, testing and recovery
 
-This is the **operating guide** for the active Manifest V3 extension. The installed version is shown at the top of the popup; the source version is defined in [`manifest.json`](manifest.json) (**0.9.5**, selection-diagnostics branch, 21 October 2026).
+This is the **operating guide** for the active Manifest V3 extension. The installed version is shown at the top of the popup; the source version is defined in [`manifest.json`](manifest.json) (**0.9.6**, discount-read recovery branch, 22 October 2026). A source change does not update an installed extension.
 
 - [Project overview and safety model](../../../README.md)
 - [Release history and observed live evidence](../../../docs/release-notes.md)
@@ -35,6 +35,8 @@ The encrypted file uses AES-GCM with a PBKDF2-SHA256-derived key. The decrypted 
 For a selection that becomes unchecked or times out, download the diagnostic log before recovery. `SELECTION_ACK_TIMEOUT` distinguishes the elapsed-time deadline from changed route, price, layout or selection state. The journal preserves the original selection failure even if a later basket read fails. New diagnostics show observed reversion, hourly dispatch times, visibility and optional generic alert/status categories; these are observations, not proof of a merchant rejection. Same-origin HTTP statuses may belong to unrelated requests, and missing status entries do not prove that no request occurred. No raw response, URL or alert text is exported.
 
 The 15-second manual / 60-second scheduled deadline covers the entire hourly selection sequence. Browser suspension can delay the next callback beyond the deadline; the extension stops when it resumes and issues no further hourly click. An empty basket after an uncertain click retains its recovery hold. Automatic switching to another court is not enabled without a verified terminal merchant rejection contract. A fresh exact one-hour basket can still proceed only under the saved minimum-duration and price authorization, without selecting again.
+
+For a pending `discount-dispatched` record, the worker can continue read-only observation of the same loading basket tab after an unclassified message failure, within the remaining discount budget. It never navigates or reapplies the code to recover. Changed routes, authentication, closed/denied/invalidated contexts and mismatched baskets stop. Diagnostic steps retain bounded retry progress plus final counts/timing. If observation still fails, preserve the journal; a timeout does not prove whether the merchant applied the discount. Updating this branch does not automatically recover or clear an existing live hold.
 
 The controls below live in the popup's **Check and recover** section. Before taking action, read the readiness panel for an older pending checkout. **Never delete a journal or payment-dispatch marker to unblock a new job.**
 
