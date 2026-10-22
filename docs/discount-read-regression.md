@@ -22,7 +22,7 @@ The maintained workflow runs module tests, worker faults, named scenarios and ex
 
 ## Supplementary isolated Chromium coverage
 
-The browser harness is still separate in PR #4 (`b392097`), with the previously staged selection-reversion case also available locally. Do not merge or copy that milestone's runtime changes just to run this regression. Stage its test infrastructure in an ignored workspace, overlay **every current runtime allowlist entry**, and verify each staged file's hash against the branch source. Use its pinned Chromium, disposable profiles and deny-by-default loopback network gate. Normal Chrome, merchant credentials and real payment data are never used.
+The browser harness is still separate in PR #4 (current head `02742a7`; its browser infrastructure is unchanged from `b392097`), with the previously staged selection-reversion case also available locally. Do not merge or copy that milestone's runtime changes just to run this regression. Stage its test infrastructure in an ignored workspace, overlay **every current runtime allowlist entry**, and verify each staged file's hash against the branch source. Use its pinned Chromium, disposable profiles and deny-by-default loopback network gate. Normal Chrome, merchant credentials and real payment data are never used.
 
 The new permanent case is [test/browser-discount-read.js](../outputs/tennis-local/chrome-extension/test/browser-discount-read.js). Copy that module into the staged `test/` directory. In the staged `test/browser/run.js`, import:
 
