@@ -67,6 +67,24 @@ test('release observes delayed discount after five loading reads and unknown tra
  assert.deepEqual(f.merchant.counts,{selection:2,discount:1,opening:1,fill:1,pay:1,removal:0});
  assert.equal(f.navigations.filter(n=>n.kind==='update'&&n.url.endsWith('/basket')).length,2,'only the existing post-selection load and pre-payment refresh');
 });
+for(const slow of ['initial-step','tab-state','successful-log'])test(`discount deadline includes slow ${slow} through worker storage and messaging; restart never replays`,async()=>{
+ const f=await navigationRun();f.state.job.discountCode='SYNTHETIC';let delayed=false;
+ if(slow==='tab-state'){
+  const get=f.worker.chrome.tabs.get;f.worker.chrome.tabs.get=async id=>{if(f.merchant.counts.discount&&!delayed){delayed=true;f.merchant.clock+=60000;}return get(id);};
+ }else{
+  const set=f.worker.chrome.storage.local.set;f.worker.chrome.storage.local.set=async value=>{
+   const last=value.runHistory?.at(-1)?.steps?.at(-1),name=slow==='initial-step'?'existing-basket-read':'page-read';
+   if(f.merchant.counts.discount&&!delayed&&last?.name===name&&last.page==='basket-read'){delayed=true;f.merchant.clock+=60000;}
+   return set(value);
+  };
+ }
+ await f.worker.alarm({name:'release'});assert.equal(delayed,true);assert.equal(f.state.checkoutResult.status,'stopped','late valid discount evidence cannot authorize checkout');
+ const record=structuredClone(f.state.checkoutRecords[0]);assert.equal(record.phase,'discount-dispatched');assert.ok(record.discountDispatchedAt);assert.equal(record.discount,undefined);
+ assert.deepEqual(f.merchant.counts,{selection:2,discount:1,opening:0,fill:0,pay:0,removal:0});
+ const restarted=await startWorker(f.merchant,f.state);restarted.seedTab(record.tabId);
+ const resumed=await restarted.send({kind:'payCheckout'});assert.equal(resumed.status,'confirmed',resumed.error);assert.equal(f.merchant.counts.discount,1);assert.equal(f.merchant.counts.selection,2);assert.equal(f.merchant.counts.pay,1);
+ assert.equal(f.state.checkoutRecords[0].discountDispatchedAt,record.discountDispatchedAt);assert.deepEqual(f.state.checkoutRecords[0].slot,record.slot);
+});
 for(const outcome of ['accepted','unapplied'])test(`persistent loading read failure preserves discount hold and restart observes ${outcome} without reapplying`,async()=>{
  const f=await navigationRun(),send=f.worker.chrome.tabs.sendMessage;f.state.job.discountCode='SYNTHETIC';let reads=0,gross;
  f.worker.chrome.tabs.sendMessage=async(id,request)=>{
@@ -348,6 +366,14 @@ test('actual worker: check, prepare, fake Pay and account reconciliation; repeat
  const prepared=await worker.send({kind:'prepareCheckout'});assert.equal(prepared.status,'awaiting-payment',prepared.error);
  const paid=await worker.send({kind:'payCheckout'});assert.equal(paid.status,'confirmed');assert.equal(merchant.counts.pay,1);assert.equal(merchant.counts.selection,2);
  await worker.send({kind:'payCheckout'});assert.equal(merchant.counts.pay,1);assert.equal(state.checkoutRecords[0].status,'confirmed');
+});
+test('checkout navigation with missing read replies settles without another opening or discount',async()=>{
+ const merchant=new Merchant(),state={},worker=await startWorker(merchant,state);merchant.options.missingProgress=2;
+ await worker.send({kind:'check',day:merchant.slot.date});
+ const result=await worker.send({kind:'testDiscountCheckout',discountCode:'SYNTHETIC'});
+ assert.equal(result.status,'checkout-test-passed',result.error);assert.equal(merchant.options.missingProgress,0);
+ assert.equal(merchant.counts.opening,1);assert.equal(merchant.counts.discount,1);assert.equal(merchant.counts.pay,0);
+ assert.equal(state.runHistory.flatMap(run=>run.steps).filter(step=>step.name==='checkout-read-unavailable').length,2);
 });
 for(const mutation of ['selection','opening','discount','fill','pay','removal'])for(const boundary of ['persist','dispatch'])for(const when of ['before','after'])test(`worker restart: ${mutation} ${boundary} ${when}`,async()=>{
  const merchant=new Merchant(),state={};let worker=await startWorker(merchant,state);

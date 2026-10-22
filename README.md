@@ -81,6 +81,8 @@ The build uses an explicit runtime file allowlist, creates an archive under igno
 
 **Validation boundaries:** Unit and mocked-worker tests cover extensive safety cases but do not prove real merchant behavior. The reliability branch adds named offline reproductions, log comparison and baseline CI configuration with package checks. CI execution and stronger stateful/browser layers are tracked separately in the [test improvement plan](docs/test-improvement.md); local simulation passes are not unattended payment acceptance.
 
+The isolated Chromium browser gate in PR #4 uses pinned Playwright, a fake merchant, a denying network boundary, real worker/content-script messaging and process/worker-restart scenarios. Run `npm run test:ci` after installing the pinned test browser (see [browser test instructions](outputs/tennis-local/chrome-extension/test/browser/README.md)). This does not establish live midnight delivery, Stripe compatibility or unattended paid bookings.
+
 ### Key source files
 
 | Area | Files in `chrome-extension/` |

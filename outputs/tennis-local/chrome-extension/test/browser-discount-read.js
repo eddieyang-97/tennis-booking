@@ -1,4 +1,4 @@
-// Permanent supplementary regression for PR #4's isolated browser harness.
+// Permanent regression invoked by the maintained isolated browser/CI runner.
 // Only synthetic Chrome-boundary faults are injected. Real content scripts
 // perform the final basket/checkout reads; the merchant is loopback-only.
 import assert from 'node:assert/strict';

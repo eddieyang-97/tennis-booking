@@ -20,3 +20,30 @@ jobs:
       - name: Documented Windows PowerShell package command
         shell: pwsh
         run: powershell -NoProfile -ExecutionPolicy Bypass -File ./build.ps1
+  browser:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    env:
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/artifacts/test-browsers
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.18.0'
+      - name: Install pinned test dependency
+        run: npm ci --prefix outputs/tennis-local/chrome-extension/test/browser --ignore-scripts
+      - name: Install pinned Chromium
+        run: node outputs/tennis-local/chrome-extension/test/browser/node_modules/playwright/cli.js install chromium
+      - name: Complete local-only release gate
+        run: npm --prefix outputs/tennis-local/chrome-extension run test:ci
+      - name: Retain sanitized fake-site evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: local-browser-evidence
+          retention-days: 7
+          if-no-files-found: ignore
+          path: |
+            artifacts/browser-gate-*/report.json
+            artifacts/browser-gate-*/failure.json
+            artifacts/browser-gate-*/failure.png

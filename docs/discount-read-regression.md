@@ -18,27 +18,23 @@ Before the fix, both `discount observation survives an unclassified loading mess
 
 Other cases reject returned invalid baskets/accounting, authentication or origin/route changes, complete-tab unknown errors, closed/denied/invalidated contexts and late evidence. Diagnostics/storage errors are outside the transport retry catch. Long retry sequences preserve the run's start in bounded history; no raw transport/merchant text enters the trace.
 
-The maintained workflow runs module tests, worker faults, named scenarios and exact package checks on this branch. Production package allowlisting is unchanged; regression fixtures and browser dependencies are excluded.
+The review regressions advance the same fake clock during initial diagnostics, tab-state observation, successful-response logging and navigation. The page deadline starts before awaited setup and is checked after each of these boundaries. `ensureDiscount()` independently checks its own deadline after the entire read returns; late valid evidence cannot save a verified discount or authorize opening/fill/Pay. Boundary tests reject evidence at and beyond expiry while accepting exact evidence just before it. Worker recreations retain the dispatch marker and may observe an already-applied discount under a new explicit recovery invocation, never a repeated discount submission.
 
-## Supplementary isolated Chromium coverage
+The maintained workflow runs module tests, worker faults, named scenarios, isolated Chromium and exact package checks on this branch. Production package allowlisting is unchanged; regression fixtures and browser dependencies are excluded.
 
-The browser harness is still separate in PR #4 (current head `02742a7`; its browser infrastructure is unchanged from `b392097`), with the previously staged selection-reversion case also available locally. Do not merge or copy that milestone's runtime changes just to run this regression. Stage its test infrastructure in an ignored workspace, overlay **every current runtime allowlist entry**, and verify each staged file's hash against the branch source. Use its pinned Chromium, disposable profiles and deny-by-default loopback network gate. Normal Chrome, merchant credentials and real payment data are never used.
+## Maintained isolated Chromium coverage
 
-The new permanent case is [test/browser-discount-read.js](../outputs/tennis-local/chrome-extension/test/browser-discount-read.js). Copy that module into the staged `test/` directory. In the staged `test/browser/run.js`, import:
+PR #4's browser gate is merged into the current baseline (`c9e5281`). The permanent `test/browser/run.js` imports and invokes [test/browser-discount-read.js](../outputs/tennis-local/chrome-extension/test/browser-discount-read.js). No staging or manual runner modification is needed. Its pinned Chromium, disposable profiles and deny-by-default loopback network gate use no normal Chrome profile, merchant credentials or real payment data.
 
-```js
-import {discountReadBrowserCase} from '../browser-discount-read.js';
+From the repository root, after installing the pinned test dependency/browser as documented in the [browser guide](../outputs/tennis-local/chrome-extension/test/browser/README.md):
+
+```powershell
+npm --prefix outputs/tennis-local/chrome-extension run test:ci
 ```
 
-Inside the runner's existing `try` block, before its final settings/network scenarios, call:
+The complete command runs the module/worker/named regressions, network-boundary tests, Chromium scenarios and exact package verification. The browser case performs preflight and the captured release callback. It injects five old gross-basket replies, a sixth-read exception and loading tab metadata at the Chrome API boundary. Real content scripts then read and verify the final local merchant discount, open checkout and reconcile one fake payment. The simulation asserts mutation counts and safe retry evidence. This is not an actual Chrome-generated unknown error, a merchant load test, or live payment acceptance.
 
-```js
-await discountReadBrowserCase({fresh,send,currentWorker:()=>worker,merchant,reports});
-```
-
-Run the staged `test/browser/run.js` and `node --test test/browser/isolation-test.js` with its documented `PLAYWRIGHT_BROWSERS_PATH`. The case performs preflight and the captured release callback. It injects five old gross-basket replies, a sixth-read exception and loading tab metadata at the Chrome API boundary. Real content scripts then read and verify the final local merchant discount, open checkout and reconcile one fake payment. The simulation asserts mutation counts and safe retry evidence. This is not an actual Chrome-generated unknown error, a merchant load test, or live payment acceptance.
-
-The source case is committed here; the staged runner wiring and dependencies remain ignored. Until the browser milestone is integrated, this supplementary run is **local evidence**, not a browser job in this branch's GitHub Actions. Re-run against the reviewed runtime when integrating PR #4.
+GitHub Actions' browser job runs this same `test:ci` command against the PR's combined tree. Dependencies, profiles and generated bundles stay ignored and out of production ZIPs. A successful local run is reported separately from the CI result for the final commit.
 
 ## Next-run boundary
 

@@ -76,6 +76,15 @@ test('read logging failures are not retried as transport failures and late evide
  const g=fixture('basket-read');g.tabs.sendMessage=async()=>{await g.options.delay(2000);return {ok:true};};
  await assert.rejects(readPageState(g.tabs,g.url,{kind:'basket-read'},{...g.options,timeoutMs:1500}),e=>e.diagnostic.errorCode==='PAGE_READY_TIMEOUT'&&e.diagnostic.readState==='response-after-deadline');
 });
+for(const slow of ['initial-step','tab-state','successful-log','navigation'])test(`read budget includes awaited ${slow} and rejects evidence after expiry`,async()=>{
+ const f=fixture('basket-read');let calls=0;const send=f.tabs.sendMessage;
+ f.tabs.sendMessage=async(...args)=>{calls++;return send(...args);};
+ if(slow==='initial-step'||slow==='successful-log')f.options.step=async name=>{if(name===(slow==='initial-step'?'existing-basket-read':'page-read'))await f.options.delay(1000);};
+ if(slow==='tab-state'){const get=f.tabs.get;f.tabs.get=async(...args)=>{await f.options.delay(1000);return get(...args);};}
+ if(slow==='navigation'){const create=f.tabs.create;f.tabs.create=async(...args)=>{await f.options.delay(1000);return create(...args);};}
+ await assert.rejects(readPageState(f.tabs,f.url,{kind:'basket-read'},{...f.options,timeoutMs:1000,...(slow==='navigation'?{}:{tabId:42,navigate:false})}),e=>e.diagnostic.errorCode==='PAGE_READY_TIMEOUT');
+ assert.equal(calls,slow==='successful-log'?1:0);assert.equal(f.clock,1000);
+});
 test('scheduled account and basket reads survive 45-second readiness delay without a navigation retry',async()=>{
  for(const kind of ['account','basket-read'])for(const scheduled of [true,false]){
   const f=fixture(kind);f.tabs.sendMessage=async()=>f.clock<45000?{ok:false,notReady:true}:{ok:true};
@@ -101,6 +110,15 @@ test('hung read responses are bounded and leave payment untouched',async()=>{
  const f=fixture();f.tabs.sendMessage=async()=>new Promise(()=>{});
  await assert.rejects(readPageState(f.tabs,f.url,{kind:'account'},{...f.options,timeoutMs:500,messageTimeoutMs:1}),e=>e.diagnostic.errorCode==='PAGE_READY_TIMEOUT'&&e.diagnostic.readState==='response-timeout');assert.deepEqual(f.removed,[]);assert.equal(f.created,1);
  await assert.rejects(waitPaymentState(()=>new Promise(()=>{}),{...f.options,timeoutMs:1}),/readiness timed out/);
+});
+test('missing checkout-read acknowledgements are observed within the deadline, without retrying mutations',async()=>{
+ const f=fixture();let calls=0;
+ const unavailable=()=>Object.assign(Error('Checkout read response unavailable'),{code:'CHECKOUT_READ_UNAVAILABLE'});
+ const state=await waitPaymentState(async()=>{if(++calls<=2)throw unavailable();return {reference:'100001',totalGBP:'7.00',enabled:true};},f.options);
+ assert.equal(state.reference,'100001');assert.equal(calls,3);assert.equal(f.clock,1000);
+ const g=fixture();await assert.rejects(waitPaymentState(async()=>{throw unavailable();},{...g.options,timeoutMs:1500}),/readiness timed out/);assert.equal(g.clock,1500);
+ // Generic/mutation response failures never acquire this read-only policy.
+ await assert.rejects(waitPaymentState(async()=>{throw Error('Checkout response unavailable');},fixture().options),/Checkout response unavailable/);
 });
 test('blank account DOM while loading is not misclassified as missing login',()=>{
  let listener;const document={readyState:'interactive',querySelector:()=>null};vm.runInNewContext(fs.readFileSync(new URL('./content.js',import.meta.url),'utf8'),{document,location:{pathname:'/account'},chrome:{runtime:{id:'own',onMessage:{addListener:f=>listener=f}}}});
