@@ -2,6 +2,8 @@
 
 **Status:** Technical reference for the active Chrome Manifest V3 extension, source updated through the v0.9.5 selection-diagnostics branch (21 October 2026). **Not** a release changelog or a claim of unattended production readiness.
 
+PR #4's isolated browser integration tests exercise actual extension messaging and worker/process restarts against a synthetic merchant with denied HTTP(S) egress. Controlled alarms, test-only card frames and synthetic DOM remain explicit limitations, not live merchant or bank/Stripe acceptance.
+
 Use the [root README](../README.md) for current booking policy, the [extension guide](../outputs/tennis-local/chrome-extension/README.md) for operating/recovery controls, [release notes](release-notes.md) for version chronology, and [test improvement plan](test-improvement.md) for proposed reliability work. This document preserves **merchant-specific observations and recovery contracts**. Historical observations are labelled; site DOM and payment-provider behavior can change.
 
 ## 1. Core payment and recovery contract

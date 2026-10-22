@@ -67,6 +67,15 @@ test('hung read responses are bounded and leave payment untouched',async()=>{
  await assert.rejects(readPageState(f.tabs,f.url,{kind:'account'},{...f.options,timeoutMs:500,messageTimeoutMs:1}),e=>e.diagnostic.errorCode==='PAGE_READY_TIMEOUT'&&e.diagnostic.readState==='response-timeout');assert.deepEqual(f.removed,[]);assert.equal(f.created,1);
  await assert.rejects(waitPaymentState(()=>new Promise(()=>{}),{...f.options,timeoutMs:1}),/readiness timed out/);
 });
+test('missing checkout-read acknowledgements are observed within the deadline, without retrying mutations',async()=>{
+ const f=fixture();let calls=0;
+ const unavailable=()=>Object.assign(Error('Checkout read response unavailable'),{code:'CHECKOUT_READ_UNAVAILABLE'});
+ const state=await waitPaymentState(async()=>{if(++calls<=2)throw unavailable();return {reference:'100001',totalGBP:'7.00',enabled:true};},f.options);
+ assert.equal(state.reference,'100001');assert.equal(calls,3);assert.equal(f.clock,1000);
+ const g=fixture();await assert.rejects(waitPaymentState(async()=>{throw unavailable();},{...g.options,timeoutMs:1500}),/readiness timed out/);assert.equal(g.clock,1500);
+ // Generic/mutation response failures never acquire this read-only policy.
+ await assert.rejects(waitPaymentState(async()=>{throw Error('Checkout response unavailable');},fixture().options),/Checkout response unavailable/);
+});
 test('blank account DOM while loading is not misclassified as missing login',()=>{
  let listener;const document={readyState:'interactive',querySelector:()=>null};vm.runInNewContext(fs.readFileSync(new URL('./content.js',import.meta.url),'utf8'),{document,location:{pathname:'/account'},chrome:{runtime:{id:'own',onMessage:{addListener:f=>listener=f}}}});
  const read=()=>{let response;listener({kind:'account'},{id:'own'},r=>response=r);return response;};assert.equal(read().notReady,true);document.readyState='complete';assert.equal(read().humanRequired,true);
