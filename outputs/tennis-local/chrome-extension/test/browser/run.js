@@ -88,6 +88,16 @@ try{
  await fresh('extra-item-profile');merchant.state.items=[{hour:18,court:4}];
  await send({kind:'check',day:'2026-10-25'});result=await send({kind:'testDiscountCheckout'});assert.equal(result.status,'stopped');assert.equal(merchant.state.counts.selection,0);assert.equal(merchant.state.counts.removal,0);assert.equal(merchant.state.counts.pay,0);
  reports.push({scenario:'unrelated-basket-no-mutation',outcome:'passed',mutations:{...merchant.state.counts}});
+ // Real content-script acknowledgement timeout after the fake merchant rejects
+ // the first hourly POST. HTTP status correlation never authorizes replay.
+ await fresh('selection-rejected-profile');merchant.state.options.rejectSelection=true;
+ assert.equal((await send({kind:'check',day:'2026-10-25'})).status,'complete');
+ result=await send({kind:'prepareCheckout'});assert.equal(result.status,'stopped');assert.equal(result.reasonCode,'SELECTION_ACK_TIMEOUT');
+ const rejected=(await send({kind:'status'})).checkoutRecords[0];
+ assert.equal(rejected.phase,'selection-dispatched');assert.equal(rejected.selectionFailure.reasonCode,'SELECTION_ACK_TIMEOUT');
+ assert.equal(merchant.state.counts.selection,1);assert.equal(merchant.state.counts.opening,0);assert.equal(merchant.state.counts.pay,0);
+ reports.push({scenario:'actual-dom-selection-rejection-no-replay',outcome:'passed',evidence:'synthetic-409-checkbox-reversion',mutations:{...merchant.state.counts}});
+ console.log('Browser gate: synthetic selection rejection held without replay');
  // Terminate only the actual MV3 worker while a fake card fill has no reply.
  // Page readiness supplied by another source must not authorize automatic Pay.
  await fresh('card-fill-worker-profile');

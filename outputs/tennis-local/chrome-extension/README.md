@@ -93,6 +93,9 @@ Stripe's initial collapsed Card Element may show number/expiry/CVC before postco
 
 ## Tests and releases
 
+PR #4 integrates `npm run test:browser` and `npm run test:ci` with the current runtime, using pinned Chromium, a disposable local fake merchant, denied external HTTP(S) and a test-only card/clock. See [the isolated browser guide](test/browser/README.md). No test adapter, card substitute, browser profile or fake host permission is included in the production package. Live merchant acceptance remains separate.
+
+
 PR 2 adds `npm run test:worker`, a stateful fake merchant with isolated actual-worker VM restarts and fault injection. Popup/alarm mutation commands are serialized, and card filling has a durable marker. Interrupted card filling stops with `CARD_FILL_REVIEW_REQUIRED`: an enabled button and matching amount/reference cannot prove which card is present, so recovery cannot refill or Pay automatically. **Assess recovery (read only)** identifies open existing-purchase pages without paying or cancelling them; a price match cannot establish identity. Positively conflicting paid receipt evidence retains its hold for investigation, including conflicting venue, date, court, time, duration or total. Recovery assessment runs independently of the mutation queue, with one-second tab reads and a five-second overall observation budget; incomplete evidence stays unknown.
 
 The reliability branch adds a **Latest action** line, separate from the current unresolved journal and historical `checkoutResult`. Stopped commands retain stable failure/recovery classifications even if they fail before a page read. Diagnostic downloads include this status. Test archives identify owner attestation, merchant-unpaid verification or an unsubmitted empty selection separately; none establishes merchant cancellation. Reopening the popup clears a stale attestation when its checkout identity changes.

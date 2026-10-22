@@ -1,6 +1,6 @@
 # Release notes
 
-This is the historical change log for the **active Chrome extension** in [`outputs/tennis-local/chrome-extension/`](../outputs/tennis-local/chrome-extension/). The authoritative source version is [`manifest.json`](../outputs/tennis-local/chrome-extension/manifest.json), **0.9.5** on the selection-diagnostics branch (21 October 2026), based on the v0.9.4 recovery work. Branch builds are not merged release claims.
+This is the historical change log for the **active Chrome extension** in [`outputs/tennis-local/chrome-extension/`](../outputs/tennis-local/chrome-extension/). The authoritative source version is [`manifest.json`](../outputs/tennis-local/chrome-extension/manifest.json), **0.9.5** on `main` after merged recovery and selection-diagnostics PRs #7 and #8 (22 October 2026). Isolated-browser verification is a separate integration gate.
 
 Notes below describe changes made *at each release*, not instructions to install or downgrade to older builds. Historical test counts and unverified behaviors are not current release-quality claims. For up-to-date setup, use the [project README](../README.md) and [extension usage guide](../outputs/tennis-local/chrome-extension/README.md). For original investigation and detailed timestamps, see [payment-system.md](payment-system.md).
 
@@ -16,6 +16,10 @@ Notes below describe changes made *at each release*, not instructions to install
 | 16 October, discounted unpaid checkout inspection | Two-hour basket with £10 gross, £7 discount and £3 net; checkout opening was acknowledged, but the card page timed out and a merchant error was reported. Later inspection saw a £3 card page. | That the timed-out opening completed successfully or that a discounted payment was submitted |
 
 **Current acceptance limitation:** Source improvements and simulated tests do not establish an unattended successful midnight booking through paid receipt verification. Payment confirmation is also not proof that a reservation is still active after a cancellation.
+
+## Isolated browser CI integration (22 October 2026)
+
+The PR #4 Chromium gate is ported onto the current v0.9.5 runtime without changing production booking or payment logic. The runtime is exercised with a synthetic merchant, controlled alarm and fake payment frame, browser process restart during fake Pay, service-worker termination during fake card fill, denied external HTTP(S), and a synthetic rejected-selection/checkbox-reversion scenario. CI verifies the production ZIP excludes test adapters. These are synthetic observations, not real midnight alarm, Stripe, merchant-booking or unattended-payment acceptance.
 
 ## Changes by version
 

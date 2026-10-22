@@ -15,6 +15,9 @@ Playwright 1.62.1 and its lockfile pin Chromium (revision 1234). Installation ne
 
 ## Coverage and evidence
 
+The v0.9.5 gate also exercises a synthetic selection rejection (HTTP 409 with checkbox reversion): bounded acknowledgement, preserved journal and exactly one selection attempt without checkout or Pay. This does not identify the real merchant's rejection contract.
+
+
 The synthetic merchant independently owns hourly items, prices, discount, pending/paid purchases and mutation counters. Its HTML represents sanitized observed DOM contracts, not captured private pages. The actual content scripts parse grid/basket/card/account/existing-purchase pages and dispatch selection, discount, opening and removal actions. Scenarios cover:
 
 - Popup arming, immutable policy after saved-setting edits, BST/GMT release dates and rejected invalid settings.

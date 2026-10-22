@@ -14,13 +14,13 @@ export async function startMerchant(){
   if(url.pathname==='/favicon.ico'){res.writeHead(204);res.end();return;}
   if(url.pathname==='/site.js'){
    res.writeHead(200,{'Content-Type':'application/javascript'});res.end(`
-    for(const box of document.querySelectorAll('input[type=checkbox]'))box.addEventListener('change',async()=>{const r=await fetch('/__select?hour='+box.dataset.hour+'&court='+box.dataset.court,{method:'POST'});const value=await r.json();document.querySelector('#menu-basket').setAttribute('data-items',String(value.count));});
+    for(const box of document.querySelectorAll('input[type=checkbox]'))box.addEventListener('change',async()=>{const r=await fetch('/__select?hour='+box.dataset.hour+'&court='+box.dataset.court,{method:'POST'});if(!r.ok){box.checked=false;return;}const value=await r.json();document.querySelector('#menu-basket').setAttribute('data-items',String(value.count));});
     for(const form of document.querySelectorAll('form[data-discount]'))form.addEventListener('submit',async e=>{e.preventDefault();await fetch(form.action,{method:'POST',body:new URLSearchParams(new FormData(form))});location.href='/basket';});
     addEventListener('message',e=>{if(e.origin===location.origin&&e.data==='fake-card-ready'){const pay=document.querySelector('#submit');if(pay)pay.disabled=false;}});
    `);return;
   }
   if(url.pathname==='/__select'){
-   state.counts.selection++;const item={hour:Number(url.searchParams.get('hour')),court:Number(url.searchParams.get('court'))};
+   state.counts.selection++;if(state.options.rejectSelection){res.writeHead(409,{'Content-Type':'application/json'});res.end(JSON.stringify({count:state.items.length}));return;}const item={hour:Number(url.searchParams.get('hour')),court:Number(url.searchParams.get('court'))};
    if(state.options.overwrite)state.items=[];state.items.push(item);
    if(state.options.selectionDelay)await new Promise(resolve=>setTimeout(resolve,state.options.selectionDelay));
    res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({count:state.items.length}));return;

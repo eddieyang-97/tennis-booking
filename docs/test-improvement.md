@@ -1,6 +1,6 @@
 # Tennis booking: reliability and test improvement proposal
 
-**Status:** The observability milestone (GitHub PR #2) merged on 18 October 2026. The stateful-worker milestone (GitHub PR #3) now includes the reviewed main-branch fixes and is being validated separately. Browser integration remains the following milestone.
+**Status (22 October 2026):** PRs #2, #3, #5, #6, #7 and #8 merged. PR #4 integrates the isolated Chromium/browser network gate with current v0.9.5 runtime; live merchant acceptance and payment-security review remain separate release blockers.
 **Reviewed source:** `main` at `5aa63506a000d4adf05a7e8b8e635cab1b513dbd` (16 October 2026), extension v0.8.9  
 **Scope:** Chrome extension in `outputs/tennis-local/chrome-extension/`  
 **Evidence update:** Four private diagnostic exports from 16 October 2026, spanning installed versions v0.8.7–v0.8.9. Only sanitized findings are included here; original logs must not be committed.
