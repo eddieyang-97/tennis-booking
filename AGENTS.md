@@ -27,12 +27,7 @@
 2. For a bug, first add an offline regression scenario reproducing the observed failure when feasible. Use sanitized evidence and realistic merchant behavior; do not invent a site root cause when logs only support a hypothesis.
 3. Prefer small changes to the existing modules and explicit recovery predicates. Avoid a new backend, broad state-machine rewrite, or extra mutation retries without demonstrated need.
 4. Add tests for the happy path, changed/ambiguous observations, lost acknowledgement, interruption before/after persistence, and restart with the same durable storage where relevant. Assert **mutation counts**, not only returned status.
-5. Run relevant tests and, before claiming completion, run the maintained suite:
-   ```sh
-   cd outputs/tennis-local/chrome-extension
-   npm test
-   ```
-   Report what actually ran and passed. If a test cannot run, state why. Simulated passes must never be described as real-site or unattended-midnight acceptance.
+5. Run focused local checks when useful. GitHub Actions' [Reliability gate](.github/workflows/reliability.yml) is the authoritative shared automated gate: the `deterministic` job runs maintained Node tests, named/worker regressions and both PowerShell package checks; the `browser` job runs isolated Chromium and network-denial tests without repeating those checks. For a PR, verify both jobs passed on the latest head commit; do not rerun the same full suite locally solely to claim completion. Use `npm test`, `npm run test:scenarios`, or `npm run test:browser` for focused debugging, and `npm run test:ci` for an optional full local gate. Report what actually ran and passed or could not run. Simulated passes must never be described as real-site or unattended-midnight acceptance.
 6. When packaging changes are needed, inspect [build.ps1](build.ps1) and update its explicit runtime allowlist deliberately; ensure test sources and private data stay out of release ZIPs.
 
 ## Privacy and documentation
