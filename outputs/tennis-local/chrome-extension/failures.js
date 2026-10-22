@@ -24,6 +24,10 @@ const rules=[
 // Codes, including codes on worker Error objects, are authoritative. Regexes
 // only recognize legacy errors that have no known structured classification.
 const recoveryModes=Object.freeze({
+ SELECTION_ACK_TIMEOUT:'read-only-observation',SELECTION_RESPONSE_UNCERTAIN:'read-only-observation',
+ SELECTION_OBSERVATION_FAILED:'read-only-observation',SELECTION_PAGE_CHANGED:'manual-review',
+ SELECTION_SLOT_UNAVAILABLE:'manual-review',SELECTION_STATE_CHANGED:'manual-review',
+ SELECTION_PRICE_CHANGED:'manual-review',SELECTION_LAYOUT_UNKNOWN:'manual-review',
  CHECKOUT_READ_UNAVAILABLE:'read-only-observation',
  MANUAL_CHECK_WHILE_ARMED:'user-action',
  CARD_FILL_REVIEW_REQUIRED:'user-action',

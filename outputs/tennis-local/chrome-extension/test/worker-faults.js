@@ -46,6 +46,45 @@ async function navigationRun(merchant=new Merchant(),state={}){
  return {worker,state,merchant,navigations,reads};
 }
 
+for(const mode of ['reverted','lost-reply','transport-error','read-failure'])test(`selection failure keeps sanitized evidence and never selects another candidate after ${mode}`,async()=>{
+ const f=await navigationRun(),send=f.worker.chrome.tabs.sendMessage;let attempted=false;
+ f.worker.chrome.tabs.sendMessage=async(id,request)=>{
+  if(request.kind==='select-slot'){
+   attempted=true;f.merchant.counts.selection++;
+   if(mode==='lost-reply')return undefined;
+   if(mode==='transport-error')throw Error('PRIVATE transport credential');
+   return {ok:false,reasonCode:'SELECTION_ACK_TIMEOUT',error:'PRIVATE merchant response',selectionDiagnostic:{expectedHours:2,dispatchedHours:1,acknowledgedHours:0,badgeCount:0,checkboxReverted:true,timeoutMs:60000,elapsedMs:60000,raw:'PRIVATE',network:{correlation:'same-origin-window-only',observedRequests:1,responses:[{status:409,completed:true,body:'PRIVATE'}]}}};
+  }
+  if(attempted&&request.kind==='basket-read'){
+   assert.equal(f.state.checkoutRecords[0].selectionFailure.reasonCode,['lost-reply','transport-error'].includes(mode)?'SELECTION_RESPONSE_UNCERTAIN':'SELECTION_ACK_TIMEOUT','failure evidence must be durable before another observation');
+   if(mode==='read-failure')return {ok:false,error:'Unknown basket layout'};
+  }
+  return send(id,request);
+ };
+ await f.worker.alarm({name:'release'});assert.equal(f.state.checkoutResult.status,'stopped');
+ const code=['lost-reply','transport-error'].includes(mode)?'SELECTION_RESPONSE_UNCERTAIN':'SELECTION_ACK_TIMEOUT';
+ assert.equal(f.state.checkoutRecords[0].phase,'selection-dispatched');assert.equal(f.state.checkoutRecords[0].selectionFailure.reasonCode,code);
+ if(mode!=='read-failure'){assert.equal(f.state.checkoutResult.reasonCode,code);assert.equal(f.state.latestAction.reasonCode,code);}
+ assert.equal(JSON.stringify(f.state).includes('PRIVATE'),false);assert.equal(f.state.checkoutRecords[0].selectionDiagnostic.merchantOutcome,'unknown');
+ assert.ok(f.state.runHistory.some(run=>run.steps.some(step=>step.name==='selection-result'&&step.reasonCode===code)));
+ // A new VM sees the same durable hold; resume is observation-only, not a
+ // retry against the same court or the next candidate, even with an empty basket.
+ const restarted=await startWorker(f.merchant,f.state);await restarted.send({kind:'prepareCheckout'});
+ assert.deepEqual(f.merchant.counts,{selection:1,discount:0,opening:0,fill:0,pay:0,removal:0});
+});
+test('uncertain hourly acknowledgement may still use one exactly verified authorized hour without another selection',async()=>{
+ const f=await navigationRun(),send=f.worker.chrome.tabs.sendMessage;
+ f.worker.chrome.tabs.sendMessage=async(id,request)=>{
+  if(request.kind!=='select-slot')return send(id,request);
+  f.merchant.slot=structuredClone(request.slot);f.merchant.counts.selection++;f.merchant.selected();
+  f.merchant.basket={...f.merchant.basket,items:[f.merchant.basket.items[0]],subtotalGBP:'7.00',totalGBP:'7.00'};
+  return {ok:false,reasonCode:'SELECTION_ACK_TIMEOUT',selectionDiagnostic:{expectedHours:2,dispatchedHours:1,acknowledgedHours:0}};
+ };
+ await f.worker.alarm({name:'release'});assert.equal(f.state.checkoutResult.status,'confirmed',f.state.checkoutResult.error);
+ assert.equal(f.state.checkoutRecords[0].slot.hours,1);assert.equal(f.state.checkoutRecords[0].slot.totalGBP,'7.00');assert.equal(f.state.checkoutRecords[0].selectionFailure.reasonCode,'SELECTION_ACK_TIMEOUT');
+ assert.deepEqual(f.merchant.counts,{selection:1,discount:0,opening:1,fill:1,pay:1,removal:0});
+});
+
 test('scheduled release reuses one freshly read grid and verified basket through one fake payment',async()=>{
  const f=await navigationRun();await f.worker.alarm({name:'release'});
  assert.equal(f.state.checkoutResult?.status,'confirmed',f.state.checkoutResult?.error||f.state.result?.error);
