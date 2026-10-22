@@ -79,9 +79,9 @@ powershell -ExecutionPolicy Bypass -File .\build.ps1
 
 The build uses an explicit runtime file allowlist, creates an archive under ignored `artifacts/`, checks its contents and outputs a SHA-256 hash. The archive deliberately omits test sources and private local data.
 
-**Validation boundaries:** Unit and mocked-worker tests cover extensive safety cases but do not prove real merchant behavior. The reliability branch adds named offline reproductions, log comparison and baseline CI configuration with package checks. CI execution and stronger stateful/browser layers are tracked separately in the [test improvement plan](docs/test-improvement.md); local simulation passes are not unattended payment acceptance.
+**Validation boundaries:** The [Reliability gate](.github/workflows/reliability.yml) checks PRs targeting `main` and pushes to `main` (with optional manual dispatch). Its deterministic job runs the maintained Node suite, named/worker regressions and exact-package verification under both PowerShell 7 and Windows PowerShell 5.1. A separate pinned Chromium job runs fake-merchant integration, worker/process-restart scenarios and network-denial checks without duplicating the deterministic suite or package build. Superseded PR runs are canceled; `main` runs are retained. Local simulation and CI passes are not unattended merchant/payment acceptance.
 
-The isolated Chromium browser gate in PR #4 uses pinned Playwright, a fake merchant, a denying network boundary, real worker/content-script messaging and process/worker-restart scenarios. Run `npm run test:ci` after installing the pinned test browser (see [browser test instructions](outputs/tennis-local/chrome-extension/test/browser/README.md)). This does not establish live midnight delivery, Stripe compatibility or unattended paid bookings.
+For focused local debugging, run the relevant suite; `npm run test:ci` remains the optional full local gate after installing the pinned test browser (see [browser test instructions](outputs/tennis-local/chrome-extension/test/browser/README.md)). The browser harness substitutes only loopback merchant, fake card/clock and controlled alarm behavior into an isolated test bundle; the production ZIP retains the original runtime. These tests do not establish live midnight delivery, Stripe compatibility or unattended paid bookings.
 
 ### Key source files
 

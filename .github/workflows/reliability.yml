@@ -1,10 +1,23 @@
 name: Reliability gate
-on: [push, pull_request]
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
 permissions:
   contents: read
+
+# Retain main/release evidence; cancel only obsolete runs for the same PR.
+concurrency:
+  group: reliability-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   deterministic:
     runs-on: windows-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -12,14 +25,15 @@ jobs:
           node-version: '24.18.0'
       - name: Maintained suite
         run: npm --prefix outputs/tennis-local/chrome-extension test
-      - name: Reproduction scenarios
+      - name: Reproduction scenarios and worker faults
         run: npm --prefix outputs/tennis-local/chrome-extension run test:scenarios
-      - name: Exact runtime package
+      - name: Exact runtime package (PowerShell 7)
         shell: pwsh
         run: ./build.ps1
-      - name: Documented Windows PowerShell package command
+      - name: Documented Windows PowerShell package command (5.1)
         shell: pwsh
         run: powershell -NoProfile -ExecutionPolicy Bypass -File ./build.ps1
+
   browser:
     runs-on: windows-latest
     timeout-minutes: 15
@@ -34,8 +48,10 @@ jobs:
         run: npm ci --prefix outputs/tennis-local/chrome-extension/test/browser --ignore-scripts
       - name: Install pinned Chromium
         run: node outputs/tennis-local/chrome-extension/test/browser/node_modules/playwright/cli.js install chromium
-      - name: Complete local-only release gate
-        run: npm --prefix outputs/tennis-local/chrome-extension run test:ci
+      # Includes local-only merchant, real extension scripts and external network-denial checks.
+      # Do not run test:ci here: the deterministic job owns the Node tests and package checks.
+      - name: Isolated Chromium and network-denial gate
+        run: npm --prefix outputs/tennis-local/chrome-extension run test:browser
       - name: Retain sanitized fake-site evidence
         if: always()
         uses: actions/upload-artifact@v4
