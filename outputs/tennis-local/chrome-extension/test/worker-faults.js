@@ -46,6 +46,69 @@ async function navigationRun(merchant=new Merchant(),state={}){
  return {worker,state,merchant,navigations,reads};
 }
 
+test('release observes delayed discount after five loading reads and unknown transport failure, without mutation replay',async()=>{
+ const f=await navigationRun(),send=f.worker.chrome.tabs.sendMessage;f.state.job.discountCode='SYNTHETIC';let reads=0,gross,discountTab;
+ f.worker.chrome.tabs.sendMessage=async(id,request)=>{
+  if(request.kind==='discount-apply'){
+   gross=structuredClone(f.merchant.basket);discountTab=id;const response=await send(id,request);f.worker.tabs.get(id).status='loading';return response;
+  }
+  if(request.kind==='basket-read'&&f.merchant.counts.discount){
+   assert.equal(id,discountTab);reads++;
+   if(reads<=5)return {ok:true,value:structuredClone(gross)};
+   if(reads===6)throw Error('Unclassified Chrome transport PRIVATE');
+   f.worker.tabs.get(id).status='complete';
+  }
+  return send(id,request);
+ };
+ await f.worker.alarm({name:'release'});
+ assert.equal(f.state.checkoutResult.status,'confirmed',f.state.checkoutResult.error);
+ assert.ok(reads>=7);assert.equal(f.state.checkoutRecords[0].slot.totalGBP,'14.00');assert.equal(f.state.checkoutRecords[0].discount.totalGBP,'12.00');
+ assert.equal(JSON.stringify(f.state).includes('PRIVATE'),false);
+ assert.deepEqual(f.merchant.counts,{selection:2,discount:1,opening:1,fill:1,pay:1,removal:0});
+ assert.equal(f.navigations.filter(n=>n.kind==='update'&&n.url.endsWith('/basket')).length,2,'only the existing post-selection load and pre-payment refresh');
+});
+for(const outcome of ['accepted','unapplied'])test(`persistent loading read failure preserves discount hold and restart observes ${outcome} without reapplying`,async()=>{
+ const f=await navigationRun(),send=f.worker.chrome.tabs.sendMessage;f.state.job.discountCode='SYNTHETIC';let reads=0,gross;
+ f.worker.chrome.tabs.sendMessage=async(id,request)=>{
+  if(request.kind==='discount-apply'){
+   gross=structuredClone(f.merchant.basket);await send(id,request);f.worker.tabs.get(id).status='loading';
+   if(outcome==='unapplied')f.merchant.basket=structuredClone(gross);
+   throw Error('Unknown acknowledgement PRIVATE');
+  }
+  if(request.kind==='basket-read'&&f.merchant.counts.discount){if(++reads<=5)return {ok:true,value:structuredClone(gross)};throw Error('Unknown transport PRIVATE');}
+  return send(id,request);
+ };
+ await f.worker.alarm({name:'release'});
+ assert.equal(f.state.checkoutResult.reasonCode,'PAGE_READY_TIMEOUT');assert.equal(f.state.latestAction.reasonCode,'PAGE_READY_TIMEOUT');
+ assert.ok(reads>6);const original=structuredClone(f.state.checkoutRecords[0]);assert.equal(original.phase,'discount-dispatched');assert.ok(original.discountDispatchedAt);
+ assert.equal(original.discount,undefined);assert.equal(original.checkoutOpenDispatchedAt,undefined);assert.equal(original.paymentDispatchedAt,undefined);
+ assert.deepEqual(f.merchant.counts,{selection:2,discount:1,opening:0,fill:0,pay:0,removal:0});assert.equal(JSON.stringify(f.state).includes('PRIVATE'),false);
+ const steps=f.state.runHistory.at(-1).steps,stopped=steps.find(s=>s.name==='page-read-stopped');assert.equal(stopped.remainingMs,0);assert.ok(stopped.messageReadRetries>1);assert.equal(steps[0].name,'started','retry progress must not evict the original run boundary');
+ const restarted=await startWorker(f.merchant,f.state,'recreated');restarted.seedTab(original.tabId);
+ const result=await restarted.send({kind:'payCheckout'});
+ assert.equal(result.status,outcome==='accepted'?'confirmed':'stopped',result.error);
+ assert.equal(f.state.checkoutRecords[0].discountDispatchedAt,original.discountDispatchedAt);assert.deepEqual(f.state.checkoutRecords[0].slot,original.slot);assert.equal(f.merchant.counts.discount,1);assert.equal(f.merchant.counts.selection,2);
+ assert.equal(f.merchant.counts.pay,outcome==='accepted'?1:0);assert.equal(f.merchant.counts.opening,outcome==='accepted'?1:0);
+ if(outcome==='unapplied')assert.equal(f.state.checkoutRecords[0].phase,'discount-dispatched');
+});
+for(const change of ['extra-item','net-accounting','complete-error','authentication'])test(`post-discount read recovery refuses ${change} without opening or Pay`,async()=>{
+ const f=await navigationRun(),send=f.worker.chrome.tabs.sendMessage;f.state.job.discountCode='SYNTHETIC';let reads=0;
+ f.worker.chrome.tabs.sendMessage=async(id,request)=>{
+  if(request.kind==='discount-apply'){const response=await send(id,request);f.worker.tabs.get(id).status='loading';return response;}
+  if(request.kind==='basket-read'&&f.merchant.counts.discount){
+   if(++reads===1){if(change==='complete-error')f.worker.tabs.get(id).status='complete';if(change==='authentication')f.worker.tabs.get(id).url='https://tennistowerhamlets.com/verify-human';throw Error('Unknown PRIVATE');}
+   if(change==='extra-item')f.merchant.basket.items.push({...f.merchant.basket.items[0],court:4});
+   if(change==='net-accounting')f.merchant.basket.totalGBP='11.00';
+   if(change==='complete-error')throw Error('Unknown PRIVATE');
+  }
+  return send(id,request);
+ };
+ await f.worker.alarm({name:'release'});assert.equal(f.state.checkoutResult.status,'stopped');assert.equal(f.state.checkoutRecords[0].phase,'discount-dispatched');
+ assert.deepEqual(f.merchant.counts,{selection:2,discount:1,opening:0,fill:0,pay:0,removal:0});assert.equal(JSON.stringify(f.state).includes('PRIVATE'),false);
+ if(change==='complete-error')assert.equal(f.state.checkoutResult.reasonCode,'PAGE_TAB_ERROR');
+ if(change==='authentication')assert.equal(f.state.checkoutResult.reasonCode,'PAGE_AUTHENTICATION_REQUIRED');
+});
+
 for(const mode of ['reverted','lost-reply','transport-error','read-failure'])test(`selection failure keeps sanitized evidence and never selects another candidate after ${mode}`,async()=>{
  const f=await navigationRun(),send=f.worker.chrome.tabs.sendMessage;let attempted=false;
  f.worker.chrome.tabs.sendMessage=async(id,request)=>{

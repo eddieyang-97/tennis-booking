@@ -6,11 +6,21 @@ import {openVerifiedCheckout} from '../payment.js';
 import {readGrid} from '../grid-read.js';
 import {executeAction} from '../actions.js';
 import {failureFor} from '../failures.js';
+import {readPageState} from '../page-read.js';
 import {londonDay,addDays,slotKey,NAMES} from '../core.js';
 export const slot=()=>({venue:'victoria-park',date:addDays(londonDay(),1),court:1,start:'20:00',hours:2,totalGBP:'14.00'});
 export function basket(s=slot()){return {empty:false,items:[20,21].map(hour=>({venue:NAMES[s.venue],court:1,day:Number(s.date.slice(8)),month:Number(s.date.slice(5,7)),hour,priceGBP:'7.00'})),subtotalGBP:'14.00',discountGBP:'0.00',totalGBP:'14.00',paymentBoundary:true};}
 export const journal=()=>{const s=slot();return {slot:s,key:slotKey(s),status:'pending',phase:'awaiting-payment',checkoutTestOnly:true};};
 export const scenarios={
+ 'discount-loading-read-error-no-replay':async()=>{
+  const s=slot();let record={slot:s,key:slotKey(s),status:'pending',phase:'awaiting-payment',discountCode:'SYNTHETIC'},time=0,applies=0,reads=0;
+  const gross=basket(s),net={...gross,discountApplied:true,discountGBP:'2.00',totalGBP:'12.00'},url='https://tennistowerhamlets.com/basket',steps=[];
+  const tabs={get:async()=>({url,status:'loading'}),sendMessage:async()=>{if(!record.discountDispatchedAt)return {ok:true,value:gross};if(++reads<=5)return {ok:true,value:gross};if(reads===6)throw Error('Unclassified synthetic transport');return {ok:true,value:net};}};
+  const options={now:()=>time,delay:async ms=>time+=ms,timeoutMs:60000};
+  record=await ensureDiscount(record,{save:async r=>record=r,apply:async()=>{assert.ok(record.discountDispatchedAt);applies++;},read:async(remaining=60000)=>(await readPageState(tabs,url,{kind:'basket-read'},{...options,timeoutMs:remaining,tabId:42,navigate:false,observeLoadingMessageErrors:!!record.discountDispatchedAt,step:async(name,details)=>steps.push({name,...details})})).value},options);
+  assert.equal(record.discount.totalGBP,'12.00');assert.equal(applies,1);assert.equal(reads,7);assert.ok(time<60000);assert.ok(steps.some(s=>s.name==='page-message-read-retry'));
+  await ensureDiscount(record,{apply:async()=>assert.fail('No repeated code')});assert.equal(applies,1);
+ },
  'selection-reverted-empty-no-replay':async()=>{
   const s=slot();let records=[],clicks=0;
   const deps={load:async()=>structuredClone(records),save:async r=>records=structuredClone(r),read:async()=>({empty:true,items:[]}),select:async()=>{clicks++;throw Object.assign(Error('Sanitized selection timeout'),{reasonCode:'SELECTION_ACK_TIMEOUT',selectionDiagnostic:{dispatchedHours:1,acknowledgedHours:0,checkboxReverted:true,merchantOutcome:'unknown'}});}};

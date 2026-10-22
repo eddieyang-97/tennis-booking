@@ -1,6 +1,6 @@
 # Release notes
 
-This is the historical change log for the **active Chrome extension** in [`outputs/tennis-local/chrome-extension/`](../outputs/tennis-local/chrome-extension/). The authoritative source version is [`manifest.json`](../outputs/tennis-local/chrome-extension/manifest.json), **0.9.5** on the selection-diagnostics branch (21 October 2026), based on the v0.9.4 recovery work. Branch builds are not merged release claims.
+This is the historical change log for the **active Chrome extension** in [`outputs/tennis-local/chrome-extension/`](../outputs/tennis-local/chrome-extension/). The authoritative source version is [`manifest.json`](../outputs/tennis-local/chrome-extension/manifest.json), **0.9.6** on the discount-read recovery branch (22 October 2026), based on v0.9.5. Branch builds are not merged release claims.
 
 Notes below describe changes made *at each release*, not instructions to install or downgrade to older builds. Historical test counts and unverified behaviors are not current release-quality claims. For up-to-date setup, use the [project README](../README.md) and [extension usage guide](../outputs/tennis-local/chrome-extension/README.md). For original investigation and detailed timestamps, see [payment-system.md](payment-system.md).
 
@@ -18,6 +18,12 @@ Notes below describe changes made *at each release*, not instructions to install
 **Current acceptance limitation:** Source improvements and simulated tests do not establish an unattended successful midnight booking through paid receipt verification. Payment confirmation is also not proof that a reservation is still active after a cancellation.
 
 ## Changes by version
+
+### v0.9.6 — bounded post-discount message-read observation (22 October 2026)
+- Addresses a confirmed early-stop boundary in the installed v0.9.5 release: after five successful loading basket reads, an unclassified message failure escaped with approximately 54 seconds still available. Its exact Chrome exception and merchant discount outcome were not captured.
+- Discount reconciliation may observe the same trusted loading basket tab again under its remaining budget, without navigation or code replay. Authentication/route changes, closed/denied/invalidated contexts, complete-tab unknown errors and rejected basket evidence remain stops. Exact gross/discount/net authorization remains mandatory.
+- Adds sanitized bounded retry progress/counts and elapsed/remaining time, prevents diagnostic/storage failures being treated as transport errors, and rejects evidence arriving after the read deadline.
+- Permanent module/worker/named regressions cover recovery, persistence, ambiguity and restart with mutation-count assertions. A supplementary isolated Chromium case injects the unknown message fault; simulation does not establish the original transport cause, actual merchant discount success or unattended paid-booking acceptance. No installed-extension, live basket/journal or armed-job changes were performed.
 
 ### v0.9.5 — selection deadline and sanitized failure evidence (21 October 2026)
 - Replaces iteration-only selection waits with one monotonic elapsed deadline across both hours. Throttled callbacks stop on resumption without another hourly click; browser suspension itself cannot be time-bounded by this code.
