@@ -1,6 +1,6 @@
 # Release notes
 
-This is the historical change log for the **active Chrome extension** in [`outputs/tennis-local/chrome-extension/`](../outputs/tennis-local/chrome-extension/). The authoritative source version is [`manifest.json`](../outputs/tennis-local/chrome-extension/manifest.json), **0.9.3** on the checkout-navigation branch (20 October 2026). `main` contains the merged v0.9.1 stateful-worker milestone; branch builds are not merged release claims.
+This is the historical change log for the **active Chrome extension** in [`outputs/tennis-local/chrome-extension/`](../outputs/tennis-local/chrome-extension/). The authoritative source version is [`manifest.json`](../outputs/tennis-local/chrome-extension/manifest.json), **0.9.4** on the failed-checkout recovery branch (20 October 2026). `main` contains merged v0.9.3; branch builds are not merged release claims.
 
 Notes below describe changes made *at each release*, not instructions to install or downgrade to older builds. Historical test counts and unverified behaviors are not current release-quality claims. For up-to-date setup, use the [project README](../README.md) and [extension usage guide](../outputs/tennis-local/chrome-extension/README.md). For original investigation and detailed timestamps, see [payment-system.md](payment-system.md).
 
@@ -18,6 +18,13 @@ Notes below describe changes made *at each release*, not instructions to install
 **Current acceptance limitation:** Source improvements and simulated tests do not establish an unattended successful midnight booking through paid receipt verification. Payment confirmation is also not proof that a reservation is still active after a cancellation.
 
 ## Changes by version
+
+### v0.9.4 — explicit recovery of reference-less failed checkout opening (20 October 2026)
+- Adds a separate, owner-attested local archive for an ordinary checkout interrupted during opening before any reference, card-fill or payment intent. A verified empty basket and unchanged journal are required; original intent, phase and prior history are preserved. Merchant payment and cancellation remain unknown.
+- Popup guidance identifies eligible failures and provides an unchecked confirmation bound to the saved opening. Unpaid tests and payment holds keep their existing recovery paths; no merchant mutation or uncertain operation is replayed.
+- Offline unit/popup and actual-worker simulations cover stale/absent confirmation, changed evidence, nonempty/unreadable baskets, persistence failure before/after commit, restart and repeated recovery with zero merchant mutations. These passes do not establish live recovery acceptance or unattended midnight payment.
+- Local validation: 159 maintained tests, 120 worker fault tests, seven named scenarios and exact ZIP/source checks under PowerShell 7 and Windows PowerShell 5.1. The separate browser-milestone harness, staged with matching runtime files, passed its 12 existing isolated Chromium scenarios and two network-boundary tests; these do not specifically establish acceptance of the new archive control against the live merchant.
+- Installed-extension recovery verified on 20 October: after explicit owner confirmation of no payment and an observed empty merchant basket, v0.9.4 returned `failed-checkout-archived` and showed **No unresolved checkout**. The operation only observed the merchant and archived local state; payment/cancellation stayed unknown. No merchant mutation, payment or new arm was performed. This single recovery observation does not establish unattended booking acceptance.
 
 ### v0.9.3 — reuse scheduled grid and basket navigation (20 October 2026)
 - Retains the selected availability grid and freshly rechecks its route, exact candidate and original price before the single selection dispatch. The retained grid is not reloaded; a changed or unavailable tab stops instead of replaying selection.

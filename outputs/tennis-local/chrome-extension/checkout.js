@@ -1,7 +1,7 @@
 import {validateSlot,verifyBasket,sameSlot,basketEvidence} from './stage-rules.js';
 import {londonDay,addDays,slotKey,slotCourts} from './core.js';
 import {normalizeDiscount} from './discount.js';
-import {normalizeSettings} from './booking-settings.js';
+import {normalizeSettings,failedCheckoutIdentity} from './booking-settings.js';
 import {failureFor} from './failures.js';
 export const PAYMENT_TEST_SLOT={venue:'victoria-park',date:'2026-10-17',court:2,start:'07:00',hours:1,totalGBP:'2.50'};
 export function checkoutKey(slot,test=false,settings=null) {
@@ -113,4 +113,16 @@ export function reconcileClearedSelection(records,basket,{unpaidTestConfirmed=fa
 export function confirmCheckout(record,receipt) {
  if(!record || receipt?.status!=='confirmed' || receipt.key!==record.key || !/^\d+$/.test(receipt.reference||'') || (record.reference && receipt.reference!==record.reference))throw Error('A matching paid receipt has not been verified');
  return {...record,status:'confirmed',phase:'receipt-verified',reference:receipt.reference,receiptSource:receipt.source||'booking-receipt',bookingState:receipt.bookingState||'confirmed',confirmedAt:new Date().toISOString()};
+}
+export function assertFailedCheckoutAttestation(records,{noPaymentConfirmed=false,attestationIdentity=''}={}) {
+ const identity=failedCheckoutIdentity(records);
+ if(noPaymentConfirmed!==true)throw Error('Confirm that you did not submit payment for this failed checkout');
+ if(!identity||identity!==attestationIdentity)throw Error('Failed checkout changed or confirmation is stale; inspect the current journal');
+ return records.find(r=>r.status!=='confirmed');
+}
+export function archiveFailedCheckout(records,basket,options={}) {
+ const record=assertFailedCheckoutAttestation(records,options);
+ if(basket?.empty!==true||!Array.isArray(basket.items)||basket.items.length!==0)throw Error('Basket is not verified empty; no items were removed automatically');
+ const at=new Date().toISOString();
+ return {checkoutRecords:records.filter(r=>r!==record),abandoned:{...record,status:'abandoned',abandonedAt:at,abandonmentEvidence:{basis:'owner-attested-failed-checkout-no-payment',previousStatus:record.status,at,key:record.key,checkoutOpenDispatchedAt:record.checkoutOpenDispatchedAt,basketEmptyVerified:true,merchantPaymentState:'unknown',merchantCancellationState:'unknown'}}};
 }
