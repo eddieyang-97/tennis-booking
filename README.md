@@ -89,10 +89,11 @@ For focused local debugging, run the relevant suite; `npm run test:ci` remains t
 
 The [architecture and state guide](docs/architecture.md#components-and-ownership) maps the active source modules to their responsibilities, storage lifetimes and external boundaries. For the extension's operational controls, use the [extension guide](outputs/tennis-local/chrome-extension/README.md).
 
+Keep owner checkout journals and exported diagnostics private: exports redact known card/password/discount fields but can retain potentially sensitive booking references.
+
 ## Documentation
 
 - [Architecture and state diagrams](docs/architecture.md) — component map, checkout lifecycle and restart boundaries
-
 - [Extension setup, testing and recovery](outputs/tennis-local/chrome-extension/README.md) — **current operating instructions**
 - [Release notes](docs/release-notes.md) — version history and dated live acceptance evidence
 - [Payment-system investigation](docs/payment-system.md) — merchant DOM contracts, failures and historical technical findings; earlier hypotheses may be superseded
