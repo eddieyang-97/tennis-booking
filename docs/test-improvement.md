@@ -34,6 +34,8 @@ Recent fixes have been driven by live browser failures, manual extension reloads
 
 ## 1. Evidence and current architecture
 
+For the current component map, persistent state ownership and checkout phase diagram, see [architecture.md](architecture.md). The evidence and implementation observations below are retained in their original testing-plan context.
+
 ### Verified source behavior
 
 - `background.js` coordinates alarms, Chrome tabs/messages, checkout, recovery and persistent status; `checkout.js` and `payment.js` enforce many durable lifecycle guards.

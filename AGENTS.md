@@ -3,7 +3,7 @@
 ## Scope and source of truth
 
 - This file applies to the whole repository. The active product is the Chrome Manifest V3 extension under `outputs/tennis-local/chrome-extension/`; the Python files under `outputs/tennis-local/` are an inactive, blocked prototype. Do not revive or deploy them as the booking runner.
-- Read [README.md](README.md) for current architecture and booking policy, [the extension usage guide](outputs/tennis-local/chrome-extension/README.md) for operating/recovery controls, and [docs/payment-system.md](docs/payment-system.md) before changing checkout, payment, or reconciliation.
+- Read [README.md](README.md) for current booking policy, [docs/architecture.md](docs/architecture.md) for the component map and checkout state lifecycle, [the extension usage guide](outputs/tennis-local/chrome-extension/README.md) for operating/recovery controls, and [docs/payment-system.md](docs/payment-system.md) before changing checkout, payment, or reconciliation.
 - [docs/test-improvement.md](docs/test-improvement.md) is the roadmap for deterministic regression testing. [docs/distribution-flow.md](docs/distribution-flow.md) documents the gated friend beta and later Chrome Web Store options, **not** an authorization to ship a payment-enabled build now. [docs/release-notes.md](docs/release-notes.md) is historical release evidence, not the current specification. Check the current source and `manifest.json` rather than relying on old release descriptions.
 
 ## Non-negotiable safety invariants
@@ -34,7 +34,7 @@
 
 - Never commit or display card numbers, CVCs, passphrases, encrypted card files, cookies, access tokens, private browser profiles, full account pages, or raw owner diagnostic exports. Redact fixture data and logs; booking references can also be sensitive.
 - Preserve sanitized diagnostics that distinguish expected versus observed state, stage, mutation dispatch/acknowledgement, error category and the permitted recovery action. Do not log secret inputs or raw payment-page contents.
-- Keep the root README focused on current project facts and settings; the extension README on current usage/recovery; version history in `docs/release-notes.md`; merchant/payment technical contracts in `docs/payment-system.md`; test architecture and regression requirements in `docs/test-improvement.md`; and distribution gates in `docs/distribution-flow.md`.
+- Keep `docs/architecture.md` focused on current component ownership, durable state boundaries and lifecycle diagrams; the root README on current project facts and settings; the extension README on current usage/recovery; version history in `docs/release-notes.md`; merchant/payment technical contracts in `docs/payment-system.md`; test architecture and regression requirements in `docs/test-improvement.md`; and distribution gates in `docs/distribution-flow.md`.
 - Update the relevant documentation when behavior or acceptance evidence changes. Distinguish **implemented**, **simulated/tested**, **verified live**, and **still unverified**; do not copy forward stale test counts or release claims.
 
 ## Completion checklist

@@ -3,6 +3,7 @@
 This is the **operating guide** for the active Manifest V3 extension. The installed version is shown at the top of the popup; the source version is defined in [`manifest.json`](manifest.json) (**0.9.6**, discount-read recovery branch, 22 October 2026). A source change does not update an installed extension.
 
 - [Project overview and safety model](../../../README.md)
+- [Architecture and checkout state diagrams](../../../docs/architecture.md)
 - [Release history and observed live evidence](../../../docs/release-notes.md)
 - [Detailed payment investigation](../../../docs/payment-system.md)
 
