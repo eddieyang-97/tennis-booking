@@ -43,6 +43,8 @@ The popup initially suggests London today + 8 days; it does not automatically ch
 
 ## Execution and safety model
 
+For component ownership, the scheduled sequence, persistent state and a checkout lifecycle diagram, see the [architecture and state guide](docs/architecture.md). Detailed merchant recovery rules remain in the [payment-system reference](docs/payment-system.md).
+
 1. Five-minute preflight checks account/card readiness. At the release, the service worker checks the account, reads eligible court grids, and chooses an authorized candidate.
 2. It checks the basket, records selection intent, dispatches hourly selection **sequentially**, and validates stable basket contents: venue, playing date, each hour/court, original prices, totals and payment boundary.
 3. If requested, it applies and verifies a discount once. It opens card checkout only from a verified basket, then checks the net amount and provisional merchant reference before attempting Pay.
@@ -83,19 +85,13 @@ The build uses an explicit runtime file allowlist, creates an archive under igno
 
 For focused local debugging, run the relevant suite; `npm run test:ci` remains the optional full local gate after installing the pinned test browser (see [browser test instructions](outputs/tennis-local/chrome-extension/test/browser/README.md)). The browser harness substitutes only loopback merchant, fake card/clock and controlled alarm behavior into an isolated test bundle; the production ZIP retains the original runtime. These tests do not establish live midnight delivery, Stripe compatibility or unattended paid bookings.
 
-### Key source files
+### Code orientation
 
-| Area | Files in `chrome-extension/` |
-| --- | --- |
-| Scheduling and orchestration | `background.js`, `core.js`, `booking-settings.js` |
-| Court/basket adapters and validation | `content.js`, `stage-content.js`, `stage-rules.js` |
-| Checkout/payment and journal recovery | `checkout.js`, `payment.js`, `reconciliation.js`, `checkout-content.js`, `payment-content.js` |
-| Browser readiness, retry and diagnostics | `grid-read.js`, `page-read.js`, `retry.js`, `run-log.js`, `diagnostics.js` |
-| Secure local card and UI | `card-vault-core.js`, `card-content.js`, `popup.html`, `popup.js` |
-
-Storage is split between persistent `chrome.storage.local` (jobs, journals, results and run history) and trusted `chrome.storage.session` for the unlocked card. Keep owner journals and export files private: diagnostic exports redact known card/password/discount fields but retain potentially sensitive booking references.
+The [architecture and state guide](docs/architecture.md#components-and-ownership) maps the active source modules to their responsibilities, storage lifetimes and external boundaries. For the extension's operational controls, use the [extension guide](outputs/tennis-local/chrome-extension/README.md).
 
 ## Documentation
+
+- [Architecture and state diagrams](docs/architecture.md) — component map, checkout lifecycle and restart boundaries
 
 - [Extension setup, testing and recovery](outputs/tennis-local/chrome-extension/README.md) — **current operating instructions**
 - [Release notes](docs/release-notes.md) — version history and dated live acceptance evidence
