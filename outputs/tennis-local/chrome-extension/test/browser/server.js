@@ -23,6 +23,8 @@ export async function startMerchant(){
    state.counts.selection++;if(state.options.rejectSelection){res.writeHead(409,{'Content-Type':'application/json'});res.end(JSON.stringify({count:state.items.length}));return;}const item={hour:Number(url.searchParams.get('hour')),court:Number(url.searchParams.get('court'))};
    if(state.options.overwrite)state.items=[];state.items.push(item);
    if(state.options.selectionDelay)await new Promise(resolve=>setTimeout(resolve,state.options.selectionDelay));
+   // Synthetic committed mutation with a truncated response; no merchant claim.
+   if(state.options.loseSelectionResponse){res.writeHead(200,{'Content-Type':'application/json'});res.write('{"count":');await new Promise(resolve=>setTimeout(resolve,20));res.destroy();return;}
    res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({count:state.items.length}));return;
   }
   if(url.pathname.startsWith('/book/courts/')){

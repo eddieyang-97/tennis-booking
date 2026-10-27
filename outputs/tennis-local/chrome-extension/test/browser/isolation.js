@@ -10,7 +10,7 @@ export async function networkGate(origin){
  const proxy=http.createServer((req,res)=>{
   let target;try{target=new URL(req.url);}catch{}
   if(!target||target.origin!==origin){reject('http-egress',target?.host);res.writeHead(403);res.end('Denied by local test gate');return;}
-  const forwarded=http.request(target,{method:req.method,headers:req.headers},upstream=>{res.writeHead(upstream.statusCode,upstream.headers);upstream.pipe(res);});
+  const forwarded=http.request(target,{method:req.method,headers:req.headers},upstream=>{res.writeHead(upstream.statusCode,upstream.headers);upstream.on('aborted',()=>res.destroy());upstream.on('error',()=>res.destroy());upstream.pipe(res);});
   forwarded.on('error',()=>{res.writeHead(502);res.end();});req.pipe(forwarded);
  });
  proxy.on('connect',(req,socket)=>{socket.on('error',()=>{});reject('https-egress',req.url);socket.end('HTTP/1.1 403 Forbidden\r\n\r\n');});
