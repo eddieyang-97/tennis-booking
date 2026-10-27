@@ -98,6 +98,24 @@ try{
  assert.equal(rejected.phase,'selection-dispatched');assert.equal(rejected.selectionFailure.reasonCode,'SELECTION_ACK_TIMEOUT');
  assert.equal(merchant.state.counts.selection,1);assert.equal(merchant.state.counts.opening,0);assert.equal(merchant.state.counts.pay,0);
  reports.push({scenario:'actual-dom-selection-rejection-no-replay',outcome:'passed',evidence:'synthetic-409-checkbox-reversion',mutations:{...merchant.state.counts}});
+ // A 200 header followed by a lost JSON body can leave a committed fake-server
+ // item with no DOM acknowledgement. It must never authorize a second click.
+ await fresh('selection-response-lost-profile');merchant.state.options.loseSelectionResponse=true;
+ assert.equal((await send({kind:'check',day:'2026-10-25'})).status,'complete');
+ result=await send({kind:'prepareCheckout'});assert.equal(result.status,'stopped');assert.equal(result.reasonCode,'BASKET_MISMATCH');
+ const uncertainSelection=(await send({kind:'status'})).checkoutRecords[0];
+ assert.equal(uncertainSelection.selectionFailure.reasonCode,'SELECTION_ACK_TIMEOUT');
+ assert.equal(uncertainSelection.basketDiagnostic.expectedItems,2);assert.equal(uncertainSelection.basketDiagnostic.actualItems,1);
+ assert.equal(uncertainSelection.phase,'selection-dispatched');assert.equal(merchant.state.items.length,1);
+ result=await send({kind:'prepareCheckout'});assert.equal(result.status,'stopped');assert.equal(result.reasonCode,'BASKET_MISMATCH');
+ assert.equal(merchant.state.counts.selection,1);assert.equal(merchant.state.counts.opening,0);assert.equal(merchant.state.counts.fill,0);assert.equal(merchant.state.counts.pay,0);
+ const retainedSelection=(await send({kind:'status'})).checkoutRecords[0];
+ assert.equal(retainedSelection.key,uncertainSelection.key);assert.deepEqual(retainedSelection.slot,uncertainSelection.slot);
+ assert.equal(retainedSelection.status,'pending');assert.equal(retainedSelection.phase,'selection-dispatched');
+ assert.equal(retainedSelection.recoveryRequired,true);assert.equal(retainedSelection.basketVerifiedAt,undefined);
+ assert.deepEqual(retainedSelection.selectionFailure,uncertainSelection.selectionFailure);
+ assert.equal(retainedSelection.selectionFailure.reasonCode,'SELECTION_ACK_TIMEOUT');
+ reports.push({scenario:'actual-dom-selection-committed-response-lost-no-replay',outcome:'passed',evidence:'hypothetical-server-commit-truncated-json',mutations:{...merchant.state.counts}});
  console.log('Browser gate: synthetic selection rejection held without replay');
  // Terminate only the actual MV3 worker while a fake card fill has no reply.
  // Page readiness supplied by another source must not authorize automatic Pay.

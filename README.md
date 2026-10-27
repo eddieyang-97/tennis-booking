@@ -93,6 +93,7 @@ Keep owner checkout journals and exported diagnostics private: exports redact kn
 
 ## Documentation
 
+- [Merchant observation and REA evaluation](docs/merchant-observation.md) — isolated request/initiator comparisons, tool limits and remaining live-evidence gaps
 - [Architecture and state diagrams](docs/architecture.md) — component map, checkout lifecycle and restart boundaries
 - [Extension setup, testing and recovery](outputs/tennis-local/chrome-extension/README.md) — **current operating instructions**
 - [Release notes](docs/release-notes.md) — version history and dated live acceptance evidence

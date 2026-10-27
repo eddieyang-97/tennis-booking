@@ -24,3 +24,23 @@ test('another loopback port is outside the sole merchant boundary',async()=>{
   gate.assertClean();assert.equal(gate.denied.length,1);
  }finally{await gate.close();}
 });
+
+test('an allowed upstream truncation reaches the browser side without hanging',{timeout:5000},async()=>{
+ const server=http.createServer((_request,response)=>{
+  response.writeHead(200,{'Content-Type':'application/json'});response.write('{"count":');
+  setTimeout(()=>response.destroy(),30);
+ });
+ await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+ const origin=`http://127.0.0.1:${server.address().port}`,gate=await networkGate(origin);
+ try{
+  const outcome=await new Promise((resolve,reject)=>{
+   const request=http.request(gate.proxy,{path:origin+'/truncated'},response=>{
+    response.resume();response.on('aborted',()=>resolve('aborted'));response.on('error',()=>{});
+    response.on('end',()=>resolve('complete'));
+   });
+   request.setTimeout(2000,()=>request.destroy(Error('Proxy failed to propagate upstream abort')));
+   request.on('error',reject);request.end();
+  });
+  assert.equal(outcome,'aborted');gate.assertClean();
+ }finally{await gate.close();server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}
+});
