@@ -253,12 +253,12 @@ for(const readNumber of [3,4])for(const change of ['extra-item','price','route']
  assert.equal(f.navigations.filter(n=>n.kind==='update'&&n.url.endsWith('/basket')).length,2,'exactly one pre-payment refresh, no additional reload after the mismatch');
 });
 
-for(const option of ['partial','discount','fallback-venue','empty'])test(`navigation reuse preserves ${option} release behavior`,async()=>{
+for(const option of ['partial','discount','fallback-venue','third-venue','empty'])test(`navigation reuse preserves ${option} release behavior`,async()=>{
  const f=await navigationRun(),original=f.worker.chrome.tabs.sendMessage;
  if(option==='partial')f.merchant.options.partial=true;
  if(option==='discount')f.state.job.discountCode='SYNTHETIC';
  f.worker.chrome.tabs.sendMessage=async(id,request)=>{
-  if(request.kind==='grid'&&(option==='empty'||option==='fallback-venue'&&request.venue==='bethnal-green-gardens'))return {ok:true,rows:[]};
+  if(request.kind==='grid'&&(option==='empty'||option==='fallback-venue'&&request.venue==='bethnal-green-gardens'||option==='third-venue'&&request.venue!=='victoria-park'))return {ok:true,rows:[]};
   return original(id,request);
  };
  await f.worker.alarm({name:'release'});
@@ -269,7 +269,8 @@ for(const option of ['partial','discount','fallback-venue','empty'])test(`naviga
   assert.equal(f.merchant.counts.pay,1);assert.equal(f.merchant.counts.opening,1);
   assert.equal(f.merchant.counts.discount,option==='discount'?1:0);
   if(option==='partial'){assert.equal(f.state.checkoutResult.slot.hours,1);assert.equal(f.state.checkoutResult.totalPaidGBP,'7.00');}
-  if(option==='fallback-venue')assert.equal(f.state.checkoutResult.slot.venue,'victoria-park');
+  if(option==='fallback-venue')assert.equal(f.state.checkoutResult.slot.venue,'st-johns-park');
+  if(option==='third-venue')assert.equal(f.state.checkoutResult.slot.venue,'victoria-park');
  }
 });
 

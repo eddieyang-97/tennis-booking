@@ -7,8 +7,9 @@
 <label>Playing date <input id="day" type="date"></label>
 <p id="releaseHelp" class="note"></p>
 <fieldset><legend>Booking preferences</legend>
-<label>First-choice venue <select id="firstVenue"><option value="bethnal-green-gardens">Bethnal Green Gardens</option><option value="victoria-park">Victoria Park</option></select></label>
-<label>Fallback venue <select id="secondVenue"><option value="">None</option><option value="bethnal-green-gardens">Bethnal Green Gardens</option><option value="victoria-park" selected>Victoria Park</option></select></label>
+<label>First-choice venue <select id="firstVenue"><option value="bethnal-green-gardens">Bethnal Green Gardens</option><option value="st-johns-park">St Johns Park</option><option value="victoria-park">Victoria Park</option></select></label>
+<label>Second-choice venue <select id="secondVenue"><option value="">None</option><option value="bethnal-green-gardens">Bethnal Green Gardens</option><option value="st-johns-park">St Johns Park</option><option value="victoria-park">Victoria Park</option></select></label>
+<label>Third-choice venue <select id="thirdVenue"><option value="">None</option><option value="bethnal-green-gardens">Bethnal Green Gardens</option><option value="st-johns-park">St Johns Park</option><option value="victoria-park" selected>Victoria Park</option></select></label>
 <label>Earliest start (London) <select id="earliestStart"></select></label>
 <label>Latest finish (London) <select id="latestFinish"></select></label>
 <label>Desired hours <select id="preferredHours"><option value="2">2 hours</option><option value="1">1 hour</option></select></label>
@@ -36,7 +37,7 @@
 <p><button id="assessRecovery">Assess recovery (read only)</button> Inspects the pending journal and open existing-purchase pages. Does not pay, cancel, remove items or infer a purchase from its price.</p>
 <p><button id="testDiscountCheckout">Test discount and open checkout (no payment)</button> First check availability using your chosen settings. This selects a candidate, applies the optional code above and stops at the card page. Changing the code or checked date automatically clears a verified unpaid test first. It does not fill or submit card details.</p>
 <p><button id="resetUnpaidTest">Clear unfinished unpaid test</button> Removes only verified test items. Paid or uncertain checkouts remain protected.</p>
-<p><button id="daytimeBasketTest">Test 09:00–11:00 basket (no payment)</button> Uses the playing date above, including weekends, within the released booking window. Searches both venues for two hours, up to £14. Inspect the basket, remove both items manually, then reconcile the cleared selection.</p>
+<p><button id="daytimeBasketTest">Test 09:00–11:00 basket (no payment)</button> Uses the playing date above, including weekends, within the released booking window. Searches supported venues for two hours, up to £14. Inspect the basket, remove both items manually, then reconcile the cleared selection.</p>
 <p><button id="check">Check availability now</button> <button id="resume">Resume after site verification</button></p>
 <p><button id="prepareCheckout">Prepare or resume checkout</button> <button id="payCheckout">Pay or reconcile checkout</button> <button id="verifyPayment">Verify paid receipt</button></p>
 <label>Manually paid booking reference <input id="manualReference" type="text" maxlength="22" autocomplete="off" placeholder="Reference from your confirmation"></label>

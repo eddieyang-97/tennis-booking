@@ -1,10 +1,11 @@
 import {SUPPORTED_VENUES,normalizeSettings,hourValue,settingsCap} from './booking-settings.js';
 export const VENUES = [...SUPPORTED_VENUES];
-export const NAMES = {'bethnal-green-gardens':'Bethnal Green Gardens','victoria-park':'Victoria Park'};
+export const NAMES = {'bethnal-green-gardens':'Bethnal Green Gardens','st-johns-park':'St Johns Park','victoria-park':'Victoria Park'};
 // Preserve legacy single-court keys and journals. Mixed bookings add an
 // explicit court per hour; the first court remains available for old displays.
 export function slotCourts(slot) {
  const courts=Object.hasOwn(slot,'courts')?slot.courts:Array(slot.hours).fill(slot.court);
+ if(slot.venue==='st-johns-park'&&Array.isArray(courts)&&courts.some(c=>![1,2].includes(c)))throw Error('Invalid St Johns court identity');
  if(!Array.isArray(courts)||courts.length!==slot.hours||courts[0]!==slot.court||!courts.every(c=>[1,2,3,4].includes(c)))throw Error('Invalid hourly court identity');
  return courts;
 }
@@ -47,6 +48,7 @@ export function candidates(rows, venue, day, {basketOnly=false,settings=null}={}
         if (/^(Tennis court|Court)\b/.test(box.label)) throw Error('Unknown court price');
         continue;
       }
+      if(venue==='st-johns-park'&&Number(match[1])>2)throw Error('Unknown St Johns court');
       const key = `${hour}:${match[1]}`;
       if (available.has(key)) throw Error('Duplicate court cell');
       available.set(key,Math.round(Number(match[2])*100));

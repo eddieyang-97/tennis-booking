@@ -15,7 +15,7 @@ async function boundedRead(operation,ms,timers) {
 }
 // Only reads court grids. No selection, checkout, Stripe or payment messages.
 export async function readGrid(tabs,url,request,{tabId=null,retain=false,navigate=true,attempts=2,timeoutMs=20000,retryDelayMs=500,messageTimeoutMs=2000,delay=ms=>new Promise(r=>setTimeout(r,ms)),now=Date.now,timers=globalThis,step=async()=>{}}={}) {
- if(request.kind!=='grid'||!['bethnal-green-gardens','victoria-park'].includes(request.venue)||url!==`${BASE}/book/courts/${request.venue}/${request.day}#book`)throw Error('Invalid read-only grid request');
+ if(request.kind!=='grid'||!['bethnal-green-gardens','st-johns-park','victoria-park'].includes(request.venue)||url!==`${BASE}/book/courts/${request.venue}/${request.day}#book`)throw Error('Invalid read-only grid request');
  if(!navigate&&tabId===null)throw Error('Existing grid read requires a tab');
  if(!navigate)attempts=1; // Observe this document only; never reload a handoff.
  let tab,last={loadState:'unknown',routeCategory:'loading',readState:'not-probed'};

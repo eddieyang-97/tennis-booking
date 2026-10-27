@@ -37,7 +37,7 @@ try{
  console.log('Browser gate: popup ready');
  // Exercise the actual popup form, saved immutable policy, alarms and adapters.
  await popup.locator('#day').fill('2026-10-25');await popup.locator('#armPayment').click();await popup.waitForFunction(()=>document.querySelector('#result').textContent.includes('"armed"'));
- await popup.locator('#firstVenue').selectOption('victoria-park');await popup.locator('#secondVenue').selectOption('');await popup.locator('#maxTotalGBP').fill('12.00');await popup.locator('#saveSettings').click();await popup.waitForFunction(()=>document.querySelector('#result').textContent.includes('preferences-saved'));
+ await popup.locator('#firstVenue').selectOption('victoria-park');await popup.locator('#secondVenue').selectOption('');await popup.locator('#thirdVenue').selectOption('');await popup.locator('#maxTotalGBP').fill('12.00');await popup.locator('#saveSettings').click();await popup.waitForFunction(()=>document.querySelector('#result').textContent.includes('preferences-saved'));
  const job=(await send({kind:'status'})).job;assert.equal(job.settings.venues[0],'bethnal-green-gardens');assert.equal(job.settings.maxTotalGBP,'14.00');
  console.log('Browser gate: settings snapshot verified');
  await worker.evaluate(async()=>{await globalThis.__testAlarm({name:'prepare'});const {job}=await chrome.storage.local.get('job');globalThis.__testClock=job.when;});
@@ -68,6 +68,14 @@ try{
  await page.goto(merchant.origin+'/purchase/card/100001');response=await read(page,'checkout-progress');assert.equal(response.value.stage,'existing-purchase');assert.equal(response.value.cancellationSupported,false);assert.equal(merchant.state.counts.pay,1);
  reports.push({scenario:'actual-dom-paid-duplicate-existing-purchase',outcome:'passed',evidence:'local-fake-merchant'});
  console.log('Browser gate: account DOM fixtures verified');
+ await fresh('st-johns-profile');
+ assert.equal(await popup.locator('#secondVenue').inputValue(),'st-johns-park');assert.equal(await popup.locator('#thirdVenue').inputValue(),'victoria-park');
+ const stPreferences=await send({kind:'saveSettings',settings:{venues:['st-johns-park']}});
+ let stResult=await send({kind:'check',day:'2026-10-25',settings:stPreferences.settings});assert.equal(stResult.status,'complete',stResult.error);
+ stResult=await send({kind:'prepareCheckout'});assert.equal(stResult.status,'awaiting-payment',stResult.error);
+ const stJohns=(await send({kind:'status'})).checkoutRecords[0];assert.equal(stJohns.slot.venue,'st-johns-park');assert.equal(stJohns.slot.hours,2);
+ assert.equal(merchant.state.counts.selection,2);assert.equal(merchant.state.counts.opening,0);assert.equal(merchant.state.counts.pay,0);
+ reports.push({scenario:'st-johns-selection-exact-basket',outcome:'passed',evidence:'synthetic-venue-layout',mutations:{...merchant.state.counts}});
  await fresh('unpaid-profile');
  merchant.state.options.selectionDelay=80;merchant.state.options.checkoutDelay=1000;
  let result=await send({kind:'check',day:'2026-10-25'});assert.equal(result.status,'complete',result.error);

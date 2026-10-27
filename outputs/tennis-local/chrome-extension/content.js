@@ -12,7 +12,7 @@ chrome.runtime.onMessage.addListener((request, sender, respond) => {
     }
     if(request.kind==='ready') {
       const isAccount=path==='/account' && /^Welcome back,/.test(document.querySelector('h1')?.textContent.trim() || '');
-      const isGrid=/^\/book\/courts\/(bethnal-green-gardens|victoria-park)(?:\/\d{4}-\d{2}-\d{2})?$/.test(path) && !!document.querySelector('#book table');
+      const isGrid=/^\/book\/courts\/(bethnal-green-gardens|st-johns-park|victoria-park)(?:\/\d{4}-\d{2}-\d{2})?$/.test(path) && !!document.querySelector('#book table');
       if(!isAccount && !isGrid) throw Error('Normal account or court page is not ready; inspect the tab manually');
       respond({ok:true});return;
     }
@@ -23,7 +23,7 @@ chrome.runtime.onMessage.addListener((request, sender, respond) => {
       if (!/^Welcome back,/.test(heading)) {respond({ok:false,error:'Account login marker missing; inspect the retained tab',humanRequired:true,page:'account'});return;}
       respond({ok:true,signedIn:true}); return;
     }
-    if (!['bethnal-green-gardens','victoria-park'].includes(request.venue) ||
+    if (!['bethnal-green-gardens','st-johns-park','victoria-park'].includes(request.venue) ||
         !/^\d{4}-\d{2}-\d{2}$/.test(request.day)) throw Error('Invalid court request');
     if (location.pathname!==`/book/courts/${request.venue}/${request.day}`) throw Error('Requested date was not opened');
     const book=document.querySelector('#book');
