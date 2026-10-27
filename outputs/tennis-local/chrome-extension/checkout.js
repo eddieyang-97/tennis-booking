@@ -17,7 +17,7 @@ export function checkoutCandidate(results,settings=null) {
  throw Error('No available candidate within authorized price limits');
 }
 export function basketTestKey(slot) {
- if(!['bethnal-green-gardens','victoria-park'].includes(slot.venue)||slot.start!=='09:00'||slot.hours!==2||!/^\d+\.\d{2}$/.test(slot.totalGBP)||+slot.totalGBP<=0||+slot.totalGBP>14)throw Error('Invalid daytime basket test');
+ if(!['bethnal-green-gardens','st-johns-park','victoria-park'].includes(slot.venue)||slot.start!=='09:00'||slot.hours!==2||!/^\d+\.\d{2}$/.test(slot.totalGBP)||+slot.totalGBP<=0||+slot.totalGBP>14)throw Error('Invalid daytime basket test');
  addDays(slot.date,0);
  if(slot.date<londonDay()||slot.date>addDays(londonDay(),7))throw Error('Basket test outside booking window');
  return slotKey(slot);

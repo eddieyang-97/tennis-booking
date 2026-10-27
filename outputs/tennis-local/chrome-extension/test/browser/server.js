@@ -1,5 +1,5 @@
 import http from 'node:http';
-const venueName=venue=>venue==='victoria-park'?'Victoria Park':'Bethnal Green Gardens';
+const venueName=venue=>venue==='victoria-park'?'Victoria Park':venue==='st-johns-park'?'St Johns Park':'Bethnal Green Gardens';
 const shell=(body,script='')=>`<!doctype html><meta charset="utf-8"><h1>${body.heading||'Basket'}</h1><a id="menu-basket" data-items="${body.count||0}" href="/basket">Basket</a>${body.html||''}${script?`<script src="${script}"></script>`:''}`;
 const id=hour=>String(hour).padStart(32,'0');
 export async function startMerchant(){

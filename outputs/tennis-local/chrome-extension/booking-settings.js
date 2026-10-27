@@ -1,4 +1,4 @@
-export const SUPPORTED_VENUES=['bethnal-green-gardens','victoria-park'];
+export const SUPPORTED_VENUES=['bethnal-green-gardens','st-johns-park','victoria-park'];
 export const DEFAULT_SETTINGS={schemaVersion:1,venues:[...SUPPORTED_VENUES],earliestStart:'20:00',latestFinish:'22:00',preferredHours:2,minHours:1,maxTotalGBP:'14.00',maxOneHourGBP:'7.00',allowCourtSwitch:true};
 export function gbpPence(value) {
  if(typeof value!=='string'||!/^\d{1,4}(?:\.\d{1,2})?$/.test(value))throw Error('Enter a GBP amount with at most two decimal places');
@@ -15,7 +15,7 @@ export function normalizeSettings(value=DEFAULT_SETTINGS) {
  if(Object.hasOwn(value,'venues')&&!Array.isArray(value.venues))throw Error('Choose supported venues');
  const s={...DEFAULT_SETTINGS,...value,venues:[...(value.venues||DEFAULT_SETTINGS.venues)]};
  if(s.schemaVersion!==1)throw Error('Unsupported booking settings version');
- if(!Array.isArray(value.venues??DEFAULT_SETTINGS.venues)||s.venues.length<1||s.venues.length>2||new Set(s.venues).size!==s.venues.length||s.venues.some(venue=>!SUPPORTED_VENUES.includes(venue)))throw Error('Choose one or two distinct supported venues');
+ if(!Array.isArray(value.venues??DEFAULT_SETTINGS.venues)||s.venues.length<1||s.venues.length>3||new Set(s.venues).size!==s.venues.length||s.venues.some(venue=>!SUPPORTED_VENUES.includes(venue)))throw Error('Choose one to three distinct supported venues');
  if(![1,2].includes(s.preferredHours)||![1,2].includes(s.minHours)||s.minHours>s.preferredHours)throw Error('Choose desired/minimum duration of one or two hours');
  if(typeof s.allowCourtSwitch!=='boolean')throw Error('Invalid court-switch preference');
  const start=hourValue(s.earliestStart),end=hourValue(s.latestFinish,{end:true});

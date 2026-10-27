@@ -14,7 +14,7 @@ function checkoutReceipt(slot,key,expectedReference) {
  const text=document.querySelector('main')?.innerText || document.body.innerText;
  if(/provisional/i.test(text) || !/^(Booking confirmation|Booking confirmed|Payment successful)$/i.test(heading))return {status:'awaiting-payment'};
  const reference=/(?:booking reference|booking ref(?:erence)?|ref)\s*[:#]\s*(\d+)/i.exec(text)?.[1];
- const venue=slot.venue==='victoria-park'?'Victoria Park':'Bethnal Green Gardens';
+ const venue=({'bethnal-green-gardens':'Bethnal Green Gardens','st-johns-park':'St Johns Park','victoria-park':'Victoria Park'})[slot.venue];
  const date=new Date(slot.date+'T12:00:00Z'),day=date.getUTCDate();
  const courtPattern=new RegExp(`(?:Tennis court|Court)\\s+${slot.court}(?!\\d)`,'i');
  const hour=+slot.start.slice(0,2);
@@ -26,12 +26,12 @@ function checkoutReceipt(slot,key,expectedReference) {
  const months=['January','February','March','April','May','June','July','August','September','October','November','December'];
  const lines=text.split(/\r?\n/).map(line=>line.trim()).filter(Boolean);
  const dateShape=/^(\d{1,2})(?:st|nd|rd|th)?\s+(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{4})$/i;
- const bookingContext=line=>/^(?:(?:Victoria Park|Bethnal Green Gardens)(?:\s+Court\s+\d+)?|(?:Tennis court|Court)\s+\d+)$/i.test(line);
+ const bookingContext=line=>/^(?:(?:Victoria Park|Bethnal Green Gardens|St Johns Park)(?:\s+Court\s+\d+)?|(?:Tennis court|Court)\s+\d+)$/i.test(line);
  // Labelled playing dates, or the legacy standalone date immediately after
  // venue/court details. Payment/creation metadata is not booking identity.
  const dates=receiptFields(lines,/^(?:Playing date|Date of play|Court date)\s*:\s*(.*)$/i,dateShape,previous=>bookingContext(previous));
  const courts=[...text.matchAll(/\b(?:Tennis court|Court)\s+(\d+)\b/gi)].map(m=>+m[1]);
- const venues=['Victoria Park','Bethnal Green Gardens'].filter(name=>text.includes(name));
+ const venues=['Victoria Park','Bethnal Green Gardens','St Johns Park'].filter(name=>text.includes(name));
  const durations=[...text.matchAll(/\bduration\s*:\s*(\d+)\s*hours?\b/gi)].map(m=>+m[1]);
  const minute=m=>(+m[1]%12+(/pm/i.test(m[3])?12:0))*60+(+m[2]);
  const timeShape=/^((?:1[0-2]|[1-9])):([0-5]\d)\s*(am|pm)(?:\s*[–—-]\s*((?:1[0-2]|[1-9])):([0-5]\d)\s*(am|pm))?$/i;

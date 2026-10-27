@@ -1,6 +1,6 @@
 # Chrome extension: setup, testing and recovery
 
-This is the **operating guide** for the active Manifest V3 extension. The installed version is shown at the top of the popup; the source version is defined in [`manifest.json`](manifest.json) (**0.9.6**, discount-read recovery branch, 22 October 2026). A source change does not update an installed extension.
+This is the **operating guide** for the active Manifest V3 extension. The installed version is shown at the top of the popup; the source version is defined in [`manifest.json`](manifest.json) (**0.9.7**, St Johns venue support, 27 October 2026). A source change does not update an installed extension.
 
 - [Project overview and safety model](../../../README.md)
 - [Architecture and checkout state diagrams](../../../docs/architecture.md)
@@ -23,7 +23,7 @@ An extension reload or Chrome restart **locks the local payment card session**, 
 1. Select **Set up or unlock card file**. Create `tennis-card.encrypted.json` using card number, expiry, CVC, billing postcode and a passphrase of at least six characters, or unlock an existing file using its original passphrase. Store the file **outside the repository**.
 2. Return to the popup and check for **Local card: unlocked for this Chrome session**.
 3. Choose a playing date whose London-midnight release is in the future. The popup suggests London today + 8 days; it does not auto-shift weekdays.
-4. Set first/fallback venue, earliest start/latest finish (whole hours), desired and minimum hours (1 or 2), court switching and gross price caps. The defaults are BGG then Victoria Park; 20:00–22:00, prefer 2 hours/accept 1; £14 total and £7 one-hour maximum.
+4. Set first/second/third-choice venues, earliest start/latest finish (whole hours), desired and minimum hours (1 or 2), court switching and gross price caps. The defaults are BGG, then St Johns Park, then Victoria Park; 20:00–22:00, prefer 2 hours/accept 1; £14 total and £7 one-hour maximum.
 5. Optionally enter a discount code (up to 10 supported characters). Click **Arm midnight booking and payment**. The job saves a snapshot of preferences and the code; editing fields or saving preferences later does not change that armed job. Re-arming replaces an earlier future alarm only after its safety guards pass.
 6. Keep Chrome open and the laptop awake, and avoid reloading the extension after unlocking the card.
 
@@ -112,3 +112,5 @@ npm test
 ~~~
 
 This runs the Node `node:test` suite for business rules, adapters and mocked worker flows. It does **not** establish live merchant/midnight acceptance. Build the runtime ZIP with [`build.ps1`](../../../build.ps1) from the repository root. For historical fixes see [release notes](../../../docs/release-notes.md); for the plan to replace manual live-test cycles with deterministic integration tests see [test-improvement.md](../../../docs/test-improvement.md).
+
+St Johns support (v0.9.7): existing saved preferences and armed jobs are preserved. To include St Johns in an existing setup, choose BGG first, St Johns second and Victoria third, save preferences, then arm a new job. The public venue slug is verified; its grid currently redirects unauthenticated requests to human verification, so venue DOM compatibility remains tested with synthetic fixtures rather than live acceptance.

@@ -7,7 +7,7 @@ function basketSummary() {
   const item=document.getElementById(a.getAttribute('href').slice(1));
   if(!item)throw Error('Basket item layout changed');
   const text=item.innerText;
-  const court=/(?:Tennis court|Court) ([1-4])(?!\d)/.exec(text),venue=/Bethnal Green Gardens|Victoria Park/.exec(text),time=/(\d+)(?:st|nd|rd|th) (\w{3})\s*\|\s*(\d+):00(am|pm)\s*[–-]\s*(\d+):59(am|pm)/.exec(text),price=/£\s*(\d+\.\d{2})/.exec(text);
+  const court=/(?:Tennis court|Court) ([1-4])(?!\d)/.exec(text),venue=/Bethnal Green Gardens|St Johns Park|Victoria Park/.exec(text),time=/(\d+)(?:st|nd|rd|th) (\w{3})\s*\|\s*(\d+):00(am|pm)\s*[–-]\s*(\d+):59(am|pm)/.exec(text),price=/£\s*(\d+\.\d{2})/.exec(text);
   if(!court||!venue||!time||!price)throw Error('Unknown basket identity or duration');
   if(time[3]!==time[5]||time[4]!==time[6])throw Error('Unknown basket time range');
   return {court:+court[1],venue:venue[0],day:+time[1],month:['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'].indexOf(time[2])+1,hour:(+time[3]%12)+(time[4]==='pm'?12:0),priceGBP:price[1]};
@@ -65,8 +65,9 @@ async function selectSequentially(s,timeoutMs=15000) {
  try {
   const courts=Object.hasOwn(s,'courts')?s.courts:Array(s.hours).fill(s.court);
   if(![1,2].includes(s.hours)||!Array.isArray(courts)||courts.length!==s.hours||courts[0]!==s.court||!courts.every(c=>[1,2,3,4].includes(c)))throw Error('Invalid hourly court identity');
+  if(s.venue==='st-johns-park'&&courts.some(c=>![1,2].includes(c)))throw Error('Invalid St Johns court identity');
   const findCell=i=>{
-   if(!['bethnal-green-gardens','victoria-park'].includes(s.venue)||location.pathname!==`/book/courts/${s.venue}/${s.date}`)throw stop('SELECTION_PAGE_CHANGED','Wrong selection page');
+   if(!['bethnal-green-gardens','st-johns-park','victoria-park'].includes(s.venue)||location.pathname!==`/book/courts/${s.venue}/${s.date}`)throw stop('SELECTION_PAGE_CHANGED','Wrong selection page');
    const d=new Date(s.date+'T12:00:00Z'),book=document.querySelector('#book');
    const weekday=new Intl.DateTimeFormat('en-GB',{weekday:'long',timeZone:'UTC'}).format(d),month=new Intl.DateTimeFormat('en-GB',{month:'long',year:'numeric',timeZone:'UTC'}).format(d);
    if(!book?.textContent.includes(`${weekday} ${d.getUTCDate()}`)||!book.textContent.includes(month))throw stop('SELECTION_PAGE_CHANGED','Visible date mismatch');

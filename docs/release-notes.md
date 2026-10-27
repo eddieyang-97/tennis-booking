@@ -199,3 +199,7 @@ The PR #4 Chromium gate is ported onto the current v0.9.5 runtime without changi
 - [Testing reliability proposal](test-improvement.md)
 - [Current booking policy](../README.md#default-booking-policy) — implemented settings and immutable job rules
 - [Settings and discount regression matrix](test-improvement.md#5-required-scenario-matrix) — requirements consolidated from the v0.8.0 settings specification
+
+## v0.9.7 — St Johns Park (27 October 2026)
+
+Adds St Johns Park and a third ordered venue preference, defaulting to BGG → St Johns → Victoria. Existing saved/armed settings are not widened. Grid, selection, basket and receipt identities recognize St Johns; courts are limited to 1–2. Public venue identity verified from Courtside’s courts directory; booking page redirected to human verification. Synthetic Node/worker/browser coverage is not live venue or midnight acceptance. No live mutation performed.

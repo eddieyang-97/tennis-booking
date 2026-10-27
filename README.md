@@ -2,7 +2,7 @@
 
 A Manifest V3 Chrome extension that checks and attempts to book tennis courts on [Tower Hamlets Courtside](https://tennistowerhamlets.com/) at the London midnight release, with configurable preferences, strict basket/payment verification, a local encrypted card file and recovery of uncertain payments.
 
-**Active implementation:** [`outputs/tennis-local/chrome-extension/`](outputs/tennis-local/chrome-extension/) · **Version:** [`0.9.6`](outputs/tennis-local/chrome-extension/manifest.json), discount-read recovery branch (22 October 2026), based on the v0.9.5 selection-diagnostics work. This branch is not a merged release claim.
+**Active implementation:** [`outputs/tennis-local/chrome-extension/`](outputs/tennis-local/chrome-extension/) · **Version:** [`0.9.7`](outputs/tennis-local/chrome-extension/manifest.json), St Johns venue support (27 October 2026). This branch is not a merged release claim.
 
 **Release status:** In active development, **not yet verified for unattended end-to-end midnight payment**. A real £2.50 one-hour card payment and its subsequent account-purchase reconciliation were verified on 13 October. Live two-hour basket selection was verified, but an automated two-hour Pay and a complete unattended midnight booking have not been established. See [release notes and live-evidence limits](docs/release-notes.md).
 
@@ -26,7 +26,7 @@ All preferences below are configurable in the popup. The saved job's settings sn
 | Setting | Default / behavior |
 | --- | --- |
 | Playing date | Any day of the week; explicitly armed before its seven-day-early release |
-| Venues | Bethnal Green Gardens first, Victoria Park second; fallback venue is optional |
+| Venues | Bethnal Green Gardens → St Johns Park → Victoria Park; second/third choices are optional |
 | Time | Whole-hour starts, default window **20:00–22:00 London**; every booked hour must fit within the selected window |
 | Duration | Prefer **2 hours**, accept **1 hour** by default; configurable minimum |
 | Courts | Prefer consecutive hours on the same court; allow different courts at the same venue when enabled |
@@ -105,3 +105,5 @@ Keep owner checkout journals and exported diagnostics private: exports redact kn
 ## Repository boundaries
 
 The Python files directly under `outputs/tennis-local/` are a retired/blocked prototype, **not** the working extension or payment scheduler; do not enable `adapter_verified` as a workaround. `work/` holds earlier verification experiments. Do not commit Chrome profiles, site/account dumps, exported private journals, credentials, encrypted card files or runtime artifacts. Consult the [.gitignore](.gitignore) and runtime build allowlist.
+
+St Johns support (v0.9.7): existing saved preferences and armed jobs are preserved. To include St Johns in an existing setup, choose BGG first, St Johns second and Victoria third, save preferences, then arm a new job. The public venue slug is verified; its grid currently redirects unauthenticated requests to human verification, so venue DOM compatibility remains tested with synthetic fixtures rather than live acceptance.

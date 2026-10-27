@@ -111,3 +111,20 @@ test('armed settings survive later preference edits and reach scheduled scanning
   assert.equal(state.checkoutResult.status,'awaiting-payment');assert.equal(state.job,undefined);assert.ok(visited.every(venue=>venue==='victoria-park'));assert.equal(selected.length,1);assert.equal(selected[0].start,'09:00');assert.equal(selected[0].totalGBP,'18.00');assert.deepEqual(state.checkoutRecords[0].settings,s);assert.equal(state.checkoutRecords[0].paymentDispatchedAt,undefined);
  }finally{delete globalThis.chrome;}
 }));
+
+test('St Johns is ahead of Victoria by default without widening saved settings',()=>{
+ assert.deepEqual(DEFAULT_SETTINGS.venues,['bethnal-green-gardens','st-johns-park','victoria-park']);
+ const saved=normalizeSettings({venues:['bethnal-green-gardens','victoria-park']});assert.deepEqual(saved.venues,['bethnal-green-gardens','victoria-park']);
+ const rows=[20,21].map(h=>({time:(h-12)+'pm',inputs:[{label:'Tennis court 1£7'},{label:'Tennis court 2£7'}]}));
+ const found=candidates(rows,'st-johns-park','2026-10-20',{settings:DEFAULT_SETTINGS});assert.equal(found[0].venue,'St Johns Park');assert.equal(found[0].hours,2);
+ assert.deepEqual(candidates(rows,'st-johns-park','2026-10-20',{settings:saved}),[]);
+ assert.throws(()=>candidates([{time:'8pm',inputs:[{label:'Court 3£7'}]}],'st-johns-park','2026-10-20'),/St Johns court/);
+});
+
+test('St Johns paid receipts verify venue and retain contradictory-venue holds',()=>{
+ const slot={venue:'st-johns-park',date:'2026-10-20',court:1,start:'20:00',hours:1,totalGBP:'7.00'};
+ const text='Payment successful\nBooking reference: 100001\nSt Johns Park\nCourt 1\nPlaying date: 20 October 2026\nStart time: 8:00pm\nDuration: 1 hour\nTotal: £7.00';
+ const source=fs.readFileSync(new URL('./checkout-content.js',import.meta.url),'utf8');
+ const read=body=>vm.runInNewContext(source+';checkoutReceipt(slot,"synthetic-key","100001")',{slot,location:{origin:'https://tennistowerhamlets.com',pathname:'/basket/receipt'},document:{querySelector:selector=>selector==='h1'?{textContent:'Payment successful'}:{innerText:body}},chrome:{runtime:{onMessage:{addListener(){}}}}});
+ assert.equal(read(text).status,'confirmed');assert.equal(read(text.replace('St Johns Park','Victoria Park')).status,'conflicting');
+});

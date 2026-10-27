@@ -43,8 +43,8 @@ test('handled stop clears owned dry-run lock and retains diagnostic tab',async()
  delete state.running;
  await invoke();const before=created,retained=state.result.retainedTabId;
  const stopped=await invoke('resume');assert.equal(stopped.status,'stopped');assert.equal(created,before);assert.equal(updated.length,0);
- ready=true;const resumed=await invoke('resume');assert.equal(resumed.status,'complete');assert.equal(created,before);assert.equal(updated.length,3);assert.ok(updated.every(x=>x.id===retained));assert.deepEqual(removed,[]);
- assert.equal(resumed.results.length,2);assert.ok(state.runHistory.at(-1).steps.filter(s=>s.name==='grid-navigation').every(s=>s.timeoutMs===20000));
+ ready=true;const resumed=await invoke('resume');assert.equal(resumed.status,'complete');assert.equal(created,before);assert.equal(updated.length,4);assert.ok(updated.every(x=>x.id===retained));assert.deepEqual(removed,[]);
+ assert.equal(resumed.results.length,3);assert.ok(state.runHistory.at(-1).steps.filter(s=>s.name==='grid-navigation').every(s=>s.timeoutMs===20000));
  assert.equal((await invoke('resume')).status,'stopped');assert.equal(created,before);
  // Existing saved alarms keep read-only behavior, even when slots are available.
  Date.now=()=>Date.parse('2026-10-12T23:00:00Z');checkoutEnabled=true;
