@@ -10,6 +10,7 @@ import {chromium} from 'playwright';
 import {startMerchant} from './server.js';
 import {networkGate} from './isolation.js';
 import {testBundle} from './bundle.js';
+import {isReceiveTimingRejection} from './rea-har-contract.js';
 
 const root=fileURLToPath(new URL('../../../../../',import.meta.url));
 const reaNode=process.env.REA_NODE,reaCli=process.env.REA_CLI;
@@ -120,7 +121,7 @@ try{
   await fs.writeFile(path.join(output,'har-inspection.json'),JSON.stringify(har,null,2));
   interruptedHar={status:'accepted'};
  }catch(error){
-  if(error.reaError?.code!=='invalid_request')throw error;
+  if(!isReceiveTimingRejection(error.reaError))throw error;
   // Keep the original capture intact. Do not replace unknown timings with zero.
   interruptedHar={status:'rejected',code:error.reaError.code,issues:error.reaError.details?.issues};
   await fs.writeFile(path.join(output,'har-limitation.json'),JSON.stringify(interruptedHar,null,2));

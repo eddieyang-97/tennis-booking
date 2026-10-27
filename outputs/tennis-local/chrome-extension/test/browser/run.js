@@ -107,9 +107,14 @@ try{
  assert.equal(uncertainSelection.selectionFailure.reasonCode,'SELECTION_ACK_TIMEOUT');
  assert.equal(uncertainSelection.basketDiagnostic.expectedItems,2);assert.equal(uncertainSelection.basketDiagnostic.actualItems,1);
  assert.equal(uncertainSelection.phase,'selection-dispatched');assert.equal(merchant.state.items.length,1);
- await send({kind:'prepareCheckout'});
+ result=await send({kind:'prepareCheckout'});assert.equal(result.status,'stopped');assert.equal(result.reasonCode,'BASKET_MISMATCH');
  assert.equal(merchant.state.counts.selection,1);assert.equal(merchant.state.counts.opening,0);assert.equal(merchant.state.counts.fill,0);assert.equal(merchant.state.counts.pay,0);
- assert.equal((await send({kind:'status'})).checkoutRecords[0].key,uncertainSelection.key);
+ const retainedSelection=(await send({kind:'status'})).checkoutRecords[0];
+ assert.equal(retainedSelection.key,uncertainSelection.key);assert.deepEqual(retainedSelection.slot,uncertainSelection.slot);
+ assert.equal(retainedSelection.status,'pending');assert.equal(retainedSelection.phase,'selection-dispatched');
+ assert.equal(retainedSelection.recoveryRequired,true);assert.equal(retainedSelection.basketVerifiedAt,undefined);
+ assert.deepEqual(retainedSelection.selectionFailure,uncertainSelection.selectionFailure);
+ assert.equal(retainedSelection.selectionFailure.reasonCode,'SELECTION_ACK_TIMEOUT');
  reports.push({scenario:'actual-dom-selection-committed-response-lost-no-replay',outcome:'passed',evidence:'hypothetical-server-commit-truncated-json',mutations:{...merchant.state.counts}});
  console.log('Browser gate: synthetic selection rejection held without replay');
  // Terminate only the actual MV3 worker while a fake card fill has no reply.
