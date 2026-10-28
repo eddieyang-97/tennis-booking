@@ -41,8 +41,8 @@ test('invalid or expired codes time out without a second submission; delayed POS
  const g=fixture();clock=0;g.deps.read=async()=>clock<1000?gross:net;g.deps.apply=async()=>{};
  assert.equal((await ensureDiscount(initial(),g.deps,{timeoutMs:2000,now:()=>clock,delay:async ms=>clock+=ms})).discount.totalGBP,'11.50');
 });
-test('changed items, mismatched accounting, zero total, preexisting discounts and payment-stage changes all stop',async()=>{
- for(const changed of [{...net,totalGBP:'11.00'},{...net,totalGBP:'0.00',discountGBP:'14.00'},{...net,subtotalGBP:'15.00'},{...net,discountApplied:false},{...net,items:[net.items[0]]},{...net,items:net.items.map(item=>({...item,court:2}))}])assert.throws(()=>verifiedDiscount(changed,slot));
+test('changed items, mismatched accounting, preexisting discounts and payment-stage changes all stop',async()=>{
+ for(const changed of [{...net,totalGBP:'11.00'},{...net,totalGBP:'-1.00',discountGBP:'15.00'},{...net,subtotalGBP:'15.00'},{...net,discountApplied:false},{...net,items:[net.items[0]]},{...net,items:net.items.map(item=>({...item,court:2}))}])assert.throws(()=>verifiedDiscount(changed,slot));
  const f=fixture();f.basket=net;await assert.rejects(ensureDiscount(initial(),f.deps),/price mismatch|Existing discount/);assert.equal(f.clicks,0);
  for(const extra of [{reference:'123'},{paymentDispatchedAt:'timestamp'},{test:true},{basketOnly:true}])await assert.rejects(ensureDiscount({...initial(),...extra},fixture().deps),/cannot change/);
  assert.throws(()=>payableSlot({...initial(),discount:verifiedDiscount(net,slot)}),/journal/);
@@ -70,6 +70,24 @@ test('basket parser reads observed subtotal, discount removal marker and net tot
  let basket=vm.runInNewContext('basketSummary()',context);assert.equal(basket.discountGBP,'0.00');assert.equal(basket.discountApplied,false);
  discounted=true;basket=vm.runInNewContext('basketSummary()',context);assert.equal(basket.discountGBP,'2.50');assert.equal(basket.totalGBP,'4.50');assert.equal(basket.items[0].priceGBP,'7.00');assert.equal(basket.discountApplied,true);
  verifiedDiscount(basket,{...slot,hours:1,totalGBP:'7.00'});
+});
+test('incident: loading gross reads followed by the observed £ free basket verify one discount without reapplication',async()=>{
+ const f=fixture();let clock=0,reads=0;
+ const free={...net,totalGBP:'0.00',discountGBP:'14.00',paymentBoundary:false,freeBookingBoundary:true};
+ f.deps.read=async()=>++reads<=4?gross:free;
+ const record=await ensureDiscount(initial(),f.deps,{now:()=>clock,delay:async ms=>clock+=ms});
+ assert.equal(f.clicks,1);assert.equal(record.discount.totalGBP,'0.00');assert.equal(payableSlot(record).totalGBP,'0.00');
+ verifyBasket(free,slot,record.discount);
+ await ensureDiscount(record,f.deps);assert.equal(f.clicks,1);
+});
+test('observed free label is parsed narrowly and keeps the original hourly gross price',()=>{
+ let total='£ free',button='Complete my booking';
+ const row=(label,value,marker=false)=>({innerText:`${label}\t${value}`,querySelector:q=>q==='td'?{textContent:label}:marker?{}:null});
+ const context={location:{pathname:'/basket'},document:{body:{innerText:'Basket'},getElementById:()=>({innerText:'Tennis court 1 Bethnal Green Gardens 20th Oct | 8:00pm–8:59pm £7.00'}),querySelectorAll:q=>q==='a[href^="#item-"]'?[{getAttribute:()=>'#item-test'}]:q==='tr'?[row('Subtotal','£ 7.00'),row('Discount (remove)','-£ 7.00',true),row('Total',total)]:q==='button'?[{textContent:button,disabled:false}]:[]},chrome:{runtime:{onMessage:{addListener(){}}}}};
+ vm.runInNewContext(fs.readFileSync(new URL('./stage-content.js',import.meta.url),'utf8'),context);
+ const basket=vm.runInNewContext('basketSummary()',context);assert.equal(basket.totalGBP,'0.00');assert.equal(basket.items[0].priceGBP,'7.00');assert.equal(basket.freeBookingBoundary,true);
+ for(const malformed of ['£ free £1.00','£ unknown','£ free credit']){total=malformed;assert.throws(()=>vm.runInNewContext('basketSummary()',context));}
+ total='£ free';button='Pay with card';assert.equal(vm.runInNewContext('basketSummary()',context).freeBookingBoundary,undefined);
 });
 test('arming snapshots the optional code, rejects malformed codes before changes, and blank rearming clears it',()=>fixed(async()=>{
  let listener;const state={checkoutRecords:[]},alarms=[];

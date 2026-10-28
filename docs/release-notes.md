@@ -1,6 +1,6 @@
 # Release notes
 
-This is the historical change log for the **active Chrome extension** in [`outputs/tennis-local/chrome-extension/`](../outputs/tennis-local/chrome-extension/). The authoritative source version is [`manifest.json`](../outputs/tennis-local/chrome-extension/manifest.json), **0.9.6** on the discount-read recovery branch (22 October 2026), based on v0.9.5. Branch builds are not merged release claims.
+This is the historical change log for the **active Chrome extension** in [`outputs/tennis-local/chrome-extension/`](../outputs/tennis-local/chrome-extension/). The authoritative source version is [`manifest.json`](../outputs/tennis-local/chrome-extension/manifest.json), **0.9.8** on the free-booking checkout branch (28 October 2026). Branch builds are not merged release claims.
 
 Notes below describe changes made *at each release*, not instructions to install or downgrade to older builds. Historical test counts and unverified behaviors are not current release-quality claims. For up-to-date setup, use the [project README](../README.md) and [extension usage guide](../outputs/tennis-local/chrome-extension/README.md). For original investigation and detailed timestamps, see [payment-system.md](payment-system.md).
 
@@ -22,6 +22,15 @@ Notes below describe changes made *at each release*, not instructions to install
 The PR #4 Chromium gate is ported onto the current v0.9.5 runtime without changing production booking or payment logic. The runtime is exercised with a synthetic merchant, controlled alarm and fake payment frame, browser process restart during fake Pay, service-worker termination during fake card fill, denied external HTTP(S), and a synthetic rejected-selection/checkbox-reversion scenario. CI verifies the production ZIP excludes test adapters. These are synthetic observations, not real midnight alarm, Stripe, merchant-booking or unattended-payment acceptance.
 
 ## Changes by version
+
+### v0.9.8 — guarded full-discount free booking (28 October 2026)
+
+- Parse the observed `£ free` basket total and verify full-discount accounting while preserving exact gross authorization.
+- New journals use a separate, durable, one-shot **Complete my booking** command, without card opening/fill/Pay. Legacy pending records remain manual-review-only. Free checkout tests stop before completion.
+- Reconcile dispatched free submissions from exact zero-total booking receipts only; never replay an uncertain completion or infer a reservation from account price alone. Report free booking and paid state separately.
+- Classify unknown basket layouts explicitly. Add maintained content/parser, actual-worker restart and isolated Chromium scenarios, including generic merchant errors and lost acknowledgement.
+- Basket/button evidence comes from owner screenshots. Confirmation layout coverage is synthetic: these tests do not establish live free checkout, court availability, the merchant error cause or unattended midnight acceptance.
+
 
 ### v0.9.6 — bounded post-discount message-read observation (22 October 2026)
 - Addresses a confirmed early-stop boundary in the installed v0.9.5 release: after five successful loading basket reads, an unclassified message failure escaped with approximately 54 seconds still available. Its exact Chrome exception and merchant discount outcome were not captured.

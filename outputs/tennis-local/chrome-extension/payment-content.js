@@ -8,7 +8,7 @@ function paymentState() {
  return {totalGBP:match[1],reference,enabled:!pay.disabled,linkFramePresent};
 }
 chrome.runtime.onMessage.addListener((request,sender,respond)=>{
- if(sender.id!==chrome.runtime.id || !['checkout-progress','test-remove-next','discount-apply','payment-state','payment-open','payment-submit'].includes(request.kind))return;
+ if(sender.id!==chrome.runtime.id || !['checkout-progress','test-remove-next','discount-apply','payment-state','payment-open','payment-submit','free-booking-submit'].includes(request.kind))return;
  try {
   if(request.kind==='payment-state')return respond({ok:true,value:paymentState()});
   if(request.kind==='checkout-progress'){
@@ -37,9 +37,18 @@ chrome.runtime.onMessage.addListener((request,sender,respond)=>{
    input.value=request.code;input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));
    buttons[0].click();return respond({ok:true});
   }
+  if(request.kind==='free-booking-submit'){
+   if(location.pathname!=='/basket'||document.readyState!=='complete')throw Error('Free booking page is not ready');
+   const basket=basketSummary();
+   if(JSON.stringify(basket)!==JSON.stringify(request.expected)||basket.totalGBP!=='0.00'||basket.freeBookingBoundary!==true||basket.paymentBoundary!==false||!basket.discountApplied||basket.discountGBP!==basket.subtotalGBP)throw Error('Free booking basket changed before submission');
+   const buttons=[...document.querySelectorAll('button')].filter(b=>b.textContent.trim()==='Complete my booking');
+   if(buttons.length!==1||buttons[0].disabled)throw Error('Free booking completion unavailable');
+   buttons[0].click();return respond({ok:true});
+  }
   if(request.kind==='payment-open') {
    if(location.pathname!=='/basket')throw Error('Not the verified basket');
    const basket=basketSummary();
+   if(basket.totalGBP==='0.00')throw Error('Free booking cannot open card checkout');
    if(JSON.stringify(basket)!==JSON.stringify(request.expected))throw Error('Basket changed before checkout');
    const buttons=[...document.querySelectorAll('button')].filter(b=>b.textContent.trim()==='Pay with card');
    if(buttons.length!==1 || buttons[0].disabled)throw Error('Checkout unavailable');

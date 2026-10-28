@@ -6,7 +6,7 @@ export class Merchant{
  record(overrides={}){return {...journal(),slot:this.slot,key:JSON.stringify([this.slot.venue,this.slot.date,this.slot.court,this.slot.start,this.slot.hours]),...overrides};}
  selected(){this.basket=basket(this.slot);}
  async message(tab,request,worker){
-  const mutation={'select-slot':'selection','discount-apply':'discount','payment-open':'opening','card-fill':'fill','payment-submit':'pay','test-remove-next':'removal'}[request.kind];
+  const mutation={'select-slot':'selection','discount-apply':'discount','payment-open':'opening','card-fill':'fill','payment-submit':'pay','free-booking-submit':'free','test-remove-next':'removal'}[request.kind];
   if(mutation)this.boundary(`dispatch:${mutation}:before`);
   let response;
   if(request.kind==='account'){if(this.options.accountGate){this.accountStarted=true;await this.options.accountGate;}response={ok:true,signedIn:true};}
@@ -17,7 +17,10 @@ export class Merchant{
    if(this.options.partial)this.basket={...this.basket,items:[this.basket.items[1]],subtotalGBP:'7.00',totalGBP:'7.00'};
    response={ok:true,value:{selected:true}};
   }else if(request.kind==='discount-apply'){
-   this.counts.discount++;this.basket={...this.basket,discountApplied:true,discountGBP:'2.00',totalGBP:'12.00'};response={ok:true};
+   this.counts.discount++;this.basket={...this.basket,discountApplied:true,discountGBP:this.options.freeBooking?this.basket.subtotalGBP:'2.00',totalGBP:this.options.freeBooking?'0.00':'12.00',...(this.options.freeBooking?{paymentBoundary:false,freeBookingBoundary:true}:{})};response={ok:true};
+  }else if(request.kind==='free-booking-submit'){
+   this.counts.free=(this.counts.free||0)+1;this.freeSubmitted=true;
+   tab.url='https://tennistowerhamlets.com/basket/receipt';response={ok:true};
   }else if(request.kind==='payment-open'){
    this.counts.opening++;this.readyAt=this.clock+(this.options.cardDelay||0);this.purchases.set(this.reference,{state:'Pending',totalGBP:this.basket.totalGBP});response={ok:true};
   }else if(['checkout-progress','payment-state'].includes(request.kind)){
@@ -38,7 +41,10 @@ export class Merchant{
    const purchase=this.purchases.get(request.reference);
    response=!purchase?{ok:false,error:'Unique matching purchase not found for reference 100001: observed 0 matches'}:purchase.totalGBP!==request.slot.totalGBP?{ok:false,error:'Matching purchase is not confirmed paid at the expected amount'}:request.kind==='test-purchase-state'&&purchase.state==='Pending'?{ok:true,value:{status:'unpaid',reference:request.reference,totalGBP:purchase.totalGBP}}:purchase.state==='Confirmed'?{ok:true,value:{status:'confirmed',key:request.key,reference:request.reference,source:'account-purchase',bookingState:'unknown'}}:{ok:false,error:'Test purchase is paid or uncertain'};
   }else if(request.kind==='test-remove-next'){
-   this.counts.removal++;const items=this.basket.items.slice(1);this.basket=items.length?{...this.basket,items,subtotalGBP:'7.00',totalGBP:'7.00'}:{empty:true,items:[]};response={ok:true};
+   this.counts.removal++;
+   if(this.basket.freeBookingBoundary){this.basket={...this.basket,discountApplied:false,discountGBP:'0.00',totalGBP:this.basket.subtotalGBP,paymentBoundary:true};delete this.basket.freeBookingBoundary;}
+   else {const items=this.basket.items.slice(1);this.basket=items.length?{...this.basket,items,subtotalGBP:'7.00',totalGBP:'7.00'}:{empty:true,items:[]};}
+   response={ok:true};
   }else throw Error('Unimplemented fake merchant command '+request.kind);
   if(mutation)this.boundary(`dispatch:${mutation}:after`);
   return response;

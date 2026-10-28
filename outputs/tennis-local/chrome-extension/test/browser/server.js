@@ -6,7 +6,7 @@ export async function startMerchant(){
  const state={items:[],discount:0,reference:'100001',purchases:[],counts:{selection:0,discount:0,opening:0,fill:0,pay:0,removal:0},options:{},venue:'bethnal-green-gardens',day:'2026-10-25'};
  const totals=()=>({gross:state.items.length*7,net:state.items.length*7-state.discount});
  const summary=()=>{
-  const {gross,net}=totals();return `<table>${state.items.map(item=>`<tr><td><a href="#item-${id(item.hour)}">Court booking</a></td><td>£7.00</td></tr>`).join('')}<tr><td>Subtotal</td><td>£${gross.toFixed(2)}</td></tr><tr><td>Discount${state.discount?' (<a href="/basket/discount-remove">remove</a>)':''}</td><td>${state.discount?'-£'+state.discount.toFixed(2):'-'}</td></tr><tr><td>Total</td><td>£${net.toFixed(2)}</td></tr></table>`;
+  const {gross,net}=totals();return `<table>${state.items.map(item=>`<tr><td><a href="#item-${id(item.hour)}">Court booking</a></td><td>£7.00</td></tr>`).join('')}<tr><td>Subtotal</td><td>£${gross.toFixed(2)}</td></tr><tr><td>Discount${state.discount?' (<a href="/basket/discount-remove">remove</a>)':''}</td><td>${state.discount?'-£'+state.discount.toFixed(2):'-'}</td></tr><tr><td>Total</td><td>${net===0?'£ free':'£'+net.toFixed(2)}</td></tr></table>`;
  };
  const respond=(res,html,status=200)=>{res.writeHead(status,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'});res.end(html);};
  const server=http.createServer(async(req,res)=>{
@@ -34,15 +34,22 @@ export async function startMerchant(){
    respond(res,shell({heading:'Book courts',html,count:state.items.length},'/site.js'));return;
   }
   if(url.pathname==='/basket/discount'&&req.method==='POST'){
-   state.counts.discount++;state.discount=2;res.writeHead(204);res.end();return;
+   state.counts.discount++;state.discount=state.options.freeBooking?totals().gross:2;res.writeHead(204);res.end();return;
   }
   if(url.pathname==='/basket/discount-remove'){state.discount=0;state.counts.removal++;res.writeHead(303,{Location:'/basket'});res.end();return;}
   if(url.pathname.startsWith('/basket/remove/')){state.items=state.items.filter(item=>id(item.hour)!==url.pathname.split('/').pop());state.counts.removal++;if(!state.items.length)state.discount=0;res.writeHead(303,{Location:'/basket'});res.end();return;}
   if(url.pathname==='/basket'){
    if(!state.items.length){respond(res,shell({html:'There are no items in your basket'}));return;}
    const date=new Date(state.day+'T12:00:00Z'),day=date.getUTCDate(),month=new Intl.DateTimeFormat('en-GB',{month:'short',timeZone:'UTC'}).format(date);
-   const html=summary()+`<form method="post" action="/basket/discount" data-discount><input id="checkout-discount" name="code"><button>Apply code</button></form><form method="post" action="/basket/pay/card"><button id="btn-pay-now">Pay with card</button></form>`+state.items.map(item=>`<div id="item-${id(item.hour)}">Court ${item.court}, ${venueName(state.venue)} ${day}th ${month} | ${item.hour%12||12}:00pm–${item.hour%12||12}:59pm £7.00 <a href="/basket/remove/${id(item.hour)}">Remove</a></div>`).join('');
+   const html=summary()+`<form method="post" action="/basket/discount" data-discount><input id="checkout-discount" name="code"><button>Apply code</button></form><form method="post" action="${totals().net===0?'/basket/complete':'/basket/pay/card'}"><button id="btn-pay-now">${totals().net===0?'Complete my booking':'Pay with card'}</button></form>`+state.items.map(item=>`<div id="item-${id(item.hour)}">Court ${item.court}, ${venueName(state.venue)} ${day}th ${month} | ${item.hour%12||12}:00pm–${item.hour%12||12}:59pm £7.00 <a href="/basket/remove/${id(item.hour)}">Remove</a></div>`).join('');
    respond(res,shell({html,count:state.items.length},'/site.js'));return;
+  }
+  if(url.pathname==='/basket/complete'&&req.method==='POST'){
+   state.counts.free=(state.counts.free||0)+1;
+   if(state.options.freeError){respond(res,shell({heading:'Something went wrong'}),500);return;}
+   const date=new Date(state.day+'T12:00:00Z'),month=new Intl.DateTimeFormat('en-GB',{month:'long',timeZone:'UTC'}).format(date);
+   // Synthetic confirmation contract, NOT captured live acceptance evidence.
+   respond(res,shell({heading:'Booking confirmed',html:`<main><div>Booking reference: ${state.reference}</div><div>${venueName(state.venue)}</div><div>Court 1</div><div>Playing date: ${date.getUTCDate()} ${month} ${date.getUTCFullYear()}</div><div>Start time: 8:00pm</div><div>Duration: 2 hours</div><div>Total: £ free</div></main>`}));return;
   }
   if(url.pathname==='/basket/pay/card'){
    if(req.method==='POST'){

@@ -1,6 +1,6 @@
 import {VENUES, londonDay, addDays, releaseAt, candidates} from './core.js';
 import {verifyBasket,basketEvidence} from './stage-rules.js';
-import {retryTab} from './retry.js';
+import {retryTab,temporaryTabError} from './retry.js';
 import {startRun} from './run-log.js';
 import {prepareCheckout,checkoutCandidate,confirmCheckout,PAYMENT_TEST_SLOT,reconcileClearedSelection,archiveFailedCheckout,assertFailedCheckoutAttestation,basketTestKey,recoverPreparationTab} from './checkout.js';
 import {payCheckout,openVerifiedCheckout,assertCardFillProvenance} from './payment.js';
@@ -27,7 +27,7 @@ async function step(name,detail={}){if(trace)await trace.step(name,detail);}
 async function readTab(operation){return retryTab(operation,{onRetry:attempt=>step('temporary-tab-retry',{attempt})});}
 async function save(result) { await chrome.storage.local.set({result}); await chrome.action.setBadgeText({text:result.status==='complete'?'OK':'!'}); }
 async function notifyPaymentResult(result) {
- try {await chrome.notifications.create('tennis-payment-result',{type:'basic',iconUrl:chrome.runtime.getURL('notification.png'),title:result.paid===true?'Tennis payment confirmed':'Tennis booking needs attention',message:result.paid===true?`${result.slot.date} ${result.slot.start}, £${result.slot.totalGBP}. Payment verified; open the account to check the active booking.`:'Open the extension for the stopped run. An uncertain payment will not be charged again.'});}
+ try {await chrome.notifications.create('tennis-payment-result',{type:'basic',iconUrl:chrome.runtime.getURL('notification.png'),title:result.freeBooking&&result.booked===true?'Free tennis booking confirmed':result.paid===true?'Tennis payment confirmed':'Tennis booking needs attention',message:result.freeBooking&&result.booked===true?`${result.slot.date} ${result.slot.start}. Free booking receipt verified; no card payment submitted.`:result.paid===true?`${result.slot.date} ${result.slot.start}, £${result.slot.totalGBP}. Payment verified; open the account to check the active booking.`:'Open the extension for the stopped run. An uncertain payment will not be charged again.'});}
  catch {await step('notification-unavailable');}
 }
 async function readPage(url, request,{scheduled=false,retainGrid=false}={}) {
@@ -184,10 +184,11 @@ async function automaticPayment(test=false,scheduled=false,basketHandoff=null) {
     fillCard:async()=>{try{await frame('modal','link-close');}catch{}await linkFrames.command(tab.id,'card','card-fill',{payload:{card:localCard}});},
     waitCardReady:async()=>{await step('card-submit-readiness',{timeoutMs:pageReadBudget(scheduled)});return waitPaymentState(state,{timeoutMs:pageReadBudget(scheduled),accept:current=>{if(current.totalGBP!==payableSlot(record).totalGBP||current.reference!==record.reference)throw Error('Checkout identity changed while waiting; no payment');return current.enabled;}});}
    }:{}),
+   completeFree:expected=>command({kind:'free-booking-submit',expected}),
    submit:(totalGBP,reference)=>command({kind:'payment-submit',totalGBP,reference}),
    receipt:()=>readPaidEvidence(record,tab.id,true,scheduled)
   });
-  if(output.status==='confirmed'){await store({...output,tabId:tab.id});await chrome.action.setBadgeText({text:'PAID'});}
+  if(output.status==='confirmed'){await store({...output,tabId:tab.id});await chrome.action.setBadgeText({text:output.freeBookingDispatchedAt?'BOOK':'PAID'});}
   await trace.finish(output.status);
   const result=output.status==='confirmed'?paidResult(output):{status:output.status,slot:record.slot,booked:false,paid:false};
   await chrome.storage.local.set({checkoutResult:{...result,runId:trace.record.id,finishedAt:trace.record.finishedAt}});await notifyPaymentResult(result);return result;
@@ -202,7 +203,7 @@ async function automaticPayment(test=false,scheduled=false,basketHandoff=null) {
   const paymentPossible=!!(record?.paymentDispatchedAt||record?.manualPaymentReportedAt||['payment-dispatched','payment-uncertain'].includes(record?.phase));
   const failure=failureFor(e,{paymentPossible});
   if(trace){await step('stopped',failure);await trace.finish('stopped');}
-  const output={status:'stopped',error:e.message,...failure,...(e.code?{errorCode:e.code}:{}),tabId:tab?.id,phase:record?.phase,booked:paymentPossible?null:false,paid:paymentPossible?null:false,...(linkDiagnostic?{linkDiagnostic}:{}),runId:trace?.record.id,finishedAt:trace?.record.finishedAt||new Date().toISOString()};await chrome.storage.local.set({checkoutResult:output});await chrome.action.setBadgeText({text:'!'});await notifyPaymentResult(output);return output;
+  const output={status:'stopped',error:e.message,...failure,...(e.code?{errorCode:e.code}:{}),tabId:tab?.id,phase:record?.phase,booked:paymentPossible?null:false,paid:record?.freeBookingDispatchedAt?false:paymentPossible?null:false,...(linkDiagnostic?{linkDiagnostic}:{}),runId:trace?.record.id,finishedAt:trace?.record.finishedAt||new Date().toISOString()};await chrome.storage.local.set({checkoutResult:output});await chrome.action.setBadgeText({text:'!'});await notifyPaymentResult(output);return output;
  }
  finally{busy=false;trace=null;resumedTab=null;}
 }
@@ -312,7 +313,7 @@ async function checkout(expectedDay=null,scheduled=false,basketOnly=false,discou
  } finally {resumedTab=null;busy=false;trace=null;}
 }
 function paidResult(record) {
- return {status:'confirmed',slot:record.slot,totalPaidGBP:payableSlot(record).totalGBP,discountApplied:!!record.discount,manualPayment:!!record.manualPaymentReportedAt,reference:record.reference,confirmedAt:record.confirmedAt,receiptSource:record.receiptSource,bookingState:record.bookingState,booked:record.bookingState==='confirmed'?true:null,paid:true};
+ return {status:'confirmed',slot:record.slot,totalPaidGBP:payableSlot(record).totalGBP,discountApplied:!!record.discount,manualPayment:!!record.manualPaymentReportedAt,reference:record.reference,confirmedAt:record.confirmedAt,receiptSource:record.receiptSource,bookingState:record.bookingState,booked:record.bookingState==='confirmed'?true:null,paid:!record.freeBookingDispatchedAt,...(record.freeBookingDispatchedAt?{freeBooking:true}:{})};
 }
 async function resetUnpaidTest(){
  if(busy)throw Error('Another run is active');busy=true;
@@ -369,11 +370,23 @@ async function testDiscountCheckout(code='') {
    apply:(code,expected)=>command({kind:'discount-apply',code,expected})
   });
   if(record.discount)await step('discount-verified',{...record.discount});
-  await store({...record,phase:'checkout-test-opening'});
-  const opened=await openStoredCheckout(record,record.tabId,false,store);
-  await store({...opened.record,reference:opened.page.reference,phase:'checkout-test-ready',checkoutTestVerifiedAt:new Date().toISOString()});
-  await chrome.tabs.update(record.tabId,{active:true});await trace.finish('checkout-test-passed');
-  const result={status:'checkout-test-passed',slot:record.slot,grossTotalGBP:record.slot.totalGBP,discountGBP:record.discount?.discountGBP||'0.00',payableGBP:payableSlot(record).totalGBP,checkoutOpened:true,paymentBlocked:true,cardFilled:false,booked:false,paid:false,runId:trace.record.id,finishedAt:trace.record.finishedAt};
+  const free=payableSlot(record).totalGBP==='0.00';
+  if(free){
+   if(['checkoutOpenDispatchedAt','reference','freeBookingDispatchedAt'].some(field=>Object.hasOwn(record,field)))throw Object.assign(Error('Opened or submitted free checkout test requires manual review; journal retained'),{reasonCode:'FREE_BOOKING_REVIEW_REQUIRED'});
+   // Free completion is the booking mutation itself. An unpaid test must stop
+   // at a freshly verified basket, with no opening or submission journal.
+   const response=await readPageState(chrome.tabs,BASE+'/basket',{kind:'basket-read'},{tabId:record.tabId,navigate:false,timeoutMs:15000,step});
+   if(!response.ok)throw Object.assign(Error('Free test basket observation rejected; inspect retained tab'),failureFor(response));
+   verifyBasket(response.value,record.slot,record.discount);
+   await store({...record,phase:'awaiting-payment',checkoutTestVerifiedAt:new Date().toISOString()});
+  }else{
+   await store({...record,phase:'checkout-test-opening'});
+   const opened=await openStoredCheckout(record,record.tabId,false,store);
+   await store({...opened.record,reference:opened.page.reference,phase:'checkout-test-ready',checkoutTestVerifiedAt:new Date().toISOString()});
+  }
+  const status=free?'checkout-test-free-ready':'checkout-test-passed';
+  await chrome.tabs.update(record.tabId,{active:true});await trace.finish(status);
+  const result={status,slot:record.slot,grossTotalGBP:record.slot.totalGBP,discountGBP:record.discount?.discountGBP||'0.00',payableGBP:payableSlot(record).totalGBP,checkoutOpened:!free,...(free?{bookingSubmissionBlocked:true}:{}),paymentBlocked:true,cardFilled:false,booked:false,paid:false,runId:trace.record.id,finishedAt:trace.record.finishedAt};
   await chrome.storage.local.set({checkoutResult:result});return result;
  }catch(error){
   if(trace){await step('stopped',failureFor(error,{operation:'unpaid-checkout-test'}));await trace.finish('stopped');}
@@ -384,14 +397,18 @@ async function readPaidEvidence(record,tabId=record.tabId,wait=false,scheduled=f
  return reconcilePaid(record,{
   step,
   currentReceipt:async()=>{
-   for(let i=0;i<(wait?10:1);i++) {
+   const free=!!record.freeBookingDispatchedAt,deadline=Date.now()+pageReadBudget(scheduled);
+   const bounded=operation=>free?responseWithin(operation,Math.max(1,Math.min(2000,deadline-Date.now()))):operation();
+   for(let i=0;i<(wait?(free?Math.ceil(pageReadBudget(scheduled)/500):10):1)&&(!free||Date.now()<deadline);i++) {
     try {
-     const current=await readTab(()=>chrome.tabs.get(tabId));
+     const current=await bounded(()=>readTab(()=>chrome.tabs.get(tabId)));
      if(new URL(current.url).origin!==BASE||!new URL(current.url).pathname.startsWith('/basket'))return null;
-     const response=await readTab(()=>chrome.tabs.sendMessage(tabId,{kind:'receipt-read',slot:payableSlot(record),key:record.key,reference:record.reference}));
+     const response=await bounded(()=>readTab(()=>chrome.tabs.sendMessage(tabId,{kind:'receipt-read',slot:payableSlot(record),key:record.key,reference:record.reference,...(free?{freeBooking:true}:{})})));
+     if(free&&Date.now()>=deadline)return null;
+     if(free&&response?.value?.status==='merchant-error')return null;
      if(response?.ok&&['confirmed','conflicting'].includes(response.value.status))return response.value;
-    }catch{ return null; }
-    if(wait)await new Promise(r=>setTimeout(r,500));
+    }catch(error){if(!free||!wait||(!temporaryTabError(error)&&!/Read response timed out/.test(error.message)))return null;}
+    if(wait)await new Promise(r=>setTimeout(r,free?Math.max(0,Math.min(500,deadline-Date.now())):500));
    }
    return null;
   },
@@ -413,7 +430,7 @@ async function finishPaidRecord(record,scheduled=false) {
  await step('paid-purchase-verified',{source:confirmed.receiptSource});await trace.finish('confirmed');
  const output={...paidResult(confirmed),runId:trace.record.id,finishedAt:trace.record.finishedAt};
  await chrome.storage.local.set({checkoutRecords:checkoutRecords.map(r=>r.key===record.key?confirmed:r),checkoutResult:output});
- await chrome.action.setBadgeText({text:'PAID'});await notifyPaymentResult(output);return output;
+ await chrome.action.setBadgeText({text:record.freeBookingDispatchedAt?'BOOK':'PAID'});await notifyPaymentResult(output);return output;
 }
 async function resolvePendingPayment(scheduled=false) {
  const {checkoutRecords=[]}=await chrome.storage.local.get('checkoutRecords');

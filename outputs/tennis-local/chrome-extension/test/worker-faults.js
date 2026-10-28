@@ -448,6 +448,72 @@ test('unrelated basket and changed checkout route stop without external mutation
  assert.equal((await worker.send({kind:'payCheckout'})).status,'stopped');assert.equal(merchant.counts.opening,0);assert.equal(merchant.counts.pay,0);
 });
 function basketFor(merchant){merchant.selected();return structuredClone(merchant.basket);}
+
+async function freeRun(){
+ const f=await navigationRun();f.state.job.discountCode='SYNTHETIC';f.merchant.options.freeBooking=true;
+ f.merchant.options.receiptResponse=request=>f.merchant.freeSubmitted?receiptResponse(request,`Booking reference: 100001\nBethnal Green Gardens\nCourt 1\nPlaying date: 24 October 2026\nStart time: 8:00pm\nDuration: 2 hours\nTotal: £ free`,'Booking confirmed'):{ok:true,value:{status:'awaiting-payment'}};
+ return f;
+}
+test('unpaid free checkout test stays at the basket and clears after worker restart without any completion/open/fill/Pay',async()=>{
+ const merchant=new Merchant(),state={},worker=await startWorker(merchant,state);merchant.options.freeBooking=true;
+ assert.equal((await worker.send({kind:'check',day:merchant.slot.date})).status,'complete');
+ const result=await worker.send({kind:'testDiscountCheckout',discountCode:'SYNTHETIC'});
+ assert.equal(result.status,'checkout-test-free-ready',result.error);assert.equal(result.checkoutOpened,false);assert.equal(result.paymentBlocked,true);assert.equal(result.bookingSubmissionBlocked,true);
+ const journal=structuredClone(state.checkoutRecords[0]);assert.equal(journal.phase,'awaiting-payment');assert.equal(journal.discount.totalGBP,'0.00');assert.ok(journal.checkoutTestVerifiedAt);
+ for(const field of ['checkoutOpenDispatchedAt','freeBookingDispatchedAt','paymentDispatchedAt','reference'])assert.equal(Object.hasOwn(journal,field),false);
+ const restarted=await startWorker(merchant,state);restarted.seedTab(journal.tabId);
+ assert.equal((await restarted.send({kind:'payCheckout'})).status,'stopped');
+ const cleaned=await restarted.send({kind:'resetUnpaidTest'});assert.equal(cleaned.status,'test-auto-cleared',cleaned.error);
+ assert.equal(state.checkoutRecords.length,0);assert.equal(state.abandonedCheckouts[0].key,journal.key);assert.equal(state.abandonedCheckouts[0].discountDispatchedAt,journal.discountDispatchedAt);assert.equal(state.abandonedCheckouts[0].discount.totalGBP,'0.00');assert.equal(state.abandonedCheckouts[0].abandonmentEvidence.basketEmptyVerified,true);
+ assert.deepEqual(merchant.counts,{selection:2,discount:1,opening:0,fill:0,pay:0,removal:3});
+});
+test('mixed-court free submission is blocked after discount verification, including restart, without changing its authorization',async()=>{
+ const merchant=new Merchant();merchant.options.freeBooking=true;merchant.slot={...merchant.slot,courts:[1,2]};merchant.selected();merchant.basket.items[1].court=2;
+ const key=JSON.stringify([merchant.slot.venue,merchant.slot.date,[1,2],merchant.slot.start,2]);
+ const state={checkoutRecords:[merchant.record({key,test:false,checkoutTestOnly:false,freeBookingAllowed:true,discountCode:'SYNTHETIC',tabId:42})]};
+ for(let i=0;i<2;i++){
+  const worker=await startWorker(merchant,state);worker.seedTab();const result=await worker.send({kind:'payCheckout'});
+  assert.equal(result.status,'stopped');assert.equal(result.reasonCode,'FREE_BOOKING_REVIEW_REQUIRED');assert.deepEqual(state.checkoutRecords[0].slot.courts,[1,2]);assert.equal(state.checkoutRecords[0].key,key);
+  assert.equal(state.checkoutRecords[0].paymentDispatchedAt,undefined);assert.equal(state.checkoutRecords[0].freeBookingDispatchedAt,undefined);
+ }
+ assert.deepEqual(merchant.counts,{selection:0,discount:1,opening:0,fill:0,pay:0,removal:0});
+});
+test('release completes a full-discount booking without any card/open/Pay, and restart is receipt-only',async()=>{
+ const f=await freeRun();await f.worker.alarm({name:'release'});
+ assert.equal(f.state.checkoutResult.status,'confirmed',f.state.checkoutResult.error);assert.equal(f.state.checkoutResult.paid,false);assert.equal(f.state.checkoutResult.booked,true);assert.equal(f.state.checkoutResult.freeBooking,true);
+ assert.deepEqual(f.merchant.counts,{selection:2,discount:1,opening:0,fill:0,pay:0,removal:0,free:1});
+ const record=f.state.checkoutRecords[0];assert.equal(record.slot.totalGBP,'14.00');assert.ok(record.freeBookingDispatchedAt);assert.equal(record.paymentDispatchedAt,record.freeBookingDispatchedAt);
+ await (await startWorker(f.merchant,f.state)).send({kind:'payCheckout'});assert.equal(f.merchant.counts.free,1);
+});
+for(const mode of ['transient','late'])test(`free confirmation observes ${mode} read evidence within its deadline without submission replay`,async()=>{
+ const f=await freeRun(),send=f.worker.chrome.tabs.sendMessage;let reads=0;
+ f.worker.chrome.tabs.sendMessage=async(id,request)=>{
+  if(request.kind==='receipt-read'&&request.freeBooking){reads++;
+   if(mode==='transient'&&reads<3)throw Error('The message port closed before a response was received');
+   if(mode==='late')f.merchant.clock+=60000;
+  }
+  return send(id,request);
+ };
+ await f.worker.alarm({name:'release'});
+ assert.equal(f.state.checkoutResult.status,mode==='transient'?'confirmed':'stopped',f.state.checkoutResult.error);
+ assert.equal(f.merchant.counts.free,1);assert.equal(f.merchant.counts.opening,0);assert.equal(f.merchant.counts.fill,0);assert.equal(f.merchant.counts.pay,0);
+ if(mode==='late')assert.equal(f.state.checkoutRecords[0].status,'pending');
+});
+for(const label of ['persist:pay:before','persist:pay:after','dispatch:free:before','dispatch:free:after'])test(`free booking ${label}: restart preserves hold and never replays an uncertain submission`,async()=>{
+ const f=await freeRun();f.merchant.fault(label);await f.worker.alarm({name:'release'});assert.equal(f.merchant.faults.has(label),false);
+ const dispatched=structuredClone(f.state.checkoutRecords[0]),restart=await startWorker(f.merchant,f.state);restart.seedTab(dispatched.tabId,f.merchant.freeSubmitted?'https://tennistowerhamlets.com/basket/receipt':'https://tennistowerhamlets.com/basket');
+ const result=await restart.send({kind:'payCheckout'});
+ if(dispatched.status==='confirmed')assert.equal(result.status,'stopped');
+ else if(label==='persist:pay:before')assert.equal(result.status,'confirmed',result.error);else {assert.equal(result.status,'stopped');assert.equal(f.state.checkoutRecords[0].freeBookingDispatchedAt,dispatched.freeBookingDispatchedAt);}
+ assert.ok((f.merchant.counts.free||0)<=1);assert.equal(f.merchant.counts.discount,1);assert.equal(f.merchant.counts.selection,2);assert.equal(f.merchant.counts.opening,0);assert.equal(f.merchant.counts.fill,0);assert.equal(f.merchant.counts.pay,0);
+});
+test('free merchant error leaves a protected hold, cannot archive/prepare or fall back to account history',async()=>{
+ const f=await freeRun();f.merchant.options.receiptResponse=()=>({ok:true,value:{status:'awaiting-payment'}});await f.worker.alarm({name:'release'});
+ const record=structuredClone(f.state.checkoutRecords[0]);assert.equal(f.state.checkoutResult.reasonCode,'FREE_BOOKING_UNRESOLVED');
+ const restart=await startWorker(f.merchant,f.state);restart.seedTab(record.tabId,'https://tennistowerhamlets.com/basket/receipt');
+ for(const message of [{kind:'payCheckout'},{kind:'verifyPayment'},{kind:'prepareCheckout'},{kind:'reconcileSelection'},{kind:'archiveFailedCheckout',noPaymentConfirmed:true,attestationIdentity:JSON.stringify([record.key,record.checkoutOpenDispatchedAt])}])assert.equal((await restart.send(message)).status,'stopped');
+ assert.equal(f.state.checkoutRecords[0].paymentDispatchedAt,record.paymentDispatchedAt);assert.equal(f.merchant.counts.free,1);assert.equal(f.merchant.counts.pay,0);
+});
 test('unknown grid readiness produces a distinct unavailable reason and no selection',async()=>{
  const merchant=new Merchant();merchant.options.gridError=true;
  const state={},worker=await startWorker(merchant,state);assert.equal((await worker.send({kind:'check',day:merchant.slot.date})).status,'stopped');assert.equal(state.latestAction.reasonCode,'GRID_READY_TIMEOUT');assert.equal(merchant.counts.selection,0);

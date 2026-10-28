@@ -78,7 +78,7 @@ Opening or revisiting an **unpaid, pre-submission** checkout may create a differ
 
 A nonempty per-job code is included in the immutable authorized snapshot and used only after an exact basket verification. The merchant-applied discount is validated against **each original item**, gross subtotal, explicit discount amount and the separately verified net card amount; receipts must match the saved **net** payment identity. Do not let a cheaper net price excuse a changed basket or an over-cap original price.
 
-Persist a discount dispatch marker before applying it. On timeout, error, lost acknowledgement or changed page, **observe** the basket; do not apply the same code again. An invalid/expired code, inconsistent numbers, additional basket item or changed discount stops before Pay. Zero-cost orders require a different designed non-card flow and are not supported by the ordinary card path. Required edge cases are consolidated in [test-improvement.md](test-improvement.md#settings-and-discount-regression-contract-carried-forward-from-v080-requirements).
+Persist a discount dispatch marker before applying it. On timeout, error, lost acknowledgement or changed page, **observe** the basket; do not apply the same code again. An invalid/expired code, inconsistent numbers, additional basket item or changed discount stops before Pay. Zero-cost orders use the separate v0.9.8 non-card completion described below. Required edge cases are consolidated in [test-improvement.md](test-improvement.md#settings-and-discount-regression-contract-carried-forward-from-v080-requirements).
 
 ### 22 October release: post-discount basket-read failure
 
@@ -169,3 +169,11 @@ Historical per-version source/test notes and older test-count claims now live on
 - Tests must exercise guard behavior across process/service-worker restart, storage retention, stale tab IDs, ambiguous receipts, manual-payment reports, failed discount/checkout openings and partial basket updates. Passing simulated tests is not proof of live merchant acceptance.
 
 **Next work is tracked in [test-improvement.md](test-improvement.md).** This technical reference should be updated for new observed merchant contracts or safety design changes—not for every release note or old implementation TODO.
+
+## 28 October: fully discounted basket contract
+
+Owner evidence for the midnight run showed a gross £7 one-hour basket, explicit -£7 discount, **Total £ free**, and **Complete my booking**. v0.9.7 required a numeric basket total and positive net discount, so it could not process this state. The export's post-discount rejection is consistent with that limitation. The owner's subsequent manual completion showed a generic technical error; neither this nor later unavailability proves another customer won the court. The merchant outcome remains unknown. No successful live free receipt has been captured.
+
+v0.9.8 parses only the exact free total label (or numeric zero), verifies original items/gross/subtotal/full discount/net and the unique enabled free button, and submits through a separate non-card command. New selection journals opt in with `freeBookingAllowed`; legacy records are not migrated. Immediately before the command it durably writes `freeBookingDispatchedAt` plus the same timestamp in `paymentDispatchedAt`. The latter is a compatibility **submission hold**, not evidence of a charge: it ensures existing payment/preparation/cleanup guards also preserve uncertain free reservations. Free success reports `paid:false` and the zero total separately.
+
+A lost acknowledgement is observed, never replayed. Restart reconciliation requires a matching full booking receipt with a zero total, reference, venue/court/date/start/duration and confirmation heading. Synthetic fixtures exercise that contract; unfamiliar, mixed-court or missing receipts stop. Account purchase history is deliberately not a fallback for free confirmation. Legacy and already-opened free checkouts require manual review. Ordinary positive-net card receipts and payment reconciliation remain separate. No new permission or runtime file is added.

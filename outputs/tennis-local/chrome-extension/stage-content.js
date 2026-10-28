@@ -13,7 +13,8 @@ function basketSummary() {
   return {court:+court[1],venue:venue[0],day:+time[1],month:['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'].indexOf(time[2])+1,hour:(+time[3]%12)+(time[4]==='pm'?12:0),priceGBP:price[1]};
  });
  const totals=[...document.querySelectorAll('tr')].filter(r=>r.querySelector('td')?.textContent.trim()==='Total');
- const total=totals.length===1?/£\s*(\d+\.\d{2})/.exec(totals[0].innerText):null;
+ const totalText=totals.length===1?totals[0].innerText.replace(/^\s*Total\s*/, '').trim():'';
+ const total=/^£\s*(\d+\.\d{2})$/.exec(totalText)||(/^£\s*free$/i.test(totalText)?[null,'0.00']:null);
  if(!total||!items.length)throw Error('Unknown basket total/layout');
  const rows=[...document.querySelectorAll('tr')];
  const subtotalRows=rows.filter(r=>r.querySelector('td')?.textContent.trim()==='Subtotal'),discountRows=rows.filter(r=>/^Discount(?:\s|$)/.test(r.querySelector('td')?.textContent.trim()||''));
@@ -24,7 +25,9 @@ function basketSummary() {
   if(!subtotal||discountRows.length!==1||(!discount&&!/\s-\s*$/.test(discountRows[0].innerText)))throw Error('Unknown discount accounting');
   accounting={subtotalGBP:subtotal[1],discountGBP:discount?.[1]||'0.00',discountApplied:!!discount&&!!discountRows[0].querySelector('a[href="/basket/discount-remove"]')};
  }
- return {empty:false,items,totalGBP:total[1],...accounting,paymentBoundary:[...document.querySelectorAll('button')].some(b=>b.textContent.trim()==='Pay with card')};
+ const buttons=[...document.querySelectorAll('button')];
+ const freeButtons=buttons.filter(b=>b.textContent.trim()==='Complete my booking');
+ return {empty:false,items,totalGBP:total[1],...accounting,paymentBoundary:buttons.some(b=>b.textContent.trim()==='Pay with card'),...(total[1]==='0.00'&&freeButtons.length===1&&!freeButtons[0].disabled?{freeBookingBoundary:true}:{})};
 }
 async function stableBasketSummary() {
  let previous,stable=0;
@@ -129,5 +132,5 @@ chrome.runtime.onMessage.addListener((request,sender,respond)=>{
   if(request.kind==='basket-read')return stableBasketSummary();
   const timeout=[15000,60000].includes(request.selectionTimeoutMs)?request.selectionTimeoutMs:15000;
   return selectSequentially(request.slot,timeout);
- })().then(value=>respond(value.notReady?{ok:false,notReady:true,error:'Basket DOM not stable'}:{ok:true,value}),e=>respond(request.kind==='basket-read'&&document.readyState&&document.readyState!=='complete'&&/Unknown basket|Basket item layout/.test(e.message)?{ok:false,notReady:true,error:'Basket DOM not ready'}:{ok:false,error:request.kind==='select-slot'?'Court selection stopped; inspect diagnostic evidence':e.message,...(request.kind==='select-slot'?{reasonCode:e.reasonCode||'SELECTION_OBSERVATION_FAILED'}:{}),selectionAttempted:!!e.selectionAttempted,...(e.selectionDiagnostic?{selectionDiagnostic:e.selectionDiagnostic}:{})}));return true;
+ })().then(value=>respond(value.notReady?{ok:false,notReady:true,error:'Basket DOM not stable'}:{ok:true,value}),e=>respond(request.kind==='basket-read'&&document.readyState&&document.readyState!=='complete'&&/Unknown basket|Basket item layout/.test(e.message)?{ok:false,notReady:true,error:'Basket DOM not ready'}:{ok:false,...(request.kind==='basket-read'?{reasonCode:e.reasonCode||'BASKET_LAYOUT_UNKNOWN'}:{}),error:request.kind==='select-slot'?'Court selection stopped; inspect diagnostic evidence':e.message,...(request.kind==='select-slot'?{reasonCode:e.reasonCode||'SELECTION_OBSERVATION_FAILED'}:{}),selectionAttempted:!!e.selectionAttempted,...(e.selectionDiagnostic?{selectionDiagnostic:e.selectionDiagnostic}:{})}));return true;
 });

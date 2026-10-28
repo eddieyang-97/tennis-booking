@@ -68,6 +68,29 @@ try{
  await page.goto(merchant.origin+'/purchase/card/100001');response=await read(page,'checkout-progress');assert.equal(response.value.stage,'existing-purchase');assert.equal(response.value.cancellationSupported,false);assert.equal(merchant.state.counts.pay,1);
  reports.push({scenario:'actual-dom-paid-duplicate-existing-purchase',outcome:'passed',evidence:'local-fake-merchant'});
  console.log('Browser gate: account DOM fixtures verified');
+ for(const freeError of [false,true]){
+  console.log('Browser gate: free booking case',freeError?'error':'success');
+  await fresh(freeError?'free-error-profile':'free-success-profile');merchant.state.options.freeBooking=true;merchant.state.options.freeError=freeError;
+  await popup.locator('#day').fill('2026-10-27');await popup.locator('#discountCode').fill('SYNTHETIC');await popup.locator('#armPayment').click();await popup.waitForFunction(()=>document.querySelector('#result').textContent.includes('"armed"'));
+  await within(worker.evaluate(async()=>{await globalThis.__testAlarm({name:'prepare'});const {job}=await chrome.storage.local.get('job');globalThis.__testClock=job.when;await globalThis.__testAlarm({name:'release'});}),90000,'Free booking alarm');
+  const freeStatus=await send({kind:'status'}),freeResult=freeStatus.checkoutResult;
+  assert.equal(freeResult.status,freeError?'stopped':'confirmed',freeResult.error);assert.equal(freeResult.paid,false);assert.equal(freeResult.booked,freeError?null:true);
+  assert.ok(freeStatus.checkoutRecords[0].freeBookingDispatchedAt);assert.equal(freeStatus.checkoutRecords[0].paymentDispatchedAt,freeStatus.checkoutRecords[0].freeBookingDispatchedAt);
+  await send({kind:'payCheckout'});assert.deepEqual(merchant.state.counts,{selection:2,discount:1,opening:0,fill:0,pay:0,removal:0,free:1});
+  reports.push({scenario:freeError?'free-completion-error-no-replay':'free-completion-exact-receipt',outcome:'passed',evidence:'synthetic-free-confirmation-layout',mutations:{...merchant.state.counts}});
+ }
+ await fresh('free-unpaid-test-profile');merchant.state.options.freeBooking=true;
+ assert.equal((await send({kind:'check',day:'2026-10-25'})).status,'complete');
+ for(let i=0;i<2;i++){
+  const freeTest=await send({kind:'testDiscountCheckout',discountCode:'SYNTHETIC'});
+  assert.equal(freeTest.status,'checkout-test-free-ready',freeTest.error);assert.equal(freeTest.checkoutOpened,false);assert.equal(freeTest.bookingSubmissionBlocked,true);
+ }
+ const freeTestJournal=(await send({kind:'status'})).checkoutRecords[0];assert.equal(freeTestJournal.phase,'awaiting-payment');
+ for(const field of ['checkoutOpenDispatchedAt','reference','freeBookingDispatchedAt','paymentDispatchedAt'])assert.equal(Object.hasOwn(freeTestJournal,field),false);
+ assert.equal((await send({kind:'resetUnpaidTest'})).status,'test-auto-cleared');
+ const freeCleared=await send({kind:'status'});assert.equal(freeCleared.checkoutRecords.length,0);assert.equal(freeCleared.abandonedCheckouts[0].discountDispatchedAt,freeTestJournal.discountDispatchedAt);assert.equal(merchant.state.items.length,0);assert.equal(merchant.state.discount,0);
+ assert.deepEqual(merchant.state.counts,{selection:2,discount:1,opening:0,fill:0,pay:0,removal:3});
+ reports.push({scenario:'free-unpaid-test-verified-basket-repeat-cleanup',outcome:'passed',evidence:'synthetic-free-basket',mutations:{...merchant.state.counts}});
  await fresh('st-johns-profile');
  assert.equal(await popup.locator('#secondVenue').inputValue(),'st-johns-park');assert.equal(await popup.locator('#thirdVenue').inputValue(),'victoria-park');
  const stPreferences=await send({kind:'saveSettings',settings:{venues:['st-johns-park']}});

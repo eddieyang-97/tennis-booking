@@ -76,6 +76,9 @@ export async function prepareCheckout(slot,deps,{test=false,adopt=false,basketOn
   verifyBasket(basket,slot);await persist('basket-adopted');
  } else {
   if(!basket.empty)throw Error('Existing basket items; checkout stopped without changes');
+  // New journals opt into one-shot free completion. Never retrofit this on a
+  // legacy pending record: its owner may already have submitted manually.
+  record={...record,freeBookingAllowed:true};
   if(Number.isInteger(deps.tabId))record={...record,tabId:deps.tabId};
   await persist('selection-dispatched');
   try{const selected=await deps.select(slot);if(selected?.selectionDiagnostic)record={...record,selectionDiagnostic:selected.selectionDiagnostic};}catch(error){
@@ -115,6 +118,7 @@ export function reconcileClearedSelection(records,basket,{unpaidTestConfirmed=fa
  return {checkoutRecords:records.filter(r=>r!==pending[0]),abandoned};
 }
 export function confirmCheckout(record,receipt) {
+ if(record?.freeBookingDispatchedAt&&(receipt?.freeBooking!==true||receipt.source!=='free-booking-receipt'||receipt.totalGBP!=='0.00'||receipt.bookingState!=='confirmed'))throw Error('A matching free booking receipt has not been verified');
  if(!record || receipt?.status!=='confirmed' || receipt.key!==record.key || !/^\d+$/.test(receipt.reference||'') || (record.reference && receipt.reference!==record.reference))throw Error('A matching paid receipt has not been verified');
  return {...record,status:'confirmed',phase:'receipt-verified',reference:receipt.reference,receiptSource:receipt.source||'booking-receipt',bookingState:receipt.bookingState||'confirmed',confirmedAt:new Date().toISOString()};
 }

@@ -30,11 +30,11 @@ flowchart LR
 2. The service worker checks account/card readiness as applicable, reads court grids and chooses an authorized candidate. The scheduled path can retain the chosen grid tab temporarily for a fresh selection read; that tab handoff is not persisted as authorization.
 3. `checkout.js` verifies the basket, **persists selection intent before dispatch**, selects the intended hour(s) sequentially, then checks the actual basket against the saved slot and gross price. A specifically authorized one-hour fallback can be adopted **only from observed intended basket contents**, without another selection click.
 4. If a code was requested, `discount.js` journals its one-shot dispatch and verifies the basket gross/discount/net arithmetic before payment. The worker verifies the basket again before checkout opening.
-5. `payment.js` journals opening and card-fill intent as relevant, verifies the provisional reference and payable amount, persists `paymentDispatchedAt` **before** a Pay click, then checks a matching receipt or account-purchase entry. Payment and active reservation status are distinct.
+5. For a positive payable amount, `payment.js` journals opening and card-fill intent, verifies the provisional reference/amount, persists `paymentDispatchedAt` **before** Pay, then checks a receipt or account purchase. A verified zero-total basket uses a separate one-shot **Complete my booking** command: persist `freeBookingDispatchedAt` and the compatibility `paymentDispatchedAt` submission hold first, then require an exact free-booking receipt. Mixed-court free slots stop before submission because their receipt contract is unsupported. Payment and active reservation status are distinct.
 
 ## Durable checkout lifecycle
 
-The named nodes below (apart from **Needs review**) correspond to checkout record `phase` values. `status` is a separate field: a record is not `confirmed` until trusted paid evidence is matched. **Needs review** describes a stopped/held *outcome*, not a new persisted phase; the last journal phase and markers remain intact.
+The named nodes below (apart from **Needs review**) correspond to checkout record `phase` values. `status` is a separate field: a record is not `confirmed` until trusted paid evidence or an exact free-booking receipt is matched. **Needs review** describes a stopped/held *outcome*, not a new persisted phase; the last journal phase and markers remain intact.
 
 ```mermaid
 stateDiagram-v2
@@ -47,6 +47,7 @@ stateDiagram-v2
     state "link-opening" as Link
     state "authentication-required" as Auth
     state "payment-dispatched" as Pay
+    state "free-booking-dispatched" as Free
     state "payment-uncertain" as Uncertain
     state "manual-payment-reported" as Manual
     state "receipt-verified (status: confirmed)" as Confirmed
@@ -58,7 +59,12 @@ stateDiagram-v2
     BasketReady --> Discount: optional code / dispatch saved
     Discount --> BasketReady: discount totals verified
     Discount --> Held: unknown or invalid discount outcome
-    BasketReady --> Opening: basket reverified
+    BasketReady --> Opening: positive net / basket reverified
+    BasketReady --> Free: zero net / exact basket / submission hold saved
+    BasketReady --> Held: unsupported mixed-court free slot
+    Free --> Confirmed: exact zero-total booking receipt
+    Free --> Held: no reliable free-booking receipt / hold retained
+    Held --> Confirmed: dispatched free journal / exact receipt only
     Opening --> CardFill: card-fill dispatch saved
     Opening --> Link: legacy Link path
     Opening --> Held: opening outcome unresolved
@@ -76,9 +82,9 @@ stateDiagram-v2
     Manual --> Held: payment unverified
 ```
 
-The normal scheduled **local-card** path is `selection-dispatched` → `awaiting-payment` → optional `discount-dispatched` → `checkout-opening` → `card-filling` → `payment-dispatched` → `receipt-verified`. The Link branch is an alternate legacy path, not the scheduled local-card route. A provisional reference may be renewed *before* Pay and its previous value retained. Basket-only/unpaid-checkout tests and explicitly attested abandonment have additional phases and guards; see the source and operating guide.
+The normal scheduled **local-card** path is `selection-dispatched` → `awaiting-payment` → optional `discount-dispatched` → `checkout-opening` → `card-filling` → `payment-dispatched` → `receipt-verified`. The Link branch is an alternate legacy path, not the scheduled local-card route. A provisional reference may be renewed *before* Pay and its previous value retained. A zero-total completion bypasses card opening/fill/Pay and reports `freeBooking:true`, `booked:true`, `paid:false`; its compatibility hold is not evidence of a charge. Free recovery is receipt-only, with no account-history fallback or repeated completion. Free unpaid tests stay in `awaiting-payment`, may clear their exact verified basket through guarded test cleanup, and never submit completion. Other test/attested-abandonment phases remain source-defined.
 
-**Stop does not mean rollback.** A stopped run may keep `phase: selection-dispatched`, `discount-dispatched`, `checkout-opening`, `card-filling` or `payment-uncertain` with `recoveryRequired` or dispatch timestamps. Resuming a read is different from replaying a mutation. A missing acknowledgement never authorizes repeating selection, discount, checkout opening, card fill or Pay.
+**Stop does not mean rollback.** A stopped run may keep `phase: selection-dispatched`, `discount-dispatched`, `checkout-opening`, `card-filling`, `free-booking-dispatched` or `payment-uncertain` with `recoveryRequired` or dispatch timestamps. Resuming a read is different from replaying a mutation. A missing acknowledgement never authorizes repeating selection, discount, checkout opening, free completion, card fill or Pay.
 
 ## State and restart boundaries
 
@@ -94,6 +100,7 @@ The normal scheduled **local-card** path is `selection-dispatched` → `awaiting
 - Every consequential mutation has a durable intent/dispatch boundary. Never infer a failed mutation solely from a timeout, missing message response or closed tab.
 - Verify the **saved slot, courts/hours, date, authorized cap and basket amounts** before checkout or Pay. Changing popup preferences does not rewrite an existing checkout authorization.
 - `paymentDispatchedAt` or `manualPaymentReportedAt` makes the checkout **receipt/account-reconciliation-only**. Interrupted card filling also blocks automatic refill/Pay pending manual review.
+- A free-completion hold permits **exact booking-receipt observation only**, never account-price inference, another completion click or ordinary test cleanup. Legacy pending journals are not automatically opted into free submission. Successful free receipt layouts are simulated; live acceptance remains unverified.
 - Read-only retry and recovery are narrowly bounded. Unrelated items, changed identity, missing evidence, a pending other checkout or uncertain site state preserve the hold.
 - A matching paid purchase establishes **payment**, not necessarily an active booking or a refund. Keep payment, reservation, cancellation and refund evidence separate.
 

@@ -1,6 +1,6 @@
 # Chrome extension: setup, testing and recovery
 
-This is the **operating guide** for the active Manifest V3 extension. The installed version is shown at the top of the popup; the source version is defined in [`manifest.json`](manifest.json) (**0.9.7**, St Johns venue support, 27 October 2026). A source change does not update an installed extension.
+This is the **operating guide** for the active Manifest V3 extension. The installed version is shown at the top of the popup; the source version is defined in [`manifest.json`](manifest.json) (**0.9.8**, guarded free-booking checkout, 28 October 2026). A source change does not update an installed extension.
 
 - [Project overview and safety model](../../../README.md)
 - [Architecture and checkout state diagrams](../../../docs/architecture.md)
@@ -114,3 +114,13 @@ npm test
 This runs the Node `node:test` suite for business rules, adapters and mocked worker flows. It does **not** establish live merchant/midnight acceptance. Build the runtime ZIP with [`build.ps1`](../../../build.ps1) from the repository root. For historical fixes see [release notes](../../../docs/release-notes.md); for the plan to replace manual live-test cycles with deterministic integration tests see [test-improvement.md](../../../docs/test-improvement.md).
 
 St Johns support (v0.9.7): existing saved preferences and armed jobs are preserved. To include St Johns in an existing setup, choose BGG first, St Johns second and Victoria third, save preferences, then arm a new job. The public venue slug is verified; its grid currently redirects unauthenticated requests to human verification, so venue DOM compatibility remains tested with synthetic fixtures rather than live acceptance.
+
+## Fully discounted bookings (v0.9.8)
+
+New checkout journals can complete an exactly verified full-discount basket using **Complete my booking**, with no card opening, card fill or Pay. Gross caps and all hourly identities still apply. Mixed-court free bookings stop before submission until their receipt contract is supported. The extension records the irreversible completion intent before clicking once. Lost responses, merchant errors and worker restarts permit receipt observation only; they never authorize another completion click.
+
+A matching booking confirmation must explicitly establish the slot, numeric reference and zero total. Success reports `freeBooking:true`, `booked:true`, `paid:false`, `totalPaidGBP:"0.00"`. A price-only purchase row cannot confirm the reservation. An unfamiliar receipt remains unknown and needs manual inspection. **Verify paid receipt** also observes a dispatched free booking's retained confirmation without resubmitting it; a closed or moved tab may require manual support because no trusted reference is available.
+
+Legacy pending checkouts are not opted in automatically: the owner may already have clicked completion manually. Review that booking on the merchant site before using any recovery control. A free unpaid checkout test returns `checkout-test-free-ready` at its verified basket, retains `awaiting-payment` without an opening marker, and does not click completion. Use **Clear unfinished unpaid test** for its guarded discount/item cleanup; uncertain submissions remain protected. Keep the card unlocked for armed runs: a partial discount or no discount still uses the existing card path.
+
+The free basket and button are based on owner screenshots. Successful confirmation layouts and restart behavior are tested with synthetic fixtures; live free-booking completion is **not yet accepted**. Do not reload an armed production extension to install this branch without deliberately reviewing the run.

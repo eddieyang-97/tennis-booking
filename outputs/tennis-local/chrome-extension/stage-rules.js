@@ -32,7 +32,11 @@ export function verifyBasket(basket,slot,discount=null) {
   if(!item || item.court!==courts[i] || item.venue!==NAMES[slot.venue] || item.day!==Number(slot.date.slice(8)) || item.month!==Number(slot.date.slice(5,7)))fail('Basket date/time/court/venue mismatch');
  }
  if(basket.totalGBP!==(discount?.totalGBP||slot.totalGBP) || basket.items.reduce((s,x)=>s+Math.round(+x.priceGBP*100),0)!==Math.round(+slot.totalGBP*100))fail('Basket price mismatch');
- if(discount && (basket.discountApplied!==true||basket.subtotalGBP!==slot.totalGBP||basket.subtotalGBP!==discount.subtotalGBP||basket.discountGBP!==discount.discountGBP||Math.round(+slot.totalGBP*100)-Math.round(+discount.discountGBP*100)!==Math.round(+basket.totalGBP*100)||Number(basket.totalGBP)<=0))fail('Basket discount mismatch');
- if(!basket.paymentBoundary)fail('Known prepayment boundary missing');
+ if(discount && (basket.discountApplied!==true||basket.subtotalGBP!==slot.totalGBP||basket.subtotalGBP!==discount.subtotalGBP||basket.discountGBP!==discount.discountGBP||Math.round(+slot.totalGBP*100)-Math.round(+discount.discountGBP*100)!==Math.round(+basket.totalGBP*100)||Number(basket.totalGBP)<0))fail('Basket discount mismatch');
+ // Discount observation also validates the unchanged gross identities. A free
+ // boundary is accepted only with explicit full-discount accounting, never as
+ // an alternate card boundary for a positive net amount.
+ const free=basket.freeBookingBoundary===true&&basket.paymentBoundary===false&&basket.discountApplied===true&&basket.subtotalGBP===slot.totalGBP&&basket.discountGBP===slot.totalGBP&&(!discount||discount.totalGBP==='0.00');
+ if(!(basket.paymentBoundary&&basket.totalGBP!=='0.00')&&!free)fail('Known prepayment boundary missing');
  return true;
 }

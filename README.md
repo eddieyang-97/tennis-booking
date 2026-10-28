@@ -2,7 +2,7 @@
 
 A Manifest V3 Chrome extension that checks and attempts to book tennis courts on [Tower Hamlets Courtside](https://tennistowerhamlets.com/) at the London midnight release, with configurable preferences, strict basket/payment verification, a local encrypted card file and recovery of uncertain payments.
 
-**Active implementation:** [`outputs/tennis-local/chrome-extension/`](outputs/tennis-local/chrome-extension/) · **Version:** [`0.9.7`](outputs/tennis-local/chrome-extension/manifest.json), St Johns venue support (27 October 2026). This branch is not a merged release claim.
+**Active implementation:** [`outputs/tennis-local/chrome-extension/`](outputs/tennis-local/chrome-extension/) · **Version:** [`0.9.8`](outputs/tennis-local/chrome-extension/manifest.json), guarded free-booking checkout (28 October 2026). This branch is not a merged release claim.
 
 **Release status:** In active development, **not yet verified for unattended end-to-end midnight payment**. A real £2.50 one-hour card payment and its subsequent account-purchase reconciliation were verified on 13 October. Live two-hour basket selection was verified, but an automated two-hour Pay and a complete unattended midnight booking have not been established. See [release notes and live-evidence limits](docs/release-notes.md).
 
@@ -37,7 +37,7 @@ Candidate priority is **venue → duration → earliest eligible start time → 
 
 A scheduled two-hour selection may be treated as a one-hour booking **only** when the observed basket contains precisely one intended, authorized hour and the saved minimum duration, time and one-hour cap allow it. No extra click is issued to manufacture a fallback.
 
-Supported configuration is limited to **whole-hour, same-day London windows** and **one- or two-hour** durations. Reversed/empty/overnight/fractional ranges, unsupported venues, invalid/nonpositive caps and duplicate/unsupported preferences are rejected. Totals are compared in integer pence. A blank discount code follows ordinary checkout; a provided code is applied at most once and must be verified against every basket item, gross subtotal, explicit discount and net payable. Zero-cost card checkout is not supported. These acceptance requirements are covered in the [testing plan](docs/test-improvement.md#settings-and-discount-regression-contract-carried-forward-from-v080-requirements).
+Supported configuration is limited to **whole-hour, same-day London windows** and **one- or two-hour** durations. Reversed/empty/overnight/fractional ranges, unsupported venues, invalid/nonpositive caps and duplicate/unsupported preferences are rejected. Totals are compared in integer pence. A blank discount code follows ordinary checkout; a provided code is applied at most once and must be verified against every basket item, gross subtotal, explicit discount and net payable. A fully discounted basket uses a separate one-shot free-booking completion, never card checkout. Legacy pending journals require manual review. These acceptance requirements are covered in the [testing plan](docs/test-improvement.md#settings-and-discount-regression-contract-carried-forward-from-v080-requirements).
 
 The popup initially suggests London today + 8 days; it does not automatically change an already armed date. Nightly runs are one-shot, not a recurring weekly subscription.
 
