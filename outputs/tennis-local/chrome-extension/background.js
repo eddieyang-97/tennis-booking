@@ -370,11 +370,23 @@ async function testDiscountCheckout(code='') {
    apply:(code,expected)=>command({kind:'discount-apply',code,expected})
   });
   if(record.discount)await step('discount-verified',{...record.discount});
-  await store({...record,phase:'checkout-test-opening'});
-  const opened=await openStoredCheckout(record,record.tabId,false,store);
-  await store({...opened.record,reference:opened.page.reference,phase:'checkout-test-ready',checkoutTestVerifiedAt:new Date().toISOString()});
-  await chrome.tabs.update(record.tabId,{active:true});await trace.finish('checkout-test-passed');
-  const result={status:'checkout-test-passed',slot:record.slot,grossTotalGBP:record.slot.totalGBP,discountGBP:record.discount?.discountGBP||'0.00',payableGBP:payableSlot(record).totalGBP,checkoutOpened:true,paymentBlocked:true,cardFilled:false,booked:false,paid:false,runId:trace.record.id,finishedAt:trace.record.finishedAt};
+  const free=payableSlot(record).totalGBP==='0.00';
+  if(free){
+   if(['checkoutOpenDispatchedAt','reference','freeBookingDispatchedAt'].some(field=>Object.hasOwn(record,field)))throw Object.assign(Error('Opened or submitted free checkout test requires manual review; journal retained'),{reasonCode:'FREE_BOOKING_REVIEW_REQUIRED'});
+   // Free completion is the booking mutation itself. An unpaid test must stop
+   // at a freshly verified basket, with no opening or submission journal.
+   const response=await readPageState(chrome.tabs,BASE+'/basket',{kind:'basket-read'},{tabId:record.tabId,navigate:false,timeoutMs:15000,step});
+   if(!response.ok)throw Object.assign(Error('Free test basket observation rejected; inspect retained tab'),failureFor(response));
+   verifyBasket(response.value,record.slot,record.discount);
+   await store({...record,phase:'awaiting-payment',checkoutTestVerifiedAt:new Date().toISOString()});
+  }else{
+   await store({...record,phase:'checkout-test-opening'});
+   const opened=await openStoredCheckout(record,record.tabId,false,store);
+   await store({...opened.record,reference:opened.page.reference,phase:'checkout-test-ready',checkoutTestVerifiedAt:new Date().toISOString()});
+  }
+  const status=free?'checkout-test-free-ready':'checkout-test-passed';
+  await chrome.tabs.update(record.tabId,{active:true});await trace.finish(status);
+  const result={status,slot:record.slot,grossTotalGBP:record.slot.totalGBP,discountGBP:record.discount?.discountGBP||'0.00',payableGBP:payableSlot(record).totalGBP,checkoutOpened:!free,...(free?{bookingSubmissionBlocked:true}:{}),paymentBlocked:true,cardFilled:false,booked:false,paid:false,runId:trace.record.id,finishedAt:trace.record.finishedAt};
   await chrome.storage.local.set({checkoutResult:result});return result;
  }catch(error){
   if(trace){await step('stopped',failureFor(error,{operation:'unpaid-checkout-test'}));await trace.finish('stopped');}

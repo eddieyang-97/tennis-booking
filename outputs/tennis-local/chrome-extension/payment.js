@@ -40,6 +40,7 @@ export async function payCheckout(record,deps) {
  if(record.discountCode&&!record.discount)throw Error('Discount must be verified before payment');
  const amount=payableSlot(record).totalGBP;
  if(amount==='0.00'){
+  if(record.slot.courts?.some(court=>court!==record.slot.court))throw Object.assign(Error('Mixed-court free booking requires manual review; its receipt cannot be verified automatically'),{reasonCode:'FREE_BOOKING_REVIEW_REQUIRED'});
   if(record.freeBookingAllowed!==true||record.reference||record.checkoutOpenDispatchedAt)throw Object.assign(Error('Legacy or opened free checkout requires manual review; no booking submitted'),{reasonCode:'FREE_BOOKING_REVIEW_REQUIRED'});
   if(!['awaiting-payment','discount-dispatched'].includes(record.phase))throw Error('Free booking phase is not authorized');
   const expected=await deps.verifyBasket(record.slot);verifyBasket(expected,record.slot,record.discount);

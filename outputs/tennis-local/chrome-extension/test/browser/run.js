@@ -79,6 +79,18 @@ try{
   await send({kind:'payCheckout'});assert.deepEqual(merchant.state.counts,{selection:2,discount:1,opening:0,fill:0,pay:0,removal:0,free:1});
   reports.push({scenario:freeError?'free-completion-error-no-replay':'free-completion-exact-receipt',outcome:'passed',evidence:'synthetic-free-confirmation-layout',mutations:{...merchant.state.counts}});
  }
+ await fresh('free-unpaid-test-profile');merchant.state.options.freeBooking=true;
+ assert.equal((await send({kind:'check',day:'2026-10-25'})).status,'complete');
+ for(let i=0;i<2;i++){
+  const freeTest=await send({kind:'testDiscountCheckout',discountCode:'SYNTHETIC'});
+  assert.equal(freeTest.status,'checkout-test-free-ready',freeTest.error);assert.equal(freeTest.checkoutOpened,false);assert.equal(freeTest.bookingSubmissionBlocked,true);
+ }
+ const freeTestJournal=(await send({kind:'status'})).checkoutRecords[0];assert.equal(freeTestJournal.phase,'awaiting-payment');
+ for(const field of ['checkoutOpenDispatchedAt','reference','freeBookingDispatchedAt','paymentDispatchedAt'])assert.equal(Object.hasOwn(freeTestJournal,field),false);
+ assert.equal((await send({kind:'resetUnpaidTest'})).status,'test-auto-cleared');
+ const freeCleared=await send({kind:'status'});assert.equal(freeCleared.checkoutRecords.length,0);assert.equal(freeCleared.abandonedCheckouts[0].discountDispatchedAt,freeTestJournal.discountDispatchedAt);assert.equal(merchant.state.items.length,0);assert.equal(merchant.state.discount,0);
+ assert.deepEqual(merchant.state.counts,{selection:2,discount:1,opening:0,fill:0,pay:0,removal:3});
+ reports.push({scenario:'free-unpaid-test-verified-basket-repeat-cleanup',outcome:'passed',evidence:'synthetic-free-basket',mutations:{...merchant.state.counts}});
  await fresh('st-johns-profile');
  assert.equal(await popup.locator('#secondVenue').inputValue(),'st-johns-park');assert.equal(await popup.locator('#thirdVenue').inputValue(),'victoria-park');
  const stPreferences=await send({kind:'saveSettings',settings:{venues:['st-johns-park']}});

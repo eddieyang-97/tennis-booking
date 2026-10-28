@@ -2,6 +2,7 @@ import test from 'node:test';import assert from 'node:assert/strict';import fs f
 import {payCheckout} from './payment.js';import {reconcilePaid} from './reconciliation.js';
 import {receiptResponse} from './test/receipt-fixture.js';import {verifyBasket} from './stage-rules.js';
 import {readiness} from './readiness.js';import {pendingArmBlocker} from './booking-settings.js';
+import {clearUnpaidTest} from './test-cleanup.js';
 const slot={venue:'bethnal-green-gardens',date:'2026-11-04',court:1,start:'21:00',hours:1,totalGBP:'7.00'};
 const key=JSON.stringify([slot.venue,slot.date,slot.court,slot.start,slot.hours]);
 const basket={empty:false,items:[{venue:'Bethnal Green Gardens',court:1,day:4,month:11,hour:21,priceGBP:'7.00'}],subtotalGBP:'7.00',discountGBP:'7.00',totalGBP:'0.00',discountApplied:true,paymentBoundary:false,freeBookingBoundary:true};
@@ -37,6 +38,21 @@ test('legacy journals, prior opening, unpaid tests and changed free baskets cann
  await assert.rejects(payCheckout(record(),{...deps,verifyBasket:async()=>({...basket,items:[{...basket.items[0],court:2}]})}));assert.equal(clicks,0);
  assert.throws(()=>verifyBasket({...basket,discountGBP:'8.00'},slot,record().discount));
 }));
+test('mixed-court free checkout stops before submission or new dispatch markers',()=>fixed(async()=>{
+ const mixed={...slot,start:'20:00',hours:2,courts:[1,2],totalGBP:'14.00'},r={...record(),slot:mixed,key:JSON.stringify([mixed.venue,mixed.date,mixed.courts,mixed.start,mixed.hours]),discount:{subtotalGBP:'14.00',discountGBP:'14.00',totalGBP:'0.00'}};
+ let saves=0,submits=0;
+ await assert.rejects(payCheckout(r,{save:async()=>saves++,verifyBasket:async()=>{throw Error('Unsupported free slot must stop before basket work');},completeFree:async()=>submits++}),e=>e.reasonCode==='FREE_BOOKING_REVIEW_REQUIRED');
+ assert.equal(saves,0);assert.equal(submits,0);assert.equal(r.freeBookingDispatchedAt,undefined);assert.equal(r.paymentDispatchedAt,undefined);
+}));
+test('free unpaid-test cleanup rejects changed baskets or submission markers before any removal',async()=>{
+ for(const change of [{paymentDispatchedAt:'submitted'},{freeBookingDispatchedAt:'submitted'},{checkoutOpenDispatchedAt:'opening'},{discount:undefined},{discount:{...record().discount,discountGBP:'6.00'}}]){
+  let removals=0;const r={...record(),checkoutTestOnly:true,...change};
+  await assert.rejects(clearUnpaidTest(r,{save:async()=>{},read:async()=>basket,remove:async()=>removals++,archive:async()=>assert.fail('Must retain uncertain test')}));assert.equal(removals,0);
+ }
+ for(const changed of [{...basket,items:[{...basket.items[0],court:2}]},{...basket,discountGBP:'6.00'},{...basket,freeBookingBoundary:false}]){
+  let removals=0;await assert.rejects(clearUnpaidTest({...record(),checkoutTestOnly:true},{read:async()=>changed,save:async()=>{},remove:async()=>removals++,archive:async()=>assert.fail('Must retain changed basket')}));assert.equal(removals,0);
+ }
+});
 test('free content command revalidates exact snapshot, complete document and unique enabled control before a single click',()=>{
  let listener,response,clicks=0,current=basket;const button={textContent:'Complete my booking',disabled:false,click:()=>clicks++};
  const context={location:{pathname:'/basket'},basketSummary:()=>current,document:{readyState:'complete',querySelectorAll:()=>[button]},chrome:{runtime:{id:'test',onMessage:{addListener:fn=>listener=fn}}}};

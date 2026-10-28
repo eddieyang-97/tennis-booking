@@ -1,12 +1,19 @@
 import {slotKey,slotCourts,NAMES} from './core.js';
+import {verifyBasket} from './stage-rules.js';
 export function assertUnpaidTest(record){
- if(record?.checkoutTestOnly!==true||record.status!=='pending'||record.test||record.basketOnly||record.paymentDispatchedAt||record.manualPaymentReportedAt||record.key!==slotKey(record.slot))throw Error('Only an unpaid checkout test can be reset automatically');
+ if(record?.checkoutTestOnly!==true||record.status!=='pending'||record.test||record.basketOnly||record.paymentDispatchedAt||record.manualPaymentReportedAt||Object.hasOwn(record,'freeBookingDispatchedAt')||record.key!==slotKey(record.slot))throw Error('Only an unpaid checkout test can be reset automatically');
  if(!['selection-dispatched','awaiting-payment','discount-dispatched','checkout-test-opening','checkout-test-ready','test-cleanup-checking','test-cleanup-removing'].includes(record.phase)||(Object.hasOwn(record,'reference')&&!/^\d+$/.test(record.reference))||(record.phase==='checkout-test-ready'&&!record.checkoutOpenDispatchedAt&&!record.reference))throw Error('Test checkout state is uncertain; preserve the journal');
 }
 export function testBasketSubset(basket,record){
  if(basket?.empty===true&&Array.isArray(basket.items)&&!basket.items.length)return true;
  const s=record.slot,courts=slotCourts(s),seen=new Set();
- if(!Array.isArray(basket?.items)||!basket.items.length||basket.items.length>s.hours||!basket.paymentBoundary)throw Error('Test basket is not verified; nothing removed');
+ const free=basket?.freeBookingBoundary===true&&basket.paymentBoundary===false&&basket.totalGBP==='0.00';
+ if(free){
+  assertUnpaidTest(record);
+  if(record.discount?.totalGBP!=='0.00'||['reference','checkoutOpenDispatchedAt','freeBookingDispatchedAt'].some(field=>Object.hasOwn(record,field)))throw Error('Free test completion state is uncertain; preserve the journal');
+  verifyBasket(basket,s,record.discount);
+ }
+ if(!Array.isArray(basket?.items)||!basket.items.length||basket.items.length>s.hours||(!basket.paymentBoundary&&!free))throw Error('Test basket is not verified; nothing removed');
  for(const item of basket.items){const i=item.hour-Number(s.start.slice(0,2));
   if(!Number.isInteger(i)||i<0||i>=s.hours||seen.has(i)||item.court!==courts[i]||item.venue!==NAMES[s.venue]||item.day!==Number(s.date.slice(8))||item.month!==Number(s.date.slice(5,7))||!/^\d+\.\d{2}$/.test(item.priceGBP))throw Error('Basket contains unrelated or changed items; nothing removed');seen.add(i);
  }
