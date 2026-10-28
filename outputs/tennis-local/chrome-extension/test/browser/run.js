@@ -68,6 +68,17 @@ try{
  await page.goto(merchant.origin+'/purchase/card/100001');response=await read(page,'checkout-progress');assert.equal(response.value.stage,'existing-purchase');assert.equal(response.value.cancellationSupported,false);assert.equal(merchant.state.counts.pay,1);
  reports.push({scenario:'actual-dom-paid-duplicate-existing-purchase',outcome:'passed',evidence:'local-fake-merchant'});
  console.log('Browser gate: account DOM fixtures verified');
+ for(const freeError of [false,true]){
+  console.log('Browser gate: free booking case',freeError?'error':'success');
+  await fresh(freeError?'free-error-profile':'free-success-profile');merchant.state.options.freeBooking=true;merchant.state.options.freeError=freeError;
+  await popup.locator('#day').fill('2026-10-27');await popup.locator('#discountCode').fill('SYNTHETIC');await popup.locator('#armPayment').click();await popup.waitForFunction(()=>document.querySelector('#result').textContent.includes('"armed"'));
+  await within(worker.evaluate(async()=>{await globalThis.__testAlarm({name:'prepare'});const {job}=await chrome.storage.local.get('job');globalThis.__testClock=job.when;await globalThis.__testAlarm({name:'release'});}),90000,'Free booking alarm');
+  const freeStatus=await send({kind:'status'}),freeResult=freeStatus.checkoutResult;
+  assert.equal(freeResult.status,freeError?'stopped':'confirmed',freeResult.error);assert.equal(freeResult.paid,false);assert.equal(freeResult.booked,freeError?null:true);
+  assert.ok(freeStatus.checkoutRecords[0].freeBookingDispatchedAt);assert.equal(freeStatus.checkoutRecords[0].paymentDispatchedAt,freeStatus.checkoutRecords[0].freeBookingDispatchedAt);
+  await send({kind:'payCheckout'});assert.deepEqual(merchant.state.counts,{selection:2,discount:1,opening:0,fill:0,pay:0,removal:0,free:1});
+  reports.push({scenario:freeError?'free-completion-error-no-replay':'free-completion-exact-receipt',outcome:'passed',evidence:'synthetic-free-confirmation-layout',mutations:{...merchant.state.counts}});
+ }
  await fresh('st-johns-profile');
  assert.equal(await popup.locator('#secondVenue').inputValue(),'st-johns-park');assert.equal(await popup.locator('#thirdVenue').inputValue(),'victoria-park');
  const stPreferences=await send({kind:'saveSettings',settings:{venues:['st-johns-park']}});

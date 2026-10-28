@@ -5,6 +5,7 @@ import {verifyBasket} from './stage-rules.js';
 import {waitPaymentState} from './page-read.js';
 import {temporaryTabError} from './retry.js';
 export async function openVerifiedCheckout(record,deps,{timeoutMs=15000,now=Date.now,delay}={}) {
+ if(payableSlot(record).totalGBP==='0.00')throw Object.assign(Error('Free checkout test stops at the verified basket; no booking submitted'),{reasonCode:'FREE_BOOKING_REVIEW_REQUIRED'});
  if(record.paymentDispatchedAt||record.manualPaymentReportedAt)throw Error('Payment requires reconciliation, not checkout opening');
  if(record.discountCode&&!record.discount)throw Error('Discount must be verified before checkout');
  const current=await deps.current();
@@ -38,6 +39,17 @@ export async function payCheckout(record,deps) {
  if(checkoutKey(record.slot,record.test,record.settings) !== record.key)throw Error('Checkout identity changed');
  if(record.discountCode&&!record.discount)throw Error('Discount must be verified before payment');
  const amount=payableSlot(record).totalGBP;
+ if(amount==='0.00'){
+  if(record.freeBookingAllowed!==true||record.reference||record.checkoutOpenDispatchedAt)throw Object.assign(Error('Legacy or opened free checkout requires manual review; no booking submitted'),{reasonCode:'FREE_BOOKING_REVIEW_REQUIRED'});
+  if(!['awaiting-payment','discount-dispatched'].includes(record.phase))throw Error('Free booking phase is not authorized');
+  const expected=await deps.verifyBasket(record.slot);verifyBasket(expected,record.slot,record.discount);
+  const at=new Date().toISOString();
+  // paymentDispatchedAt is also a compatibility hold: all legacy recovery and
+  // cleanup guards must protect this irreversible reservation submission.
+  record={...record,freeBookingDispatchedAt:at,paymentDispatchedAt:at,phase:'free-booking-dispatched',updatedAt:at};await deps.save(record);
+  try{await deps.completeFree(expected);}catch{/* Outcome is unknown; observe only. */}
+  return confirm(await deps.receipt());
+ }
  if(!['selection-dispatched','basket-adopted','awaiting-payment','checkout-opening','link-opening','authentication-required','card-filling','provisional-reference-renewed'].includes(record.phase))throw Error('Unknown checkout phase; inspect payment status before continuing');
  await deps.verifyBasket(record.slot);
  record={...record,basketVerifiedAt:new Date().toISOString()};

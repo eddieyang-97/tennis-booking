@@ -6,7 +6,7 @@ export class Merchant{
  record(overrides={}){return {...journal(),slot:this.slot,key:JSON.stringify([this.slot.venue,this.slot.date,this.slot.court,this.slot.start,this.slot.hours]),...overrides};}
  selected(){this.basket=basket(this.slot);}
  async message(tab,request,worker){
-  const mutation={'select-slot':'selection','discount-apply':'discount','payment-open':'opening','card-fill':'fill','payment-submit':'pay','test-remove-next':'removal'}[request.kind];
+  const mutation={'select-slot':'selection','discount-apply':'discount','payment-open':'opening','card-fill':'fill','payment-submit':'pay','free-booking-submit':'free','test-remove-next':'removal'}[request.kind];
   if(mutation)this.boundary(`dispatch:${mutation}:before`);
   let response;
   if(request.kind==='account'){if(this.options.accountGate){this.accountStarted=true;await this.options.accountGate;}response={ok:true,signedIn:true};}
@@ -17,7 +17,10 @@ export class Merchant{
    if(this.options.partial)this.basket={...this.basket,items:[this.basket.items[1]],subtotalGBP:'7.00',totalGBP:'7.00'};
    response={ok:true,value:{selected:true}};
   }else if(request.kind==='discount-apply'){
-   this.counts.discount++;this.basket={...this.basket,discountApplied:true,discountGBP:'2.00',totalGBP:'12.00'};response={ok:true};
+   this.counts.discount++;this.basket={...this.basket,discountApplied:true,discountGBP:this.options.freeBooking?this.basket.subtotalGBP:'2.00',totalGBP:this.options.freeBooking?'0.00':'12.00',...(this.options.freeBooking?{paymentBoundary:false,freeBookingBoundary:true}:{})};response={ok:true};
+  }else if(request.kind==='free-booking-submit'){
+   this.counts.free=(this.counts.free||0)+1;this.freeSubmitted=true;
+   tab.url='https://tennistowerhamlets.com/basket/receipt';response={ok:true};
   }else if(request.kind==='payment-open'){
    this.counts.opening++;this.readyAt=this.clock+(this.options.cardDelay||0);this.purchases.set(this.reference,{state:'Pending',totalGBP:this.basket.totalGBP});response={ok:true};
   }else if(['checkout-progress','payment-state'].includes(request.kind)){

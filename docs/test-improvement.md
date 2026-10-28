@@ -8,6 +8,9 @@
 
 ## Executive summary
 
+**28 October free-checkout regression:** v0.9.8 adds permanent `test-free-booking.js`, discount/parser regressions, actual-worker interruption tests and isolated Chromium success/error cases for a full discount and `£ free`. Assert one free completion and zero card opening/fill/Pay; persist the submission hold before mutation, preserve it on restart/error, and reject legacy journals or ambiguous receipts. The screenshot supports the basket/button contract only. Success receipts are synthetic and require a separate live acceptance gate.
+
+
 **27 October investigation:** [Issue #12 findings](merchant-observation.md) compare REA 6.8.0 with direct CDP and real selection adapters on the loopback fake merchant. The permanent browser gate adds committed selection with truncated response: retain the selection timeout and partial-basket evidence, with no repeated selection/open/fill/Pay. This is a hypothetical server contract, not an explanation of live unchecking. Public grid access redirected to human verification; merchant protocol discovery remains open. REA is optional tooling, outside production and mandatory CI.
 
 **21 October selection regression:** The latest installed run dispatched one hour, observed zero acknowledgements and an empty basket after about 115 seconds, despite a nominal 60-second selection budget. The owner also observed manual reversion. The selection-diagnostics branch tests monotonic elapsed deadlines under delayed callbacks, safe reversion/resource metadata, fixed classification through content reply and worker journaling, lost responses and restart without a second click. Same-origin HTTP status observations are not a terminal merchant rejection contract; alternate-court fallback remains blocked. Simulations do not establish the live failure cause or merchant acceptance.

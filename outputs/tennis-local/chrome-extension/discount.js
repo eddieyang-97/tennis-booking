@@ -10,13 +10,13 @@ const observationTimeout=()=>Object.assign(Error('Discount not verified before d
 export function verifiedDiscount(basket,slot) {
  verifyBasket({...basket,totalGBP:slot.totalGBP},slot);
  const gross=pence(slot.totalGBP),off=pence(basket.discountGBP),net=pence(basket.totalGBP);
- if(basket.discountApplied!==true||basket.subtotalGBP!==slot.totalGBP||off<=0||net<=0||gross-off!==net)throw Error('Discount not verified; no payment');
+ if(basket.discountApplied!==true||basket.subtotalGBP!==slot.totalGBP||off<=0||net<0||gross-off!==net)throw Error('Discount not verified; no payment');
  return {subtotalGBP:slot.totalGBP,discountGBP:basket.discountGBP,totalGBP:basket.totalGBP};
 }
 export function payableSlot(record) {
  if(!record.discount)return record.slot;
  const d=record.discount;
- if(!normalizeDiscount(record.discountCode)||!Number.isFinite(Date.parse(record.discountDispatchedAt))||d.subtotalGBP!==record.slot.totalGBP||pence(d.discountGBP)<=0||pence(d.totalGBP)<=0||pence(d.subtotalGBP)-pence(d.discountGBP)!==pence(d.totalGBP))throw Error('Discount journal is not verified');
+ if(!normalizeDiscount(record.discountCode)||!Number.isFinite(Date.parse(record.discountDispatchedAt))||d.subtotalGBP!==record.slot.totalGBP||pence(d.discountGBP)<=0||pence(d.totalGBP)<0||pence(d.subtotalGBP)-pence(d.discountGBP)!==pence(d.totalGBP))throw Error('Discount journal is not verified');
  return {...record.slot,totalGBP:d.totalGBP};
 }
 export async function ensureDiscount(record,deps,{timeoutMs=15000,now=Date.now,delay=ms=>new Promise(r=>setTimeout(r,ms))}={}) {

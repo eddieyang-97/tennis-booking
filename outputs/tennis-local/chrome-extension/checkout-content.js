@@ -8,18 +8,20 @@ function receiptFields(lines,label,shape,legacyContext){
  }
  return values;
 }
-function checkoutReceipt(slot,key,expectedReference) {
+function checkoutReceipt(slot,key,expectedReference,freeBooking=false) {
  if(location.origin!=='https://tennistowerhamlets.com' || !location.pathname.startsWith('/basket'))throw Error('Open the resulting Courtside receipt page');
  const heading=document.querySelector('h1')?.textContent.trim()||'';
  const text=document.querySelector('main')?.innerText || document.body.innerText;
+ if(freeBooking&&/^Something went wrong!?$/i.test(heading))return {status:'merchant-error'};
  if(/provisional/i.test(text) || !/^(Booking confirmation|Booking confirmed|Payment successful)$/i.test(heading))return {status:'awaiting-payment'};
  const reference=/(?:booking reference|booking ref(?:erence)?|ref)\s*[:#]\s*(\d+)/i.exec(text)?.[1];
  const venue=({'bethnal-green-gardens':'Bethnal Green Gardens','st-johns-park':'St Johns Park','victoria-park':'Victoria Park'})[slot.venue];
  const date=new Date(slot.date+'T12:00:00Z'),day=date.getUTCDate();
  const courtPattern=new RegExp(`(?:Tennis court|Court)\\s+${slot.court}(?!\\d)`,'i');
  const hour=+slot.start.slice(0,2);
- const totals=[...text.matchAll(/Total\s*[:]?\s*£\s*(\d+\.\d{2})/gi)];
- const paid=/payment (?:successful|received)|payment status\s*:\s*paid/i.test(heading+'\n'+text);
+ const totals=freeBooking?[...text.matchAll(/(?:^|\n)\s*Total\s*[:]?\s*£\s*(\d+\.\d{2}|free)\s*(?=\n|$)/gi)].map(m=>{if(/^free$/i.test(m[1]))m[1]='0.00';return m;}):[...text.matchAll(/Total\s*[:]?\s*£\s*(\d+\.\d{2})/gi)];
+ const freeConfirmed=freeBooking===true&&slot.totalGBP==='0.00'&&/^(Booking confirmation|Booking confirmed)$/i.test(heading);
+ const paid=freeConfirmed||/payment (?:successful|received)|payment status\s*:\s*paid/i.test(heading+'\n'+text);
  // A positively identified paid receipt is contradictory evidence, not absent
  // evidence. Only recognize explicit facts; missing/unfamiliar layout remains
  // unverifiable. Never return the merchant text in diagnostics.
@@ -46,7 +48,7 @@ function checkoutReceipt(slot,key,expectedReference) {
  const duration=new RegExp(`duration\\s*:\\s*${slot.hours}\\s*hours?\\b`,'i');
  const lastHour=hour+slot.hours-1;
  if(!duration.test(text) && !times.some(m=>m[4]&&minute([null,m[4],m[5],m[6]])===(lastHour+1)*60-1))throw Error('Receipt duration not verified');
- return {status:'confirmed',key,reference,source:'booking-receipt',bookingState:'confirmed'};
+ return {status:'confirmed',key,reference,source:freeConfirmed?'free-booking-receipt':'booking-receipt',bookingState:'confirmed',...(freeConfirmed?{freeBooking:true,totalGBP:'0.00'}:{})};
 }
 function checkoutPurchase(slot,key,reference,paymentDispatchedAt,manualPaymentReportedAt,testStatusOnly=false) {
  if(location.origin!=='https://tennistowerhamlets.com'||location.pathname!=='/account')throw Error('Open the Courtside account page');
@@ -72,5 +74,5 @@ chrome.runtime.onMessage.addListener((request,sender,respond)=>{
  if(request.kind==='test-purchase-state'&&location.pathname==='/account'&&document.readyState&&document.readyState!=='complete'){respond({ok:false,notReady:true,error:'Account purchase history is still loading'});return;}
  if(['purchase-read','test-purchase-state'].includes(request.kind) && /\/(?:verify-human|sign-in|login)(?:\/|$)/.test(location.pathname)){respond({ok:false,error:'Account login or human verification required',humanRequired:true,page:'account-verification'});return;}
  if(['purchase-read','test-purchase-state'].includes(request.kind)&&location.pathname==='/account'&&document.readyState&&document.readyState!=='complete'&&!document.querySelector('h1')?.textContent.trim()){respond({ok:false,notReady:true,error:'Account DOM not ready'});return;}
- try{respond({ok:true,value:request.kind==='test-purchase-state'?checkoutPurchase(request.slot,request.key,request.reference,null,null,true):request.kind==='purchase-read'?checkoutPurchase(request.slot,request.key,request.reference,request.paymentDispatchedAt,request.manualPaymentReportedAt):checkoutReceipt(request.slot,request.key,request.reference)});}catch(e){respond({ok:false,error:e.message});}
+ try{respond({ok:true,value:request.kind==='test-purchase-state'?checkoutPurchase(request.slot,request.key,request.reference,null,null,true):request.kind==='purchase-read'?checkoutPurchase(request.slot,request.key,request.reference,request.paymentDispatchedAt,request.manualPaymentReportedAt):checkoutReceipt(request.slot,request.key,request.reference,request.freeBooking)});}catch(e){respond({ok:false,error:e.message});}
 });
