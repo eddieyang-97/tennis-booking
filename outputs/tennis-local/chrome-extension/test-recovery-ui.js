@@ -20,11 +20,13 @@ test('discount observation uses continuation, while unsupported free slots expos
 });
 test('payment/free/card-fill uncertainty never offers submit, prepare, cleanup or cleared-selection actions',()=>{
  for(const change of [{paymentDispatchedAt:'submitted'},{manualPaymentReportedAt:'reported'},{freeBookingDispatchedAt:'submitted'},{cardFillDispatchedAt:'interrupted'},{cardFillRecoveryRequired:true},{paymentDispatchedAt:null},{phase:'payment-uncertain'},{phase:'card-filling'}]){
-  const r={...pending,...change},before=structuredClone(r),v=view(r);
+  const r={...pending,reference:'100001',...change},before=structuredClone(r),v=view(r);
   for(const id of ['payCheckout','prepareCheckout','resetUnpaidTest','reconcileSelection'])assert.equal(v.actions[id],false,JSON.stringify({change,id}));
   assert.equal(v.actions.verifyPayment,true);assert.equal(v.actions.assessRecovery,true);assert.deepEqual(r,before);
  }
  const free=view({...pending,freeBookingDispatchedAt:'submitted',discount:{totalGBP:'0.00'}});assert.equal(free.actions.reconcileManualPayment,false);assert.match(free.help,/never submit/);
+ assert.equal(free.actions.verifyPayment,true);
+ const noReference=view({...pending,phase:'card-filling'});assert.equal(noReference.actions.assessRecovery,true);assert.equal(noReference.actions.verifyPayment,false);
 });
 test('unpaid test, legacy basket-only and malformed/unknown journals retain appropriate inspection paths',()=>{
  const test=view({...pending,checkoutTestOnly:true});assert.equal(test.actions.resetUnpaidTest,true);assert.equal(test.actions.reconcileSelection,true);assert.equal(test.actions.unpaidTestConfirmed,false);assert.equal(test.actions.payCheckout,false);

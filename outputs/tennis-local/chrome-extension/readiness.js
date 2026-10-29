@@ -17,7 +17,7 @@ export function recoveryPresentation(status={}) {
  const testFallback=test&&!held&&testPhase;
  const actions={
   assessRecovery:pending.length>0,
-  verifyPayment:unique&&(held||has('reference')),
+  verifyPayment:unique&&(has('reference')||has('paymentDispatchedAt')||has('freeBookingDispatchedAt')),
   reconcileManualPayment:unique&&r.status==='pending'&&!r.test&&!r.basketOnly&&!has('paymentDispatchedAt')&&!has('freeBookingDispatchedAt')&&r.discount?.totalGBP!=='0.00',
   resetUnpaidTest:test&&!held&&testPhase,
   reconcileSelection:known&&!held&&((early&&!has('reference'))||testFallback),
