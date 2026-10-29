@@ -68,6 +68,26 @@ try{
  await page.goto(merchant.origin+'/purchase/card/100001');response=await read(page,'checkout-progress');assert.equal(response.value.stage,'existing-purchase');assert.equal(response.value.cancellationSupported,false);assert.equal(merchant.state.counts.pay,1);
  reports.push({scenario:'actual-dom-paid-duplicate-existing-purchase',outcome:'passed',evidence:'local-fake-merchant'});
  console.log('Browser gate: account DOM fixtures verified');
+ await fresh('contextual-recovery-profile');
+ assert.equal(await popup.locator('#recoveryControls').isVisible(),false);assert.equal(await popup.locator('#payCheckoutRow').isVisible(),false);assert.equal(await popup.locator('#daytimeBasketTest').count(),0);
+ const uiRecord={key:'synthetic-ui-checkout',status:'pending',test:false,phase:'awaiting-payment',slot:{venue:'bethnal-green-gardens',date:'2026-10-25',court:1,start:'20:00',hours:1,totalGBP:'7.00'}};
+ const uiStates=[
+  {patch:{},pay:true,verify:false,cleanup:true},
+  {patch:{paymentDispatchedAt:'simulated'},pay:false,verify:true,cleanup:false},
+  {patch:{freeBookingDispatchedAt:'simulated',paymentDispatchedAt:'simulated',discount:{totalGBP:'0.00'}},pay:false,verify:true,cleanup:false},
+  {patch:{cardFillDispatchedAt:'simulated'},pay:false,verify:true,cleanup:false}
+ ];
+ for(const state of uiStates){
+  const record={...uiRecord,...state.patch};
+  await worker.evaluate(record=>chrome.storage.local.set({checkoutRecords:[record]}),record);await popup.reload();await popup.waitForFunction(()=>document.querySelector('#readiness').textContent.includes('Version'));
+  assert.equal(await popup.locator('#recoveryControls').isVisible(),true);assert.equal(await popup.locator('#verifyPaymentRow').evaluate(el=>!el.hidden),state.verify);assert.equal(await popup.locator('#payCheckoutRow').evaluate(el=>!el.hidden),state.pay);assert.equal(await popup.locator('#reconcileSelectionRow').evaluate(el=>!el.hidden),state.cleanup);
+  assert.equal(await popup.locator('#unpaidTestConfirmedRow').isVisible(),false);
+  assert.deepEqual((await send({kind:'status'})).checkoutRecords,[record]);
+ }
+ await popup.setViewportSize({width:480,height:800});await popup.locator('#recoveryControls').scrollIntoViewIfNeeded();
+ await popup.screenshot({path:path.join(output,'recovery-popup.png')});
+ assert.deepEqual(merchant.state.counts,{selection:0,discount:0,opening:0,fill:0,pay:0,removal:0});
+ reports.push({scenario:'contextual-popup-recovery-no-mutations',outcome:'passed',evidence:'synthetic-journals-real-popup',mutations:{...merchant.state.counts}});
  for(const freeError of [false,true]){
   console.log('Browser gate: free booking case',freeError?'error':'success');
   await fresh(freeError?'free-error-profile':'free-success-profile');merchant.state.options.freeBooking=true;merchant.state.options.freeError=freeError;

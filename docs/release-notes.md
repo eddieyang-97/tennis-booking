@@ -1,6 +1,6 @@
 # Release notes
 
-This is the historical change log for the **active Chrome extension** in [`outputs/tennis-local/chrome-extension/`](../outputs/tennis-local/chrome-extension/). The authoritative source version is [`manifest.json`](../outputs/tennis-local/chrome-extension/manifest.json), **0.9.8** on the free-booking checkout branch (28 October 2026). Branch builds are not merged release claims.
+This is the historical change log for the **active Chrome extension** in [`outputs/tennis-local/chrome-extension/`](../outputs/tennis-local/chrome-extension/). The authoritative source version is [`manifest.json`](../outputs/tennis-local/chrome-extension/manifest.json), **0.9.9** on the contextual recovery UI branch (29 October 2026). Branch builds are not merged release claims.
 
 Notes below describe changes made *at each release*, not instructions to install or downgrade to older builds. Historical test counts and unverified behaviors are not current release-quality claims. For up-to-date setup, use the [project README](../README.md) and [extension usage guide](../outputs/tennis-local/chrome-extension/README.md). For original investigation and detailed timestamps, see [payment-system.md](payment-system.md).
 
@@ -22,6 +22,14 @@ Notes below describe changes made *at each release*, not instructions to install
 The PR #4 Chromium gate is ported onto the current v0.9.5 runtime without changing production booking or payment logic. The runtime is exercised with a synthetic merchant, controlled alarm and fake payment frame, browser process restart during fake Pay, service-worker termination during fake card fill, denied external HTTP(S), and a synthetic rejected-selection/checkbox-reversion scenario. CI verifies the production ZIP excludes test adapters. These are synthetic observations, not real midnight alarm, Stripe, merchant-booking or unattended-payment acceptance.
 
 ## Changes by version
+
+### v0.9.9 — contextual recovery controls (29 October 2026)
+
+- Separate read-only availability/recovery, explicitly mutating manual booking, developer tests and advanced diagnostics. Rename receipt verification to **Verify booking/payment outcome**, including free bookings.
+- Present recovery actions from journal context; uncertain payment/free/card-fill records retain inspection without automatic booking, payment or cleanup controls. Keep state-bound attestations and legacy empty-basket recovery.
+- Remove the fixed 09:00–11:00 test from the popup, retaining its worker handler and existing journals. Diagnostic download stays directly available.
+- Add presentation/DOM regressions for normal, test, legacy, submitted, malformed and armed states. Rendering sends status reads only. Worker booking/payment/recovery handlers, journal formats, permissions and mutation replay protections are unchanged. Automated UI checks are not live merchant acceptance.
+
 
 ### v0.9.8 — guarded full-discount free booking (28 October 2026)
 

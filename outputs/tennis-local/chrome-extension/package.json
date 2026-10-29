@@ -2,7 +2,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test test-core.js test-stops.js test-stage.js test-checkout.js test-payment.js test-link.js test-card-vault.js test-reconciliation.js test-mvp.js test-grid-read.js test-page-read.js test-selection.js test-discount.js test-free-booking.js test-settings.js test-unpaid-checkout.js test-failed-checkout.js test-observability.js test-worker-observability.js test-package.js",
+    "test": "node --test test-core.js test-stops.js test-stage.js test-checkout.js test-payment.js test-link.js test-card-vault.js test-reconciliation.js test-mvp.js test-grid-read.js test-page-read.js test-selection.js test-discount.js test-free-booking.js test-recovery-ui.js test-settings.js test-unpaid-checkout.js test-failed-checkout.js test-observability.js test-worker-observability.js test-package.js",
     "test:quick": "npm test",
     "test:scenarios": "node test/run-scenarios.js && node --experimental-vm-modules --test test/worker-faults.js",
     "repro": "node test/run-scenarios.js",

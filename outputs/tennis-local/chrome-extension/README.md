@@ -1,6 +1,6 @@
 # Chrome extension: setup, testing and recovery
 
-This is the **operating guide** for the active Manifest V3 extension. The installed version is shown at the top of the popup; the source version is defined in [`manifest.json`](manifest.json) (**0.9.8**, guarded free-booking checkout, 28 October 2026). A source change does not update an installed extension.
+This is the **operating guide** for the active Manifest V3 extension. The installed version is shown at the top of the popup; the source version is defined in [`manifest.json`](manifest.json) (**0.9.9**, contextual recovery controls, 29 October 2026). A source change does not update an installed extension.
 
 - [Project overview and safety model](../../../README.md)
 - [Architecture and checkout state diagrams](../../../docs/architecture.md)
@@ -31,7 +31,7 @@ The release is **00:00 London, seven days before play** (23:00 UTC the previous 
 
 The encrypted file uses AES-GCM with a PBKDF2-SHA256-derived key. The decrypted card is held in trusted Chrome session storage only while unlocked, rather than in persistent project files or diagnostic exports. Direct card filling uses the Stripe Card Element; there is no automatic Stripe Link fallback. Receipt-only reconciliation does not need an unlocked card.
 
-## Check and recover
+## Recovery, manual booking and developer tools
 
 For a selection that becomes unchecked or times out, download the diagnostic log before recovery. `SELECTION_ACK_TIMEOUT` distinguishes the elapsed-time deadline from changed route, price, layout or selection state. The journal preserves the original selection failure even if a later basket read fails. New diagnostics show observed reversion, hourly dispatch times, visibility and optional generic alert/status categories; these are observations, not proof of a merchant rejection. Same-origin HTTP statuses may belong to unrelated requests, and missing status entries do not prove that no request occurred. No raw response, URL or alert text is exported.
 
@@ -39,30 +39,28 @@ The 15-second manual / 60-second scheduled deadline covers the entire hourly sel
 
 For a pending `discount-dispatched` record, the worker can continue read-only observation of the same loading basket tab after an unclassified message failure, within the remaining discount budget. It never navigates or reapplies the code to recover. Changed routes, authentication, closed/denied/invalidated contexts and mismatched baskets stop. Diagnostic steps retain bounded retry progress plus final counts/timing. If observation still fails, preserve the journal; a timeout does not prove whether the merchant applied the discount. Updating this branch does not automatically recover or clear an existing live hold.
 
-The controls below live in the popup's **Check and recover** section. Before taking action, read the readiness panel for an older pending checkout. **Never delete a journal or payment-dispatch marker to unblock a new job.**
+The popup separates **Availability**, **Recover a stopped booking**, **Manual booking**, and **Developer tools**. Recovery expands when its journal context changes and shows only applicable actions. Manual booking controls can select courts or submit a booking/payment; recovery verification is read-only. Diagnostics remain available independently. Visibility is a presentation hint: the existing worker guards remain authoritative. Before taking action, read the readiness panel for an older pending checkout. **Never delete a journal or payment-dispatch marker to unblock a new job.**
 
 | Situation | Use this control | Important boundary |
 | --- | --- | --- |
 | Check an already released date (today through 7 days ahead) | **Check availability now** | Read-only; paused while a job is armed so it cannot delay release |
-| Signed-in site blocked the last availability check | **Resume after site verification** | Requires previous failure context; also paused while a job is armed |
-| Need to prepare/pay the current result manually | **Prepare or resume checkout**, then **Pay or reconcile checkout** | The latter **can submit a real payment** if no payment dispatch has occurred; review basket, authorization and card readiness |
-| Earlier extension Pay was dispatched, receipt unclear | **Verify paid receipt** | Receipt/account observation only, **never another charge** |
+| Signed-in site blocked the last availability check | **Resume availability check** | Requires previous failure context; also paused while a job is armed |
+| Need to prepare/pay the current result manually | **Prepare or resume checkout**, then **Continue checkout (may book or pay)** | The latter **can submit a real payment** if no payment dispatch has occurred; review basket, authorization and card readiness |
+| Earlier extension Pay was dispatched, receipt unclear | **Verify booking/payment outcome** | Receipt/account observation only, **never another charge** |
 | You completed a normal pending checkout manually | Enter **Manually paid booking reference**, then **Verify manual payment** | Durable manual-payment hold first; exact reference, amount and paid history required; no Pay click |
 | Abandon an unsubmitted, unreferred selection | Remove its items on the site, then **Reconcile cleared selection** | Requires stable empty basket; cannot clear any reference or payment submission |
 | Ordinary checkout failed while opening, without a saved reference or card/payment intent | Inspect checkout and purchase history; if you did not pay, verify an empty basket, tick **I did not submit payment for the failed checkout shown above**, then **Archive failed checkout** | Explicit owner attestation; preserves original opening journal in history. Never cancels a merchant purchase or establishes unpaid status |
 | Clean up a *verified unpaid checkout test* | **Clear unfinished unpaid test** | Automatic guarded cleanup; will stop if paid/uncertain, account evidence missing or basket changed |
-| Stale interrupted availability check | **Reset interrupted availability check** | Clears the read-only availability lock, **not** payment records |
+| Stale interrupted availability check | **Reset interrupted availability check** under **Developer tools → Advanced diagnostics** | Clears the read-only availability lock, **not** payment records |
 | Leftover basket-only record from old versions | **Verify cleared legacy test basket** | Verifies emptiness; does not remove items or modify paid journals |
 
 A confirmed purchase in account history verifies **payment**, but does not by itself verify that a booking remains active. A cancelled booking may still have a paid purchase; refund status is separate. An ambiguous or missing paid receipt remains unresolved, not unpaid.
 
 The failed-checkout archive is separate from unpaid-test cleanup. It accepts only one ordinary pending `checkout-opening` journal with a valid saved slot/key and opening timestamp, no reference or prior-reference field, and no card-fill, payment-dispatch or manual-payment marker (even an empty marker blocks it). Its confirmation is bound to that exact opening. The worker checks unchanged journals/history after observing an empty basket and writes the preserved archive and remaining journals together. It never removes site items, repeats opening or submits payment. If anything changed, payment may have been submitted, or you are unsure, retain the hold and investigate. An empty basket alone is insufficient. Reloading the extension clears the unlocked card session; unlock again only after completing recovery and the final update.
 
-### Unpaid test: two-hour daytime basket
+### Legacy basket-only tests
 
-Use **Test 09:00–11:00 basket (no payment)** on an eligible released date. It searches Bethnal Green Gardens then Victoria Park for a two-hour slot, may use different courts in the same venue, and caps the total at £14. This records a durable `basketOnly` test intent and blocks card/payment access.
-
-If the test succeeds, inspect the basket on the merchant site. **Remove the test items manually**, then click **Reconcile cleared selection**. Partial or uncertain selection remains pending until evidence is resolved. This test does not produce a booking or payment.
+The fixed 09:00–11:00 test is no longer offered in the popup. Its worker handler and journals remain supported. An existing incomplete basket-only selection can still be manually cleared and reconciled. **Verify cleared legacy test basket** appears only when an older `basketTest` record needs its empty-basket check; it does not clear a payment journal.
 
 ### Unpaid test: discount and opening the card page
 
@@ -70,14 +68,14 @@ Cancel clears future alarms when its queued command executes. It does not preemp
 
 Manual availability checks and verification resumes return `MANUAL_CHECK_WHILE_ARMED` whenever a saved job exists, even hours before release. Cancel the job first if you want to check manually, then re-arm if appropriate. This admission policy protects the release queue without allowing concurrent writes to shared run/result state; it does not interrupt an already running operation. **Assess recovery (read only)** remains available independently.
 
-1. Cancel any armed job. Use **Check availability now** with the intended released date and preferences.
-2. Enter the optional discount code (or leave it blank), then select **Test discount and open checkout (no payment)**. **Do not prepare a normal payable checkout first.**
+1. Cancel any armed job. Use **Check availability now** with the intended released date and preferences. Open **Developer tools** for the test control.
+2. Enter the optional discount code (or leave it blank), then select **Test basket, discount and checkout (no booking/payment)**. **Do not prepare a normal payable checkout first.**
 3. The extension uses the saved availability preferences, selects and verifies exact items, verifies any gross/discount/net accounting, and attempts one checkout-opening click. A successful result is `checkout-test-passed` with `paymentBlocked: true` and `cardFilled: false`. It does not unlock/fill the card or submit Pay.
 4. Use **Clear unfinished unpaid test** to remove a verified test. For an opened checkout, it must first identify the exact provisional reference and observe a matching **Pending / Pay** purchase row before and after cleanup. Unrelated basket items, ambiguous purchase state or any payment marker stop automatic cleanup.
 
 Changing a test's discount code, checked date or search preferences can trigger the same guarded cleanup before restarting. If cleanup is blocked, inspect the record instead of forcing a reset. For the manual fallback, use the merchant's **Cancel & return to basket**, remove the test items/discount, attest **I did not submit payment** only if true, and use **Reconcile cleared selection**. **Never apply this unpaid-test cleanup to a paid or potentially paid checkout.**
 
-An unfinished checkout-page test can have no saved reference after opening was attempted. The popup now identifies that specific case and expands **Check and recover** with the manual steps above; it never ticks the attestation for you. A missing dispatch marker does not prove no payment occurred. If you are unsure, preserve the journal and inspect purchase history. The guidance does not remove items, archive a record or establish merchant cancellation; the existing worker checks still apply when you explicitly reconcile.
+An unfinished checkout-page test can have no saved reference after opening was attempted. The popup now identifies that specific case and expands **Recover a stopped booking** with the manual steps above; it never ticks the attestation for you. A missing dispatch marker does not prove no payment occurred. If you are unsure, preserve the journal and inspect purchase history. The guidance does not remove items, archive a record or establish merchant cancellation; the existing worker checks still apply when you explicitly reconcile.
 
 ## Failure handling and diagnostics
 
@@ -86,7 +84,7 @@ An unfinished checkout-page test can have no saved reference after opening was a
 - After the initial empty-basket check and selection, the scheduled tab loads the basket to verify the selected items. Before payment preparation, it refreshes that same basket from the merchant, because another tab could change the shared server basket without changing the old DOM. Checkout opening then performs a fresh stable DOM observation on that tab. No previously parsed basket is used as permission to mutate. A worker restart loses these in-memory tab handoffs and uses the existing durable-journal recovery rules. This removes two navigations in the simulated scheduled success path; no live speed or booking-success improvement has been established.
 - Checkout can produce a **new provisional reference before Pay**, but only a fresh exact basket/amount check can authorize a pre-dispatch replacement. After `paymentDispatchedAt` or `manualPaymentReportedAt` is set, recovery must not reopen and resubmit a charge.
 - **Download diagnostic log** saves a locally redacted `tennis-booking-log-<timestamp>.json` including installed version, current job, basket/checkout evidence, references and bounded run history. Card details, passphrases and discount-code values are sanitized, but **booking references/slot details remain sensitive**. Nothing is automatically uploaded; do not publish the file to GitHub.
-- **Show diagnostic JSON** shows the **raw** local status, including potentially sensitive discount codes; use the downloaded sanitized log when requesting help.
+- **Show diagnostic JSON**, under **Developer tools → Advanced diagnostics**, shows the **raw** local status, including potentially sensitive discount codes; use the downloaded sanitized log when requesting help.
 
 ### Card file troubleshooting
 
@@ -119,7 +117,7 @@ St Johns support (v0.9.7): existing saved preferences and armed jobs are preserv
 
 New checkout journals can complete an exactly verified full-discount basket using **Complete my booking**, with no card opening, card fill or Pay. Gross caps and all hourly identities still apply. Mixed-court free bookings stop before submission until their receipt contract is supported. The extension records the irreversible completion intent before clicking once. Lost responses, merchant errors and worker restarts permit receipt observation only; they never authorize another completion click.
 
-A matching booking confirmation must explicitly establish the slot, numeric reference and zero total. Success reports `freeBooking:true`, `booked:true`, `paid:false`, `totalPaidGBP:"0.00"`. A price-only purchase row cannot confirm the reservation. An unfamiliar receipt remains unknown and needs manual inspection. **Verify paid receipt** also observes a dispatched free booking's retained confirmation without resubmitting it; a closed or moved tab may require manual support because no trusted reference is available.
+A matching booking confirmation must explicitly establish the slot, numeric reference and zero total. Success reports `freeBooking:true`, `booked:true`, `paid:false`, `totalPaidGBP:"0.00"`. A price-only purchase row cannot confirm the reservation. An unfamiliar receipt remains unknown and needs manual inspection. **Verify booking/payment outcome** also observes a dispatched free booking's retained confirmation without resubmitting it; a closed or moved tab may require manual support because no trusted reference is available.
 
 Legacy pending checkouts are not opted in automatically: the owner may already have clicked completion manually. Review that booking on the merchant site before using any recovery control. A free unpaid checkout test returns `checkout-test-free-ready` at its verified basket, retains `awaiting-payment` without an opening marker, and does not click completion. Use **Clear unfinished unpaid test** for its guarded discount/item cleanup; uncertain submissions remain protected. Keep the card unlocked for armed runs: a partial discount or no discount still uses the existing card path.
 
