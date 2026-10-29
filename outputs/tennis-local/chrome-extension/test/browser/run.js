@@ -73,16 +73,21 @@ try{
  const uiRecord={key:'synthetic-ui-checkout',status:'pending',test:false,phase:'awaiting-payment',slot:{venue:'bethnal-green-gardens',date:'2026-10-25',court:1,start:'20:00',hours:1,totalGBP:'7.00'}};
  const uiStates=[
   {patch:{},pay:true,verify:false,cleanup:true},
-  {patch:{paymentDispatchedAt:'simulated',reference:'100001'},pay:false,verify:true,cleanup:false},
-  {patch:{freeBookingDispatchedAt:'simulated',paymentDispatchedAt:'simulated',discount:{totalGBP:'0.00'}},pay:false,verify:true,cleanup:false},
-  {patch:{cardFillDispatchedAt:'simulated',reference:'100001'},pay:false,verify:true,cleanup:false},
-  {patch:{phase:'card-filling'},pay:false,verify:false,cleanup:false}
+  {patch:{phase:'checkout-opening',reference:'100001'},pay:true,verify:false,cleanup:false},
+  {patch:{checkoutTestOnly:true,phase:'checkout-test-ready',reference:'100001'},pay:false,verify:false,cleanup:true,unpaidTest:true},
+  {patch:{paymentDispatchedAt:'2026-10-29T00:00:00Z',reference:'100001'},pay:false,verify:true,cleanup:false},
+  {patch:{freeBookingDispatchedAt:'2026-10-29T00:00:00Z',paymentDispatchedAt:'2026-10-29T00:00:00Z',discount:{totalGBP:'0.00'}},pay:false,verify:true,cleanup:false},
+  {patch:{cardFillDispatchedAt:'simulated',reference:'100001'},pay:false,verify:false,cleanup:false},
+  {patch:{phase:'card-filling'},pay:false,verify:false,cleanup:false},
+  {patch:{checkoutTestOnly:true,phase:'manual-payment-reported',reference:'100001',manualPaymentReportedAt:'2026-10-29T00:00:00Z'},pay:false,verify:true,cleanup:false,reportedTest:true}
  ];
  for(const state of uiStates){
   const record={...uiRecord,...state.patch};
   await worker.evaluate(record=>chrome.storage.local.set({checkoutRecords:[record]}),record);await popup.reload();await popup.waitForFunction(()=>document.querySelector('#readiness').textContent.includes('Version'));
   assert.equal(await popup.locator('#recoveryControls').isVisible(),true);assert.equal(await popup.locator('#verifyPaymentRow').evaluate(el=>!el.hidden),state.verify);assert.equal(await popup.locator('#payCheckoutRow').evaluate(el=>!el.hidden),state.pay);assert.equal(await popup.locator('#reconcileSelectionRow').evaluate(el=>!el.hidden),state.cleanup);
-  assert.equal(await popup.locator('#unpaidTestConfirmedRow').isVisible(),false);
+  assert.equal(await popup.locator('#unpaidTestConfirmedRow').isVisible(),!!state.unpaidTest);
+  if(state.reportedTest){assert.equal(await popup.locator('#reconcileManualPaymentRow').isVisible(),false);assert.equal(await popup.locator('#resetUnpaidTestRow').isVisible(),false);}
+  if(state.unpaidTest){assert.equal(await popup.locator('#reconcileManualPaymentRow').isVisible(),false);assert.equal(await popup.locator('#resetUnpaidTestRow').isVisible(),true);}
   assert.deepEqual((await send({kind:'status'})).checkoutRecords,[record]);
  }
  await popup.setViewportSize({width:480,height:800});await popup.locator('#recoveryControls').scrollIntoViewIfNeeded();

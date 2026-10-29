@@ -27,6 +27,7 @@ The PR #4 Chromium gate is ported onto the current v0.9.5 runtime without changi
 
 - Separate read-only availability/recovery, explicitly mutating manual booking, developer tests and advanced diagnostics. Rename receipt verification to **Verify booking/payment outcome**, including free bookings.
 - Present recovery actions from journal context; uncertain payment/free/card-fill records retain inspection without automatic booking, payment or cleanup controls. Keep state-bound attestations and legacy empty-basket recovery.
+- Offer outcome verification only with dated submission/manual-report evidence, never a provisional reference alone. Hide ordinary manual-payment reporting for unpaid checkout tests; preserve explicit assisted recovery of actually paid tests and their durable holds.
 - Remove the fixed 09:00–11:00 test from the popup, retaining its worker handler and existing journals. Diagnostic download stays directly available.
 - Add presentation/DOM regressions for normal, test, legacy, submitted, malformed and armed states. Rendering sends status reads only. Worker booking/payment/recovery handlers, journal formats, permissions and mutation replay protections are unchanged. Automated UI checks are not live merchant acceptance.
 

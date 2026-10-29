@@ -17,8 +17,8 @@ export function recoveryPresentation(status={}) {
  const testFallback=test&&!held&&testPhase;
  const actions={
   assessRecovery:pending.length>0,
-  verifyPayment:unique&&(has('reference')||has('paymentDispatchedAt')||has('freeBookingDispatchedAt')),
-  reconcileManualPayment:unique&&r.status==='pending'&&!r.test&&!r.basketOnly&&!has('paymentDispatchedAt')&&!has('freeBookingDispatchedAt')&&r.discount?.totalGBP!=='0.00',
+  verifyPayment:unique&&['paymentDispatchedAt','manualPaymentReportedAt','freeBookingDispatchedAt'].some(field=>typeof r[field]==='string'&&Number.isFinite(Date.parse(r[field]))),
+  reconcileManualPayment:unique&&r.status==='pending'&&!r.checkoutTestOnly&&!r.test&&!r.basketOnly&&!has('paymentDispatchedAt')&&!has('freeBookingDispatchedAt')&&r.discount?.totalGBP!=='0.00',
   resetUnpaidTest:test&&!held&&testPhase,
   reconcileSelection:known&&!held&&((early&&!has('reference'))||testFallback),
   unpaidTestConfirmed:testFallback&&(!early||has('reference')||has('checkoutOpenDispatchedAt')),
@@ -36,7 +36,7 @@ export function releasePreview(day,now=Date.now()) {
 }
 export function readiness(status,now=Date.now()) {
  const failedCheckoutGuide=failedCheckoutIdentity(status.checkoutRecords)?'Failed checkout opening: no saved reference or card/payment intent. Inspect the old checkout and purchase history. Do not pay or repeat checkout opening. If you did not submit payment, confirm the basket is empty, tick the failed-checkout confirmation below and use Archive failed checkout. This preserves its history locally; it does not establish merchant cancellation or unpaid status. If payment was submitted or you are unsure, keep the journal and reconcile payment instead.':'';
- const testRecoveryGuide=unreferencedCheckoutTest(status.checkoutRecords)?'Unfinished unpaid checkout test: no saved reference. No payment dispatch is recorded, but this does not prove that no payment was submitted.\n1. Inspect the old checkout on Courtside. If available, use Cancel & return to basket without paying.\n2. Remove the test items and discount, then confirm the basket is completely empty.\n3. Only if you are certain you did not submit payment, tick I did not submit payment below and click Reconcile cleared selection.\nIf you paid manually or are unsure, keep the journal and inspect purchase history; use Verify manual payment only for an actual manual payment with its confirmation reference. Emptying a basket does not prove merchant cancellation.':'';
+ const testRecoveryGuide=unreferencedCheckoutTest(status.checkoutRecords)?'Unfinished unpaid checkout test: no saved reference. No payment dispatch is recorded, but this does not prove that no payment was submitted.\n1. Inspect the old checkout on Courtside. If available, use Cancel & return to basket without paying.\n2. Remove the test items and discount, then confirm the basket is completely empty.\n3. Only if you are certain you did not submit payment, tick I did not submit payment below and click Reconcile cleared selection.\nIf you paid during this test or are unsure, keep the journal, inspect purchase history and download the log for assisted recovery. Do not use unpaid-test cleanup. A payment already reported can use Verify booking/payment outcome. Emptying a basket does not prove merchant cancellation.':'';
  const pending=status.checkoutRecords?.find(record=>record.status!=='confirmed');
  const submitted=pending&&(pending.manualPaymentReportedAt||pending.paymentDispatchedAt||['payment-dispatched','payment-uncertain'].includes(pending.phase));
  const lines=[`Version ${status.version||'unknown'}`,status.localCardUnlocked?'Card unlocked':'Card locked'];
