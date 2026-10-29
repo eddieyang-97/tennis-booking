@@ -6,6 +6,7 @@ const field=id=>document.querySelector('#'+id),day=field('day'),output=field('re
 let formEdited=false;
 let attestationIdentity='';
 let failedAttestationIdentity='';
+let recoveryViewIdentity='';
 day.value=addDays(londonDay(),8);
 field('releaseHelp').textContent=releasePreview(day.value);
 day.addEventListener('input',()=>field('releaseHelp').textContent=releasePreview(day.value));
@@ -19,6 +20,20 @@ async function refresh(initial=false,show=false){
  const status=await chrome.runtime.sendMessage({kind:'status'}),view=readiness(status);
  field('readiness').textContent=[view.summary,...view.lines].join('\n');
  field('armBlocker').textContent=view.armBlocker||'';
+ const recovery=view.recovery;
+ field('recoveryControls').hidden=!recovery.showRecovery;
+ field('recoveryHelp').textContent=recovery.help;
+ for(const [id,visible] of Object.entries(recovery.actions))field(id+'Row').hidden=!visible;
+ const recoveryIdentity=JSON.stringify([(status.checkoutRecords||[]).filter(r=>r.status!=='confirmed').map(r=>[r.key,r.phase]),recovery.actions]);
+ if(recovery.showRecovery&&(initial||recoveryIdentity!==recoveryViewIdentity))field('recoveryControls').open=true;
+ recoveryViewIdentity=recoveryIdentity;
+ field('manualBookingHelp').textContent=recovery.manualHelp;
+ field('check').disabled=recovery.paused;
+ field('resume').disabled=recovery.paused;
+ field('availabilityHelp').textContent=recovery.paused?'Availability checks are paused while a job is armed or an interrupted check needs review. Cancel the scheduled job or inspect Advanced diagnostics as applicable.':'';
+ field('testDiscountCheckout').disabled=!recovery.testAvailable;
+ field('resetUnpaidTest').disabled=recovery.paused;
+ field('developerHelp').textContent=recovery.testAvailable?'Worker safety checks still apply to every test.':'Resolve the current checkout or scheduled/interrupted run before testing.';
  const test=status.checkoutRecords?.find(r=>r.status!=='confirmed'&&r.checkoutTestOnly),identity=test?JSON.stringify([test.key,test.reference||'',test.checkoutOpenDispatchedAt||'']):'';
  field('testRecoveryGuide').textContent=view.testRecoveryGuide;
  field('testRecoveryGuide').hidden=!view.testRecoveryGuide;
@@ -45,7 +60,7 @@ async function send(kind){output.textContent='Checking…';try{
  const result=await chrome.runtime.sendMessage(message);output.textContent=result.status==='stopped'?result.error:JSON.stringify(result,null,2);
  try{await refresh();}catch{/* Keep the completed action result visible. */}
 }catch(error){output.textContent=error.message;}}
-for(const kind of ['openCardVault','payCheckout','armPayment','check','resume','prepareCheckout','daytimeBasketTest','verifyPayment','cancel','reset','reconcileBasket','reconcileSelection','archiveFailedCheckout','saveSettings','reconcileManualPayment','testDiscountCheckout','resetUnpaidTest','assessRecovery'])field(kind).addEventListener('click',()=>send(kind));
+for(const kind of ['openCardVault','payCheckout','armPayment','check','resume','prepareCheckout','verifyPayment','cancel','reset','reconcileBasket','reconcileSelection','archiveFailedCheckout','saveSettings','reconcileManualPayment','testDiscountCheckout','resetUnpaidTest','assessRecovery'])field(kind).addEventListener('click',()=>send(kind));
 for(const control of document.querySelectorAll('input,select'))control.addEventListener('input',()=>{formEdited=true;});
 field('preferredHours').addEventListener('change',()=>{if(Number(field('minHours').value)>Number(field('preferredHours').value))field('minHours').value=field('preferredHours').value;});
 field('showStatus').addEventListener('click',()=>refresh(false,true).catch(error=>output.textContent=error.message));

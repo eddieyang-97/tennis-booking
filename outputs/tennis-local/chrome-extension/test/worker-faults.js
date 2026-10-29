@@ -414,6 +414,25 @@ test('manual payment report reconciles a reference without inventing a Pay dispa
  assert.equal((await worker.send({kind:'reconcileManualPayment',reference:'100001'})).status,'confirmed');assert.equal(merchant.counts.pay,0);assert.equal(state.checkoutRecords[0].paymentDispatchedAt,undefined);assert.ok(state.checkoutRecords[0].manualPaymentReportedAt);
 });
 
+// Explicit manual reporting remains compatible with a checkout test that the
+// owner actually paid; the popup does not offer it for ordinary unpaid tests.
+for(const paid of [false,true])test(`explicit payment report for a checkout test preserves a hold across restart; paid evidence ${paid}`,async()=>{
+ const merchant=new Merchant(),record=merchant.record({checkoutTestOnly:true,phase:'checkout-test-ready',reference:'100001',checkoutOpenDispatchedAt:new Date(merchant.clock).toISOString()}),original=structuredClone(record),state={checkoutRecords:[record]};
+ let worker=await startWorker(merchant,state);
+ merchant.purchases.set('100001',{state:paid?'Confirmed':'Pending',totalGBP:'14.00'});
+ // A provisional reference alone must not create a payment hold or confirm payment.
+ assert.equal((await worker.send({kind:'verifyPayment'})).status,'stopped');assert.deepEqual(state.checkoutRecords,[original]);
+ assert.equal((await worker.send({kind:'reconcileManualPayment',reference:'100002'})).status,'stopped');assert.deepEqual(state.checkoutRecords,[original]);
+ const result=await worker.send({kind:'reconcileManualPayment',reference:'100001'});
+ assert.equal(result.status,paid?'confirmed':'stopped');const reported=structuredClone(state.checkoutRecords[0]);
+ assert.ok(reported.manualPaymentReportedAt);assert.equal(reported.paymentDispatchedAt,undefined);assert.equal(reported.checkoutTestOnly,true);assert.equal(reported.reference,original.reference);assert.deepEqual(reported.slot,original.slot);assert.equal(reported.checkoutOpenDispatchedAt,original.checkoutOpenDispatchedAt);
+ worker=await startWorker(merchant,state,'recreated');
+ assert.equal((await worker.send({kind:'resetUnpaidTest'})).status,'stopped');
+ assert.equal((await worker.send({kind:'reconcileSelection',unpaidTestConfirmed:true,attestationIdentity:JSON.stringify([record.key,record.reference,record.checkoutOpenDispatchedAt])})).status,'stopped');
+ await worker.send({kind:'verifyPayment'});assert.deepEqual(state.checkoutRecords,[reported]);assert.equal(state.abandonedCheckouts,undefined);
+ assert.ok(Object.values(merchant.counts).every(count=>count===0));
+});
+
 for(const reference of ['100001','100002',null])test(`existing-purchase assessment requires recorded identity: ${reference||'absent'}`,async()=>{
  const merchant=new Merchant(),record=merchant.record({checkoutTestOnly:false,...(reference?{reference}:{})}),state={checkoutRecords:[record]},worker=await startWorker(merchant,state);
  worker.seedTab(42,'https://tennistowerhamlets.com/purchase/card/100001');

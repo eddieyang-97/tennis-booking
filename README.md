@@ -2,7 +2,7 @@
 
 A Manifest V3 Chrome extension that checks and attempts to book tennis courts on [Tower Hamlets Courtside](https://tennistowerhamlets.com/) at the London midnight release, with configurable preferences, strict basket/payment verification, a local encrypted card file and recovery of uncertain payments.
 
-**Active implementation:** [`outputs/tennis-local/chrome-extension/`](outputs/tennis-local/chrome-extension/) · **Version:** [`0.9.8`](outputs/tennis-local/chrome-extension/manifest.json), guarded free-booking checkout (28 October 2026). This branch is not a merged release claim.
+**Active implementation:** [`outputs/tennis-local/chrome-extension/`](outputs/tennis-local/chrome-extension/) · **Version:** [`0.9.9`](outputs/tennis-local/chrome-extension/manifest.json), contextual recovery controls (29 October 2026). This branch is not a merged release claim.
 
 **Release status:** In active development, **not yet verified for unattended end-to-end midnight payment**. A real £2.50 one-hour card payment and its subsequent account-purchase reconciliation were verified on 13 October. Live two-hour basket selection was verified, but an automated two-hour Pay and a complete unattended midnight booking have not been established. See [release notes and live-evidence limits](docs/release-notes.md).
 
