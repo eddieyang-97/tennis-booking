@@ -24,10 +24,13 @@ async function fresh(name){
  await launch();await worker.evaluate(()=>{globalThis.__testClock=Date.parse('2026-10-19T12:00:00Z');});
 }
 async function restartWorker(){
+ // The test clock is a deliberate substitution; preserve its date when the
+ // actual MV3 execution is recreated, just as wall-clock time remains current.
+ const clock=await worker.evaluate(()=>globalThis.__testClock);
  const cdp=await context.newCDPSession(popup),versions=new Map();
  cdp.on('ServiceWorker.workerVersionUpdated',event=>{for(const v of event.versions)versions.set(v.versionId,v);});
  const wait=async status=>{const deadline=Date.now()+10000;while(Date.now()<deadline){const v=[...versions.values()].find(v=>v.scriptURL===worker.url()&&v.runningStatus===status);if(v)return v;await new Promise(resolve=>setTimeout(resolve,25));}throw Error('Discount worker lifecycle transition missing: '+status);};
- try{await cdp.send('ServiceWorker.enable');const version=await wait('running');await cdp.send('ServiceWorker.stopWorker',{versionId:version.versionId});await wait('stopped');await send({kind:'status'});await wait('running');return worker;}finally{await cdp.detach();}
+ try{await cdp.send('ServiceWorker.enable');const version=await wait('running');await cdp.send('ServiceWorker.stopWorker',{versionId:version.versionId});await wait('stopped');await send({kind:'status'});await wait('running');await worker.evaluate(clock=>{globalThis.__testClock=clock;},clock);return worker;}finally{await cdp.detach();}
 }
 async function read(tab,kind,extra={}){
  await tab.waitForLoadState('load');
