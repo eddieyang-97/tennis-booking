@@ -1,3 +1,12 @@
+// Read-only navigation evidence; never inspect fields, references or raw body text.
+function pageObservation(expectedPath){
+ if(location.origin!=='https://tennistowerhamlets.com')throw Error('Untrusted observation origin');
+ const path=location.pathname;
+ const documentRoute=/\/(verify-human|login|sign-in)(\/|$)/.test(path)?'authentication':({'/basket':'basket','/basket/discount':'discount-endpoint','/basket/pay/card':'card-checkout','/basket/complete':'booking-completion','/basket/receipt':'receipt','/account':'account'})[path]||(/^\/purchase\/card\/\d+$/.test(path)?'existing-purchase':'unrecognized');
+ const heading=document.querySelector('h1')?.textContent.trim()||'';
+ const pageType=documentRoute==='authentication'?'authentication':/^Something went wrong!?$/i.test(heading)?'merchant-error':/^(Booking confirmation|Booking confirmed|Payment successful)$/i.test(heading)?'confirmation':documentRoute==='card-checkout'||documentRoute==='existing-purchase'?'card':documentRoute==='basket'?'basket':'unknown';
+ return {documentRoute,pageType,documentMatchesRequest:path===expectedPath,documentState:['loading','interactive','complete'].includes(document.readyState)?document.readyState:'unknown'};
+}
 function paymentState() {
  if(location.pathname!=='/basket/pay/card')throw Error('Not the card checkout');
  const pay=document.querySelector('button#submit');
@@ -8,8 +17,9 @@ function paymentState() {
  return {totalGBP:match[1],reference,enabled:!pay.disabled,linkFramePresent};
 }
 chrome.runtime.onMessage.addListener((request,sender,respond)=>{
- if(sender.id!==chrome.runtime.id || !['checkout-progress','test-remove-next','discount-apply','payment-state','payment-open','payment-submit','free-booking-submit'].includes(request.kind))return;
+ if(sender.id!==chrome.runtime.id || !['page-observation','checkout-progress','test-remove-next','discount-apply','payment-state','payment-open','payment-submit','free-booking-submit'].includes(request.kind))return;
  try {
+  if(request.kind==='page-observation')return respond({ok:true,value:pageObservation(request.expectedPath)});
   if(request.kind==='payment-state')return respond({ok:true,value:paymentState()});
   if(request.kind==='checkout-progress'){
    const text=document.body.innerText||'',existingRef=/Booking ref:\s*PT(\d+)/i.exec(text)?.[1],amount=/Amount due:\s*£\s*(\d+\.\d{2})/i.exec(text)?.[1];

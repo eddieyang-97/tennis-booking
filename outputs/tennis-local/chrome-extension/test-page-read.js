@@ -124,3 +124,85 @@ test('blank account DOM while loading is not misclassified as missing login',()=
  let listener;const document={readyState:'interactive',querySelector:()=>null};vm.runInNewContext(fs.readFileSync(new URL('./content.js',import.meta.url),'utf8'),{document,location:{pathname:'/account'},chrome:{runtime:{id:'own',onMessage:{addListener:f=>listener=f}}}});
  const read=()=>{let response;listener({kind:'account'},{id:'own'},r=>response=r);return response;};assert.equal(read().notReady,true);document.readyState='complete';assert.equal(read().humanRequired,true);
 });
+
+function discountNavigationFixture(){
+ const f=fixture('basket-read');f.options={...f.options,tabId:42,navigate:false,observeLoadingMessageErrors:true,observeDiscountNavigation:true,timeoutMs:3000};
+ f.tabs.create=f.tabs.update=f.tabs.remove=async()=>assert.fail('Read-only observation cannot navigate or remove');
+ f.tabs.sendMessage=async(id,request)=>request.kind==='page-observation'?{ok:true,value:{documentMatchesRequest:true,documentRoute:'discount-endpoint',pageType:'unknown',documentState:'loading'}}:{ok:true,value:{empty:false}};
+ return f;
+}
+test('post-discount endpoint navigation returns to exact basket within original budget without any navigation',async()=>{
+ const f=discountNavigationFixture();let gets=0,reads=0;
+ f.tabs.get=async()=>({id:42,url:++gets<=2?f.url+'/discount?private=PRIVATE#100001':f.url,status:'loading',pendingUrl:f.url});
+ const send=f.tabs.sendMessage;f.tabs.sendMessage=async(id,request)=>{if(request.kind==='basket-read')reads++;return send(id,request);};
+ assert.equal((await readPageState(f.tabs,f.url,{kind:'basket-read'},f.options)).ok,true);assert.equal(reads,1);assert.equal(f.clock,1000);
+ assert.ok(f.steps.some(s=>s.name==='discount-navigation-observed'&&s.destination==='discount-endpoint'));assert.equal(JSON.stringify(f.steps).includes('PRIVATE'),false);assert.equal(JSON.stringify(f.steps).includes('100001'),false);
+});
+test('post-discount merchant errors and unexpected destinations stop with safe route/page evidence',async()=>{
+ for(const [path,destination,pageType,code] of [['/basket/discount','discount-endpoint','merchant-error','DISCOUNT_MERCHANT_ERROR'],['/system/error/PRIVATE','unrecognized','merchant-error','DISCOUNT_MERCHANT_ERROR'],['/basket/pay/card','card-checkout','card','PAGE_BASKET_ROUTE_CHANGED'],['/basket/receipt','receipt','confirmation','PAGE_BASKET_ROUTE_CHANGED'],['/unknown/PRIVATE','unrecognized','unknown','PAGE_BASKET_ROUTE_CHANGED']]){
+  const f=discountNavigationFixture();let probes=0;f.tabs.get=async()=>({url:'https://tennistowerhamlets.com'+path+'?token=PRIVATE',status:'loading'});
+  f.tabs.sendMessage=async(id,request)=>{assert.equal(request.kind,'page-observation');probes++;return {ok:true,value:{documentMatchesRequest:true,documentRoute:destination,pageType,documentState:'complete',raw:'PRIVATE',reference:'100001'}};};
+  await assert.rejects(readPageState(f.tabs,f.url,{kind:'basket-read'},f.options),e=>e.diagnostic.errorCode===code&&e.diagnostic.destination===destination&&e.diagnostic.pageType===pageType&&e.diagnostic.readState==='route-changed'&&!JSON.stringify(e).includes('PRIVATE')&&!JSON.stringify(e).includes('100001'));
+  assert.equal(probes,1);assert.equal(f.clock,0);
+ }
+});
+test('discount route waiting is opt-in, bounded, and unavailable on terminal/unsupported pages',async()=>{
+ for(const [enabled,status,code,elapsed] of [[false,'loading','PAGE_BASKET_ROUTE_CHANGED',0],[true,'complete','PAGE_BASKET_ROUTE_CHANGED',0],[true,'loading','PAGE_READY_TIMEOUT',3000]]){
+  const f=discountNavigationFixture();f.tabs.get=async()=>({url:f.url+'/discount',status});
+  await assert.rejects(readPageState(f.tabs,f.url,{kind:'basket-read'},{...f.options,observeDiscountNavigation:enabled}),e=>e.diagnostic.errorCode===code);assert.equal(f.clock,elapsed);
+ }
+});
+test('stale document evidence cannot classify a changed route as a merchant error or authorize basket use',async()=>{
+ const f=discountNavigationFixture();let gets=0,reads=0;
+ f.tabs.get=async()=>({url:++gets<3?f.url+'/discount':f.url,status:'loading'});
+ f.tabs.sendMessage=async(id,request)=>{if(request.kind==='page-observation')return {ok:true,value:{documentMatchesRequest:false,documentRoute:'basket',pageType:'merchant-error',documentState:'complete'}};reads++;return {ok:true,value:{empty:false}};};
+ assert.equal((await readPageState(f.tabs,f.url,{kind:'basket-read'},f.options)).ok,true);assert.equal(reads,1);assert.equal(f.clock,1000);
+ assert.ok(f.steps.some(s=>s.documentMatchesRoute===false));
+});
+test('discount basket response is discarded if the tab changes route while its read is in flight',async()=>{
+ const f=discountNavigationFixture();let moved=false,reads=0;
+ f.tabs.get=async()=>({url:moved?f.url+'/pay/card':f.url,status:'loading'});
+ f.tabs.sendMessage=async(id,request)=>{if(request.kind==='page-observation')return {ok:true,value:{documentMatchesRequest:true,documentRoute:'card-checkout',pageType:'card',documentState:'complete'}};reads++;moved=true;return {ok:true,value:{discountApplied:true,totalGBP:'0.00'}};};
+ await assert.rejects(readPageState(f.tabs,f.url,{kind:'basket-read'},f.options),e=>e.diagnostic.errorCode==='PAGE_BASKET_ROUTE_CHANGED'&&e.diagnostic.destination==='card-checkout');assert.equal(reads,1);
+});
+test('read-only page probe returns only fixed categories, never page text, input values or references',()=>{
+ let listener;const location={origin:'https://tennistowerhamlets.com',pathname:'/basket/discount'},document={readyState:'complete',querySelector:()=>({textContent:'Something went wrong!'}),body:{innerText:'PRIVATE 100001'}};
+ vm.runInNewContext(fs.readFileSync(new URL('./payment-content.js',import.meta.url),'utf8'),{location,document,chrome:{runtime:{id:'own',onMessage:{addListener:f=>listener=f}}}});
+ const send=(id='own')=>{let response;listener({kind:'page-observation'},{id},r=>response=r);return response;};
+ assert.equal(send('other'),undefined);const result=send();assert.equal(result?.value.pageType,'merchant-error');assert.equal(result.value.documentRoute,'discount-endpoint');assert.equal(JSON.stringify(result).includes('PRIVATE'),false);assert.equal(JSON.stringify(result).includes('100001'),false);
+ location.origin='https://untrusted.example';assert.equal(send().ok,false);
+});
+
+test('discount page observation stops for authentication, lost tabs and closed contexts without leaking details',async()=>{
+ for(const [url,code] of [['https://tennistowerhamlets.com/verify-human?token=PRIVATE','PAGE_AUTHENTICATION_REQUIRED'],['https://other.example/PRIVATE','PAGE_UNEXPECTED_ORIGIN']]){
+  const f=discountNavigationFixture();let probes=0;f.tabs.get=async()=>({url,status:'loading'});f.tabs.sendMessage=async()=>{probes++;};
+  await assert.rejects(readPageState(f.tabs,f.url,{kind:'basket-read'},f.options),e=>e.diagnostic.errorCode===code&&!JSON.stringify(e).includes('PRIVATE'));assert.equal(probes,0);
+ }
+ for(const message of ['No tab with id: 42','Cannot access contents PRIVATE','Extension context invalidated.']){
+  const f=discountNavigationFixture();let probes=0;f.tabs.get=async()=>({url:f.url+'/discount',status:'loading'});f.tabs.sendMessage=async()=>{probes++;throw Error(message);};
+  await assert.rejects(readPageState(f.tabs,f.url,{kind:'basket-read'},f.options),e=>e.diagnostic.errorCode==='PAGE_TAB_ERROR'&&e.diagnostic.operation==='page-observation'&&!JSON.stringify(e).includes('PRIVATE'));assert.equal(probes,1);assert.equal(f.clock,0);
+ }
+});
+test('discount probes and their diagnostics share the caller budget; storage failure is not a retry',async()=>{
+ for(const slow of ['probe','diagnostics']){
+  const f=discountNavigationFixture();f.tabs.get=async()=>({url:f.url+'/discount',status:'loading'});
+  if(slow==='probe')f.tabs.sendMessage=async()=>{await f.options.delay(3000);return {ok:true,value:{documentRoute:'discount-endpoint',documentMatchesRequest:true,pageType:'unknown'}};};
+  else f.options.step=async name=>{if(name==='discount-navigation-observed')await f.options.delay(3000);};
+  await assert.rejects(readPageState(f.tabs,f.url,{kind:'basket-read'},f.options),e=>e.diagnostic.errorCode==='PAGE_READY_TIMEOUT'&&e.diagnostic.remainingMs===0);assert.equal(f.clock,3000);
+ }
+ const f=discountNavigationFixture();let probes=0;const send=f.tabs.sendMessage;f.tabs.sendMessage=async(...args)=>{probes++;return send(...args);};f.tabs.get=async()=>({url:f.url+'/discount',status:'loading'});f.options.step=async name=>{if(name==='discount-navigation-observed')throw Error('PRIVATE storage failure');};
+ await assert.rejects(readPageState(f.tabs,f.url,{kind:'basket-read'},f.options),e=>e.diagnostic.operation==='read-diagnostics'&&!JSON.stringify(e).includes('PRIVATE'));assert.equal(probes,1);assert.equal(f.clock,0);
+});
+test('a rejected basket with a merchant error heading becomes a discount outcome hold, never a basket success',async()=>{
+ const f=discountNavigationFixture();f.tabs.sendMessage=async(id,request)=>request.kind==='basket-read'?{ok:false,error:'PRIVATE layout'}:{ok:true,value:{documentRoute:'basket',documentMatchesRequest:true,pageType:'merchant-error',documentState:'complete'}};
+ await assert.rejects(readPageState(f.tabs,f.url,{kind:'basket-read'},f.options),e=>e.diagnostic.errorCode==='DISCOUNT_MERCHANT_ERROR'&&e.diagnostic.destination==='basket'&&!JSON.stringify(e).includes('PRIVATE'));
+});
+
+test('an unfamiliar loading destination gets a bounded receiver-readiness probe before its safe stop',async()=>{
+ for(const available of [true,false]){
+  const f=discountNavigationFixture();let attempts=0;f.tabs.get=async()=>({url:'https://tennistowerhamlets.com/error/PRIVATE',status:'loading'});
+  f.tabs.sendMessage=async(id,request)=>{assert.equal(request.kind,'page-observation');assert.equal(request.expectedPath,'/error/PRIVATE');attempts++;if(!available||attempts<4)throw Error('Could not establish connection. Receiving end does not exist. PRIVATE');return {ok:true,value:{documentRoute:'unrecognized',documentMatchesRequest:true,pageType:'merchant-error',documentState:'complete',body:'PRIVATE'}};};
+  await assert.rejects(readPageState(f.tabs,f.url,{kind:'basket-read'},f.options),e=>e.diagnostic.errorCode===(available?'DISCOUNT_MERCHANT_ERROR':'PAGE_BASKET_ROUTE_CHANGED')&&e.diagnostic.observationAttempts===attempts&&!JSON.stringify(e).includes('PRIVATE'));
+  assert.equal(f.clock,available?300:1000);assert.equal(attempts,available?4:10);
+ }
+});
