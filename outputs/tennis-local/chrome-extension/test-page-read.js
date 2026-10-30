@@ -197,3 +197,12 @@ test('a rejected basket with a merchant error heading becomes a discount outcome
  const f=discountNavigationFixture();f.tabs.sendMessage=async(id,request)=>request.kind==='basket-read'?{ok:false,error:'PRIVATE layout'}:{ok:true,value:{documentRoute:'basket',documentMatchesRequest:true,pageType:'merchant-error',documentState:'complete'}};
  await assert.rejects(readPageState(f.tabs,f.url,{kind:'basket-read'},f.options),e=>e.diagnostic.errorCode==='DISCOUNT_MERCHANT_ERROR'&&e.diagnostic.destination==='basket'&&!JSON.stringify(e).includes('PRIVATE'));
 });
+
+test('an unfamiliar loading destination gets a bounded receiver-readiness probe before its safe stop',async()=>{
+ for(const available of [true,false]){
+  const f=discountNavigationFixture();let attempts=0;f.tabs.get=async()=>({url:'https://tennistowerhamlets.com/error/PRIVATE',status:'loading'});
+  f.tabs.sendMessage=async(id,request)=>{assert.equal(request.kind,'page-observation');assert.equal(request.expectedPath,'/error/PRIVATE');attempts++;if(!available||attempts<4)throw Error('Could not establish connection. Receiving end does not exist. PRIVATE');return {ok:true,value:{documentRoute:'unrecognized',documentMatchesRequest:true,pageType:'merchant-error',documentState:'complete',body:'PRIVATE'}};};
+  await assert.rejects(readPageState(f.tabs,f.url,{kind:'basket-read'},f.options),e=>e.diagnostic.errorCode===(available?'DISCOUNT_MERCHANT_ERROR':'PAGE_BASKET_ROUTE_CHANGED')&&e.diagnostic.observationAttempts===attempts&&!JSON.stringify(e).includes('PRIVATE'));
+  assert.equal(f.clock,available?300:1000);assert.equal(attempts,available?4:10);
+ }
+});

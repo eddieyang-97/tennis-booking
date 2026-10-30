@@ -36,16 +36,24 @@ export async function readPageState(tabs,url,request,{tabId=null,navigate=true,t
  let observationPath,tab,retain=reused,operation='read-diagnostics',messageReadRetries=0,navigationReads=0,last={loadState:'unknown',routeCategory:'loading',readState:'not-probed'};
  const observePage=async()=>{
   operation='page-observation';last.pageType='unavailable';last.observationState='unavailable';delete last.documentRoute;delete last.documentMatchesRoute;delete last.documentState;
-  try{
-   const response=await responseWithin(()=>tabs.sendMessage(tab.id,{kind:'page-observation',expectedPath:observationPath}),Math.max(1,Math.min(1000,deadline-now())),timers);
-   if(response?.ok&&documentRoutes.has(response.value?.documentRoute)&&pageTypes.has(response.value?.pageType)){
-    last.observationState='observed';last.documentRoute=response.value.documentRoute;last.documentMatchesRoute=response.value.documentMatchesRequest===true&&last.documentRoute===last.destination;
-    last.pageType=last.documentMatchesRoute?response.value.pageType:'stale-document';
-    last.documentState=['loading','interactive','complete'].includes(response.value.documentState)?response.value.documentState:'unknown';
+  const probeDeadline=Math.min(deadline,now()+1000);last.observationAttempts=0;
+  while(now()<probeDeadline){
+   last.observationAttempts++;
+   try{
+    const response=await responseWithin(()=>tabs.sendMessage(tab.id,{kind:'page-observation',expectedPath:observationPath}),Math.max(1,probeDeadline-now()),timers);
+    if(response?.ok&&documentRoutes.has(response.value?.documentRoute)&&pageTypes.has(response.value?.pageType)){
+     last.observationState='observed';last.documentRoute=response.value.documentRoute;last.documentMatchesRoute=response.value.documentMatchesRequest===true&&last.documentRoute===last.destination;
+     last.pageType=last.documentMatchesRoute?response.value.pageType:'stale-document';
+     last.documentState=['loading','interactive','complete'].includes(response.value.documentState)?response.value.documentState:'unknown';break;
+    }
+   }catch(e){
+    const reason=tabErrorReason(e);last.observationState=/timed out/i.test(e?.message||'')?'response-timeout':reason;
+    if(['tab-closed','access-denied','extension-context-invalidated'].includes(reason))throw e;
+    if(!temporaryTabError(e)&&last.observationState!=='response-timeout'&&last.loadState!=='loading')break;
    }
-  }catch(e){
-   const reason=tabErrorReason(e);last.observationState=/timed out/i.test(e?.message||'')?'response-timeout':reason;
-   if(['tab-closed','access-denied','extension-context-invalidated'].includes(reason))throw e;
+   // New documents may not yet have a receiver. These retries classify the
+   // page only; an unfamiliar route still stops after this one-second probe.
+   await delay(Math.min(100,Math.max(0,probeDeadline-now())));
   }
   checkDeadline('observation-after-deadline');navigationReads++;
   // Bounded progress keeps the original run boundary in its capped history.
