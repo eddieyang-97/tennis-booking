@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';import path from 'node:path';import {fileURLTo
 import {chromium} from 'playwright';
 import {startMerchant} from './server.js';import {networkGate} from './isolation.js';import {testBundle} from './bundle.js';
 import {discountReadBrowserCase} from '../browser-discount-read.js';
+import {discountNavigationBrowserCases} from '../browser-discount-navigation.js';
 const artifacts=fileURLToPath(new URL('../../../../../artifacts/',import.meta.url));await fs.mkdir(artifacts,{recursive:true});
 const output=await fs.mkdtemp(path.join(artifacts,'browser-gate-'));
 const merchant=await startMerchant(),gate=await networkGate(merchant.origin),bundle=path.join(output,'test-extension');
@@ -21,6 +22,12 @@ async function fresh(name){
  await context.close();context=null;profile=path.join(output,name);
  Object.assign(merchant.state,{items:[],discount:0,purchases:[],payObserved:false,options:{},counts:{selection:0,discount:0,opening:0,fill:0,pay:0,removal:0}});
  await launch();await worker.evaluate(()=>{globalThis.__testClock=Date.parse('2026-10-19T12:00:00Z');});
+}
+async function restartWorker(){
+ const cdp=await context.newCDPSession(popup),versions=new Map();
+ cdp.on('ServiceWorker.workerVersionUpdated',event=>{for(const v of event.versions)versions.set(v.versionId,v);});
+ const wait=async status=>{const deadline=Date.now()+10000;while(Date.now()<deadline){const v=[...versions.values()].find(v=>v.scriptURL===worker.url()&&v.runningStatus===status);if(v)return v;await new Promise(resolve=>setTimeout(resolve,25));}throw Error('Discount worker lifecycle transition missing: '+status);};
+ try{await cdp.send('ServiceWorker.enable');const version=await wait('running');await cdp.send('ServiceWorker.stopWorker',{versionId:version.versionId});await wait('stopped');await send({kind:'status'});await wait('running');return worker;}finally{await cdp.detach();}
 }
 async function read(tab,kind,extra={}){
  await tab.waitForLoadState('load');
@@ -226,6 +233,7 @@ try{
   assert.ok(Object.values(merchant.state.counts).every(count=>count===0));reports.push({scenario:'actual-dom-receipt-'+name,outcome:'passed',evidence:'synthetic-receipt-html'});
  }
  await discountReadBrowserCase({fresh,send,currentWorker:()=>worker,merchant,reports});
+ await discountNavigationBrowserCases({fresh,send,currentWorker:()=>worker,restart:restartWorker,returnToBasket:async()=>{const page=context.pages().find(page=>page.url()===merchant.origin+'/basket/discount');assert.ok(page);await page.goto(merchant.origin+'/basket');await page.waitForLoadState('load');},merchant,reports});
  // DST and validation use the real popup and worker settings boundary.
  await fresh('settings-profile');await popup.locator('#day').fill('2026-11-02');await popup.locator('#armPayment').click();await popup.waitForFunction(()=>document.querySelector('#result').textContent.includes('"armed"'));
  assert.equal((await send({kind:'status'})).job.when,Date.parse('2026-10-26T00:00:00Z'));

@@ -67,6 +67,50 @@ test('release observes delayed discount after five loading reads and unknown tra
  assert.deepEqual(f.merchant.counts,{selection:2,discount:1,opening:1,fill:1,pay:1,removal:0});
  assert.equal(f.navigations.filter(n=>n.kind==='update'&&n.url.endsWith('/basket')).length,2,'only the existing post-selection load and pre-payment refresh');
 });
+// Mirrors the sanitized 30 October boundary; destination variants are
+// hypotheses, not a claim about the private export's unrecorded destination.
+for(const outcome of ['return','persistent','merchant-error','unknown','changed-basket'])test(`five loading discount reads then lost reply and navigation: ${outcome}`,async()=>{
+ const f=await navigationRun(),send=f.worker.chrome.tabs.sendMessage,get=f.worker.chrome.tabs.get;f.state.job.discountCode='SYNTHETIC';let reads=0,gross,routePolls=0;
+ f.worker.chrome.tabs.get=async id=>{
+  const tab=f.worker.tabs.get(id);
+  if(tab?.url.includes('/basket/discount')&&['return','changed-basket'].includes(outcome)&&++routePolls>=3){tab.url='https://tennistowerhamlets.com/basket';tab.status='complete';if(outcome==='changed-basket')f.merchant.basket.items.push({...f.merchant.basket.items[0],court:4});}
+  return get(id);
+ };
+ f.worker.chrome.tabs.sendMessage=async(id,request)=>{
+  if(request.kind==='discount-apply'){gross=structuredClone(f.merchant.basket);const response=await send(id,request);f.worker.tabs.get(id).status='loading';return response;}
+  if(request.kind==='basket-read'&&f.merchant.counts.discount){
+   if(++reads<=5)return {ok:true,value:structuredClone(gross)};
+   if(reads===6){f.worker.tabs.get(id).url='https://tennistowerhamlets.com/'+(['merchant-error','unknown'].includes(outcome)?'system/PRIVATE':'basket/discount');throw Error('Synthetic lost read PRIVATE');}
+  }
+  if(request.kind==='page-observation'){
+   const path=new URL(f.worker.tabs.get(id).url).pathname;
+   return {ok:true,value:{documentRoute:path==='/basket/discount'?'discount-endpoint':'unrecognized',documentMatchesRequest:path===request.expectedPath,pageType:outcome==='merchant-error'?'merchant-error':'unknown',documentState:'loading',raw:'PRIVATE'}};
+  }
+  return send(id,request);
+ };
+ await f.worker.alarm({name:'release'});
+ assert.equal(f.state.checkoutResult.status,outcome==='return'?'confirmed':'stopped',f.state.checkoutResult.error);
+ const original=structuredClone(f.state.checkoutRecords[0]);assert.ok(original.discountDispatchedAt);assert.equal(JSON.stringify(f.state).includes('PRIVATE'),false);
+ assert.equal(f.navigations.filter(n=>n.kind==='update'&&n.url.endsWith('/basket')).length,outcome==='return'?2:1,'no recovery navigation is sent');
+ assert.ok(f.state.runHistory.some(run=>run.steps.some(step=>step.name==='discount-navigation-observed')));
+ if(outcome==='return')assert.deepEqual(f.merchant.counts,{selection:2,discount:1,opening:1,fill:1,pay:1,removal:0});
+ else{
+  assert.equal(original.phase,'discount-dispatched');assert.equal(original.discount,undefined);assert.equal(original.checkoutOpenDispatchedAt,undefined);assert.equal(original.cardFillDispatchedAt,undefined);assert.equal(original.paymentDispatchedAt,undefined);
+  assert.deepEqual(f.merchant.counts,{selection:2,discount:1,opening:0,fill:0,pay:0,removal:0});
+  if(outcome==='merchant-error')assert.equal(f.state.latestAction.reasonCode,'DISCOUNT_MERCHANT_ERROR');
+  if(outcome==='persistent')assert.equal(f.state.latestAction.reasonCode,'PAGE_READY_TIMEOUT');
+  if(outcome==='unknown')assert.equal(f.state.latestAction.reasonCode,'PAGE_BASKET_ROUTE_CHANGED');
+ }
+ // Recreated worker observes an exact returned basket using the same intent.
+ // It can continue only if the merchant-applied discount is now verified.
+ const restarted=await startWorker(f.merchant,f.state);restarted.seedTab(original.tabId);
+ if(outcome==='changed-basket')assert.equal((await restarted.send({kind:'payCheckout'})).status,'stopped');
+ else if(outcome==='return')await restarted.send({kind:'verifyPayment'});
+ else {const result=await restarted.send({kind:'payCheckout'});assert.equal(result.status,'confirmed',result.error);}
+ assert.equal(f.state.checkoutRecords[0].discountDispatchedAt,original.discountDispatchedAt);assert.deepEqual(f.state.checkoutRecords[0].slot,original.slot);
+ assert.equal(f.merchant.counts.selection,2);assert.equal(f.merchant.counts.discount,1);assert.equal(f.merchant.counts.pay,outcome==='changed-basket'?0:1);assert.equal(f.merchant.counts.opening,outcome==='changed-basket'?0:1);
+});
+
 for(const slow of ['initial-step','tab-state','successful-log'])test(`discount deadline includes slow ${slow} through worker storage and messaging; restart never replays`,async()=>{
  const f=await navigationRun();f.state.job.discountCode='SYNTHETIC';let delayed=false;
  if(slow==='tab-state'){

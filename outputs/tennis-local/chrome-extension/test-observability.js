@@ -16,6 +16,7 @@ function actionStorage(){
 
 test('worker error codes determine recovery independently of arbitrary message text',()=>{
  const cases=[
+  [Object.assign(Error('private response'),{diagnostic:{errorCode:'DISCOUNT_MERCHANT_ERROR'}}),'DISCOUNT_MERCHANT_ERROR','read-only-observation'],
   [Object.assign(Error('private response'),{code:'UNRESOLVED_CHECKOUT',attemptedDay:'2026-10-25'}),'UNRESOLVED_CHECKOUT','payment-reconciliation'],
   [Object.assign(Error('private response'),{diagnostic:{page:'account',errorCode:'PAGE_READY_TIMEOUT',retainedTabId:42}}),'PAGE_READY_TIMEOUT','read-only-observation'],
   [{status:'stopped',error:'private response',diagnostic:{errorCode:'GRID_READY_TIMEOUT'}},'GRID_READY_TIMEOUT','read-only-observation'],
