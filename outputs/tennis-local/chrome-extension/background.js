@@ -172,7 +172,7 @@ async function automaticPayment(test=false,scheduled=false,basketHandoff=null) {
   const frame=(type,kind)=>linkFrames.command(tab.id,type,kind,{attempts:kind==='link-state'?1:12});
   record=await ensureDiscount(record,{
    save:store,
-   read:async remaining=>{const response=await readPageState(chrome.tabs,BASE+'/basket',{kind:'basket-read'},{tabId:tab.id,navigate:false,observeLoadingMessageErrors:!!record.discountDispatchedAt,timeoutMs:Math.min(remaining||pageReadBudget(scheduled),pageReadBudget(scheduled)),step});if(!response.ok)throw Object.assign(Error('Discount basket observation rejected; inspect retained tab'),failureFor(response));return response.value;},
+   read:async remaining=>{const response=await readPageState(chrome.tabs,BASE+'/basket',{kind:'basket-read'},{tabId:tab.id,navigate:false,observeLoadingMessageErrors:!!record.discountDispatchedAt,observeDiscountNavigation:!!record.discountDispatchedAt,timeoutMs:Math.min(remaining||pageReadBudget(scheduled),pageReadBudget(scheduled)),step});if(!response.ok)throw Object.assign(Error('Discount basket observation rejected; inspect retained tab'),failureFor(response));return response.value;},
    apply:(code,expected)=>command({kind:'discount-apply',code,expected})
   },{timeoutMs:pageReadBudget(scheduled)});
   if(record.discount)await step('discount-verified',{...record.discount});
@@ -366,7 +366,7 @@ async function testDiscountCheckout(code='') {
   const {command}=checkoutCommands(record.tabId);
   record=await ensureDiscount(record,{
    save:store,
-   read:async remaining=>{const response=await readPageState(chrome.tabs,BASE+'/basket',{kind:'basket-read'},{tabId:record.tabId,navigate:false,observeLoadingMessageErrors:!!record.discountDispatchedAt,timeoutMs:Math.min(remaining||15000,15000),step});if(!response.ok)throw Object.assign(Error('Discount basket observation rejected; inspect retained tab'),failureFor(response));return response.value;},
+   read:async remaining=>{const response=await readPageState(chrome.tabs,BASE+'/basket',{kind:'basket-read'},{tabId:record.tabId,navigate:false,observeLoadingMessageErrors:!!record.discountDispatchedAt,observeDiscountNavigation:!!record.discountDispatchedAt,timeoutMs:Math.min(remaining||15000,15000),step});if(!response.ok)throw Object.assign(Error('Discount basket observation rejected; inspect retained tab'),failureFor(response));return response.value;},
    apply:(code,expected)=>command({kind:'discount-apply',code,expected})
   });
   if(record.discount)await step('discount-verified',{...record.discount});

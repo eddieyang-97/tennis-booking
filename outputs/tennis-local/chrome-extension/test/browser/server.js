@@ -15,7 +15,7 @@ export async function startMerchant(){
   if(url.pathname==='/site.js'){
    res.writeHead(200,{'Content-Type':'application/javascript'});res.end(`
     for(const box of document.querySelectorAll('input[type=checkbox]'))box.addEventListener('change',async()=>{const r=await fetch('/__select?hour='+box.dataset.hour+'&court='+box.dataset.court,{method:'POST'});if(!r.ok){box.checked=false;return;}const value=await r.json();document.querySelector('#menu-basket').setAttribute('data-items',String(value.count));});
-    for(const form of document.querySelectorAll('form[data-discount]'))form.addEventListener('submit',async e=>{e.preventDefault();await fetch(form.action,{method:'POST',body:new URLSearchParams(new FormData(form))});location.href='/basket';});
+    for(const form of document.querySelectorAll('form[data-discount]'))form.addEventListener('submit',async e=>{if(form.dataset.discount==='navigation')return;e.preventDefault();await fetch(form.action,{method:'POST',body:new URLSearchParams(new FormData(form))});location.href='/basket';});
     addEventListener('message',e=>{if(e.origin===location.origin&&e.data==='fake-card-ready'){const pay=document.querySelector('#submit');if(pay)pay.disabled=false;}});
    `);return;
   }
@@ -34,14 +34,26 @@ export async function startMerchant(){
    respond(res,shell({heading:'Book courts',html,count:state.items.length},'/site.js'));return;
   }
   if(url.pathname==='/basket/discount'&&req.method==='POST'){
-   state.counts.discount++;state.discount=state.options.freeBooking?totals().gross:2;res.writeHead(204);res.end();return;
+   state.counts.discount++;state.discount=state.options.freeBooking?totals().gross:2;
+   if(state.options.discountNavigation){
+    if(state.options.discountNavigation==='error'){respond(res,shell({heading:'Something went wrong!'}),500);return;}
+    if(state.options.discountNavigation==='unknown'){res.writeHead(303,{Location:'/unknown-discount-result'});res.end();return;}
+    if(state.options.discountNavigation==='changed')state.items.push({hour:20,court:4});
+    // Synthetic committed intermediate POST document. Headers/body commit the
+    // URL while the response remains loading; script then returns to the basket.
+    res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'});res.write(shell({heading:'Applying discount'}));
+    await new Promise(resolve=>setTimeout(resolve,1800));res.end('<script src="/discount-return.js"></script>');return;
+   }
+   res.writeHead(204);res.end();return;
   }
+  if(url.pathname==='/discount-return.js'){res.writeHead(200,{'Content-Type':'application/javascript'});res.end("location.replace('/basket');");return;}
+  if(url.pathname==='/unknown-discount-result'){respond(res,shell({heading:'Unrecognized local discount result'}));return;}
   if(url.pathname==='/basket/discount-remove'){state.discount=0;state.counts.removal++;res.writeHead(303,{Location:'/basket'});res.end();return;}
   if(url.pathname.startsWith('/basket/remove/')){state.items=state.items.filter(item=>id(item.hour)!==url.pathname.split('/').pop());state.counts.removal++;if(!state.items.length)state.discount=0;res.writeHead(303,{Location:'/basket'});res.end();return;}
   if(url.pathname==='/basket'){
    if(!state.items.length){respond(res,shell({html:'There are no items in your basket'}));return;}
    const date=new Date(state.day+'T12:00:00Z'),day=date.getUTCDate(),month=new Intl.DateTimeFormat('en-GB',{month:'short',timeZone:'UTC'}).format(date);
-   const html=summary()+`<form method="post" action="/basket/discount" data-discount><input id="checkout-discount" name="code"><button>Apply code</button></form><form method="post" action="${totals().net===0?'/basket/complete':'/basket/pay/card'}"><button id="btn-pay-now">${totals().net===0?'Complete my booking':'Pay with card'}</button></form>`+state.items.map(item=>`<div id="item-${id(item.hour)}">Court ${item.court}, ${venueName(state.venue)} ${day}th ${month} | ${item.hour%12||12}:00pm–${item.hour%12||12}:59pm £7.00 <a href="/basket/remove/${id(item.hour)}">Remove</a></div>`).join('');
+   const html=summary()+`<form method="post" action="/basket/discount" data-discount="${state.options.discountNavigation?'navigation':''}"><input id="checkout-discount" name="code"><button>Apply code</button></form><form method="post" action="${totals().net===0?'/basket/complete':'/basket/pay/card'}"><button id="btn-pay-now">${totals().net===0?'Complete my booking':'Pay with card'}</button></form>`+state.items.map(item=>`<div id="item-${id(item.hour)}">Court ${item.court}, ${venueName(state.venue)} ${day}th ${month} | ${item.hour%12||12}:00pm–${item.hour%12||12}:59pm £7.00 <a href="/basket/remove/${id(item.hour)}">Remove</a></div>`).join('');
    respond(res,shell({html,count:state.items.length},'/site.js'));return;
   }
   if(url.pathname==='/basket/complete'&&req.method==='POST'){

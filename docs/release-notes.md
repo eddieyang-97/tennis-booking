@@ -1,6 +1,6 @@
 # Release notes
 
-This is the historical change log for the **active Chrome extension** in [`outputs/tennis-local/chrome-extension/`](../outputs/tennis-local/chrome-extension/). The authoritative source version is [`manifest.json`](../outputs/tennis-local/chrome-extension/manifest.json), **0.9.9** on the contextual recovery UI branch (29 October 2026). Branch builds are not merged release claims.
+This is the historical change log for the **active Chrome extension** in [`outputs/tennis-local/chrome-extension/`](../outputs/tennis-local/chrome-extension/). The authoritative source version is [`manifest.json`](../outputs/tennis-local/chrome-extension/manifest.json), **0.9.10** on the discount-navigation observation branch (30 October 2026). Branch builds are not merged release claims.
 
 Notes below describe changes made *at each release*, not instructions to install or downgrade to older builds. Historical test counts and unverified behaviors are not current release-quality claims. For up-to-date setup, use the [project README](../README.md) and [extension usage guide](../outputs/tennis-local/chrome-extension/README.md). For original investigation and detailed timestamps, see [payment-system.md](payment-system.md).
 
@@ -22,6 +22,13 @@ Notes below describe changes made *at each release*, not instructions to install
 The PR #4 Chromium gate is ported onto the current v0.9.5 runtime without changing production booking or payment logic. The runtime is exercised with a synthetic merchant, controlled alarm and fake payment frame, browser process restart during fake Pay, service-worker termination during fake card fill, denied external HTTP(S), and a synthetic rejected-selection/checkbox-reversion scenario. CI verifies the production ZIP excludes test adapters. These are synthetic observations, not real midnight alarm, Stripe, merchant-booking or unattended-payment acceptance.
 
 ## Changes by version
+
+### v0.9.10 — bounded discount-navigation observation (30 October 2026)
+
+- Record fixed destination/page categories, pending-route category, document-path agreement and bounded timing after a journaled discount attempt. Raw paths, queries, page text, code values and references are excluded from this evidence.
+- Observe a loading document at the validated `/basket/discount` target until the exact basket returns, within the original remaining budget. Discard basket replies if navigation starts in flight. No recovery navigation, discount replay or other mutation retry is added.
+- Classify an observed merchant error as `DISCOUNT_MERCHANT_ERROR`; preserve the unknown discount outcome and original intent. Authentication, unfamiliar routes, completed unsupported pages, changed baskets and uncertain payments remain held.
+- Regressions model the 30 October loading-read/lost-reply/route-change boundary, plus synthetic destination hypotheses, deadlines, stale documents and restart. Chromium uses actual scripts against a local fake merchant. The live export did not record the destination; these tests do not establish its cause or unattended acceptance.
 
 ### v0.9.9 — contextual recovery controls (29 October 2026)
 

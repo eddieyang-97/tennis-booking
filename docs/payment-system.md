@@ -1,6 +1,6 @@
 # Payment system: merchant contracts, safety and incident evidence
 
-**Status:** Technical reference for the active Chrome Manifest V3 extension, source updated through the v0.9.5 selection-diagnostics branch (21 October 2026). **Not** a release changelog or a claim of unattended production readiness.
+**Status:** Technical reference for the active Chrome Manifest V3 extension, including the v0.9.10 discount-navigation observation branch (30 October 2026). **Not** a release changelog or a claim of unattended production readiness.
 
 PR #4's isolated browser integration tests exercise actual extension messaging and worker/process restarts against a synthetic merchant with denied HTTP(S) egress. Controlled alarms, test-only card frames and synthetic DOM remain explicit limitations, not live merchant or bank/Stripe acceptance.
 
@@ -99,6 +99,14 @@ Permanent module, actual-worker and named scenario regressions model five loadin
 On 16 October, a two-hour BGG basket of **£10 gross**, with **£7 discount** and **£3 net**, was verified. The single checkout-opening command acknowledged success, but the card-page read timed out after 15 seconds. The owner reported a merchant error and returning manually to the basket. A later inspection saw a £3 card page with a provisional reference and disabled Pay. **Neither observation proves the original timed-out request ultimately completed**, and the unpaid test did not fill a card or dispatch Pay.
 
 v0.8.9 changed opening readiness to a bounded **60 seconds** with safe route/readiness/error observation for scheduled and manual paths. A matching card page may be resumed only after identity verification. It must not repeat an ambiguous opening click or discard its opening marker based on a generic loading/merchant error. The underlying merchant-error cause remains unknown; [release notes](release-notes.md) describe what changed and [the regression plan](test-improvement.md) describes what remains unproven.
+
+### 30 October release: post-discount navigation left the basket
+
+The private v0.9.9 export shows an on-time release for 6 November. BGG court 1, 20:00–21:00 was selected and its exact £7 gross basket verified. The saved preference was one hour. Discount intent was saved at `2026-10-30T00:00:19.642Z`; seven usable basket observations followed while Chrome reported loading. A subsequent message-read failure was retried, then tab-state observation detected another same-origin path at `00:00:27.908Z`, with 51,751 ms remaining. The stop was `PAGE_BASKET_ROUTE_CHANGED`. The journal retained `discount-dispatched`, no verified discount and no opening, fill, payment or free-completion marker. The destination was not recorded; no claim about a competing booking, merchant error or legitimate redirect is supported by this export.
+
+The v0.9.10 reader categorizes destinations and performs a bounded read-only page probe after that journaled attempt. The probe shares the caller deadline and allows at most one second for a new document receiver to appear; an unfamiliar route still stops after classification. It returns fixed route/page enums and exact document-path agreement; raw paths, URL queries/fragments, headings, body contents and reference values never enter these diagnostic fields. The known form action `/basket/discount` is the only non-basket route eligible for waiting, and only while Chrome reports it loading. It is never basket evidence. Automatic continuation requires the exact basket to return within the remaining caller budget and pass the existing slot/gross/discount/net validation. A basket reply is discarded if tab state reports a committed or pending route change while it was in flight.
+
+A trusted, path-matched **Something went wrong** heading becomes `DISCOUNT_MERCHANT_ERROR` and retains the intent with outcome unknown. Authentication, untrusted origins, unfamiliar routes, checkout/confirmation appearing unexpectedly, completed unsupported pages, lost tabs and mismatched baskets stop. No GET recovery navigation, discount reapplication, alternate-court selection, checkout opening, fill or payment replay is introduced. An explicit later continuation can reconcile a newly returned exact basket using the original intent. Source and fake-browser tests verify this behavior; live destination/redirect compatibility remains unverified.
 
 ## 4. Direct Stripe Card Element and legacy Stripe Link
 

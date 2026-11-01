@@ -25,7 +25,7 @@ const rules=[
 // only recognize legacy errors that have no known structured classification.
 const recoveryModes=Object.freeze({
  BASKET_LAYOUT_UNKNOWN:'manual-review',FREE_BOOKING_REVIEW_REQUIRED:'user-action',FREE_BOOKING_UNRESOLVED:'payment-reconciliation',
- DISCOUNT_OBSERVATION_TIMEOUT:'read-only-observation',
+ DISCOUNT_OBSERVATION_TIMEOUT:'read-only-observation',DISCOUNT_MERCHANT_ERROR:'read-only-observation',
  SELECTION_ACK_TIMEOUT:'read-only-observation',SELECTION_RESPONSE_UNCERTAIN:'read-only-observation',
  SELECTION_OBSERVATION_FAILED:'read-only-observation',SELECTION_PAGE_CHANGED:'manual-review',
  SELECTION_SLOT_UNAVAILABLE:'manual-review',SELECTION_STATE_CHANGED:'manual-review',

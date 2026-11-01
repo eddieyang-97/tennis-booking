@@ -21,6 +21,18 @@ export const scenarios={
   assert.equal(record.discount.totalGBP,'12.00');assert.equal(applies,1);assert.equal(reads,7);assert.ok(time<60000);assert.ok(steps.some(s=>s.name==='page-message-read-retry'));
   await ensureDiscount(record,{apply:async()=>assert.fail('No repeated code')});assert.equal(applies,1);
  },
+ 'discount-endpoint-return-no-replay':async()=>{
+  const s=slot(),gross=basket(s),net={...gross,discountApplied:true,discountGBP:'2.00',totalGBP:'12.00'};let record={slot:s,key:slotKey(s),status:'pending',phase:'awaiting-payment',discountCode:'SYNTHETIC'},time=0,applies=0,reads=0,redirect=false;
+  const url='https://tennistowerhamlets.com/basket',steps=[];
+  const tabs={get:async()=>({url:redirect&&time<3500?url+'/discount':url,status:'loading'}),sendMessage:async(id,request)=>{
+   if(request.kind==='page-observation')return {ok:true,value:{documentRoute:'discount-endpoint',documentMatchesRequest:true,pageType:'unknown',documentState:'loading'}};
+   if(!record.discountDispatchedAt)return {ok:true,value:gross};if(++reads<=5)return {ok:true,value:gross};if(reads===6){redirect=true;throw Error('Synthetic read lost');}return {ok:true,value:net};
+  }};
+  const options={now:()=>time,delay:async ms=>time+=ms,timeoutMs:60000};
+  record=await ensureDiscount(record,{save:async r=>record=r,apply:async()=>applies++,read:async(remaining=60000)=>(await readPageState(tabs,url,{kind:'basket-read'},{...options,timeoutMs:remaining,tabId:42,navigate:false,observeLoadingMessageErrors:!!record.discountDispatchedAt,observeDiscountNavigation:!!record.discountDispatchedAt,step:async(name,detail)=>steps.push({name,...detail})})).value},options);
+  assert.equal(applies,1);assert.equal(record.discount.totalGBP,'12.00');assert.ok(time<60000);assert.ok(steps.some(step=>step.destination==='discount-endpoint'));
+  await ensureDiscount(record,{apply:async()=>assert.fail('Never repeat discount')});
+ },
  'selection-reverted-empty-no-replay':async()=>{
   const s=slot();let records=[],clicks=0;
   const deps={load:async()=>structuredClone(records),save:async r=>records=structuredClone(r),read:async()=>({empty:true,items:[]}),select:async()=>{clicks++;throw Object.assign(Error('Sanitized selection timeout'),{reasonCode:'SELECTION_ACK_TIMEOUT',selectionDiagnostic:{dispatchedHours:1,acknowledgedHours:0,checkboxReverted:true,merchantOutcome:'unknown'}});}};
