@@ -245,9 +245,10 @@ try{
  const old={slot:oldSlot,key:JSON.stringify([oldSlot.venue,oldSlot.date,1,'20:00',2]),status:'pending',test:false,phase:'payment-uncertain',reference:'100000',paymentDispatchedAt:'2026-10-18T00:00:20Z',priorReferences:[{reference:'99999'}]};
  const previousResult={status:'stopped',error:'Previous outcome unknown'};
  await worker.evaluate(async({old,previousResult})=>{await chrome.storage.local.set({checkoutRecords:[old],checkoutResult:previousResult,running:{day:old.slot.date,started:Date.now()-60000}});await chrome.storage.session.set({localPaymentCard:{testOnly:true}});},{old,previousResult});
- // Align this popup's synthetic clock and fake unlocked session with its worker,
- // so we verify the visible ready state rather than only the saved job flag.
- await popup.addInitScript(now=>{const RealDate=Date;globalThis.Date=class extends RealDate{constructor(...args){super(...(args.length?args:[Date.now()]));}static now(){return now+performance.now();}};},Date.parse('2026-10-19T12:00:00Z'));
+ // Keep the popup on the worker's synthetic day, after its retirement timestamp
+ // and before release. Separate realms' performance clocks are not synchronized.
+ // Verify the visible ready state, not only the saved job flag.
+ await popup.addInitScript(now=>{const RealDate=Date;globalThis.Date=class extends RealDate{constructor(...args){super(...(args.length?args:[Date.now()]));}static now(){return now+performance.now();}};},Date.parse('2026-10-19T13:00:00Z'));
  await popup.reload();await popup.locator('#day').fill('2026-10-27');
  await popup.locator('#armPayment').click();await popup.waitForFunction(()=>document.querySelector('#result').textContent.includes('Armed for '));
  let armStatus=await send({kind:'status'});assert.equal(armStatus.job.prepared,true);assert.equal(armStatus.running,null);assert.deepEqual(armStatus.checkoutResult,previousResult);
