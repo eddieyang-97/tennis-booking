@@ -33,6 +33,24 @@ jobs:
       - name: Documented Windows PowerShell package command (5.1)
         shell: pwsh
         run: powershell -NoProfile -ExecutionPolicy Bypass -File ./build.ps1
+      - name: Create tested release provenance
+        shell: pwsh
+        run: ./scripts/create-release.ps1 -Commit '${{ github.sha }}'
+      - name: Release/update regression tests (PowerShell 7 and 5.1)
+        shell: pwsh
+        run: |
+          ./scripts/test-release.ps1
+          powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/test-release.ps1
+      - name: Retain exact tested runtime
+        uses: actions/upload-artifact@v4
+        with:
+          name: extension-runtime
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            artifacts/tennis-booking-v*.zip
+            artifacts/release.json
+            artifacts/checksums.txt
 
   browser:
     runs-on: windows-latest
@@ -63,3 +81,30 @@ jobs:
             artifacts/browser-gate-*/report.json
             artifacts/browser-gate-*/failure.json
             artifacts/browser-gate-*/failure.png
+            artifacts/browser-reload-*/report.json
+
+  publish:
+    needs: [deterministic, browser]
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    concurrency:
+      group: development-release-${{ github.sha }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.18.0'
+      - uses: actions/download-artifact@v4
+        with:
+          name: extension-runtime
+          path: artifacts
+      - name: Publish verified development prerelease
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/publish-release.mjs artifacts

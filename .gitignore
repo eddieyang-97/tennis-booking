@@ -2,6 +2,11 @@
 /*
 !/.gitignore
 !/.gitattributes
+!/update-extension.ps1
+!/scripts/
+!/scripts/*.ps1
+!/scripts/*.psm1
+!/scripts/*.mjs
 !/build.ps1
 !/runtime-files.json
 !/.github/

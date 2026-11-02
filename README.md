@@ -2,7 +2,7 @@
 
 A Manifest V3 Chrome extension that checks and attempts to book tennis courts on [Tower Hamlets Courtside](https://tennistowerhamlets.com/) at the London midnight release, with configurable preferences, strict basket/payment verification, a local encrypted card file and recovery of uncertain payments.
 
-**Active implementation:** [`outputs/tennis-local/chrome-extension/`](outputs/tennis-local/chrome-extension/) · **Version:** [`0.9.11`](outputs/tennis-local/chrome-extension/manifest.json), one-click Arm recovery (2 November 2026). This branch is not a merged release claim.
+**Active implementation:** [`outputs/tennis-local/chrome-extension/`](outputs/tennis-local/chrome-extension/) · **Version:** [`0.9.12`](outputs/tennis-local/chrome-extension/manifest.json), developer releases and guarded reload (2 November 2026). Source availability does not establish installation or live acceptance.
 
 **Release status:** In active development, **not yet verified for unattended end-to-end midnight payment**. A real £2.50 one-hour card payment and its subsequent account-purchase reconciliation were verified on 13 October. Live two-hour basket selection was verified, but an automated two-hour Pay and a complete unattended midnight booking have not been established. See [release notes and live-evidence limits](docs/release-notes.md).
 
@@ -15,7 +15,15 @@ The live implementation runs as an unpacked extension in **normal Chrome**, usin
 3. Choose a **future playing date**, set venue/time/duration/cost preferences, and click **Arm midnight booking and payment**. The release is London midnight **seven days before play**; Arm checks card/account/empty-basket readiness immediately; the separate, required scheduled preflight runs five minutes earlier. Arm-time checks cannot satisfy that release gate. Earlier attempts whose release window passed are retained as unknown history, rather than blocking a different future playing date.
 4. Keep Chrome running and the computer **awake**, with the card still unlocked. Chrome alarms cannot wake a sleeping computer; human verification or bank approval may require intervention.
 
-**Updating the extension:** Reload it at `chrome://extensions` after source changes, and reload relevant open merchant tabs so content scripts match. **Unlock the card after the final reload**; extension reload/browser restart clears the unlocked session, though saved jobs/journals remain.
+**Updating the extension:** Successful main CI publishes an exact, versioned **development prerelease** with its source commit and checksums. From a current repository checkout, close Chrome and run:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\update-extension.ps1 -InstallDirectory 'C:\path\to\existing\chrome-extension' -OpenChrome
+```
+
+Use the **same directory already loaded in Chrome**. The updater verifies the release and every runtime file, backs up replaced files and rolls back copy failures; it does not access Chrome storage. Chrome restarts with the new code. Unlock the card afterward, verify the popup version, refresh merchant tabs and arm again if required. Use `-DownloadOnly` to verify a build without installing while Chrome is open. See [developer update details](docs/developer-updates.md).
+
+For source-only updates already installed safely, **Advanced diagnostics and recovery → Developer tools → Reload updated extension** invokes Chrome's supported reload API. It refuses armed/running jobs, preserves payment journals and locks the card.
 
 See the [extension usage guide](outputs/tennis-local/chrome-extension/README.md) for unpaid testing, recovery controls and troubleshooting. **An armed job or preflight success is not evidence of a reservation or payment.**
 

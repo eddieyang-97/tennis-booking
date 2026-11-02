@@ -117,3 +117,9 @@ The normal scheduled **local-card** path is `selection-dispatched` → `awaiting
 - [Payment-system reference](payment-system.md): merchant DOM contracts, edge cases, recovery predicates and dated incidents.
 - [Testing roadmap](test-improvement.md): regression architecture, scenarios and coverage/acceptance boundaries.
 - [Release notes](release-notes.md): versioned changes and observed live acceptance evidence.
+
+## Development release and reload boundary
+
+The Reliability gate retains the exact tested runtime artifact. A separate main-only job, with job-scoped `contents: write`, publishes development prereleases only after deterministic and browser jobs pass. `scripts/publish-release.mjs` stages and verifies all assets before publishing; published artifacts are never overwritten. The Windows updater verifies provenance and copies runtime files into the same existing installation directory only while Chrome is closed. It neither accesses browser profiles nor migrates Chrome storage. See [developer updates](developer-updates.md).
+
+The popup reload command shares the booking action queue. It requires no saved job/running lock or active worker run, clears only session `localPaymentCard`, finishes durable action metadata, then invokes `chrome.runtime.reload()`. Subsequent queued popup actions are refused until worker recreation. It preserves checkout records, payment markers, preferences and historical results.

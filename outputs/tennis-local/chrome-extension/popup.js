@@ -27,6 +27,7 @@ async function refresh(initial=false,show=false){
  const status=await chrome.runtime.sendMessage({kind:'status'}),view=readiness(status,Date.now(),day.value);
  field('readiness').textContent=[view.summary,...view.lines].join('\n');
  field('armBlocker').textContent=view.armBlocker||'';
+ field('reloadExtension').disabled=!!(status.job||status.running);
  const recovery=view.recovery;
  const earlier=(status.checkoutRecords||[]).filter(r=>r.status!=='confirmed'&&isRetiredAttempt(r));
  field('historyOutcomeRow').hidden=!earlier.length;field('verifyEarlier').disabled=recovery.paused;
@@ -76,7 +77,7 @@ async function send(kind){if(kind==='armPayment')field('armPayment').disabled=tr
  const result=await chrome.runtime.sendMessage(message);output.textContent=result.status==='stopped'?result.error:kind==='armPayment'&&result.status==='armed'?`Armed for ${result.day}. Initial checks passed; scheduled preflight is pending. Keep Chrome open and awake.${result.retiredAttempts?` ${result.retiredAttempts} earlier attempt(s) kept in history with unknown outcome.`:''}`:JSON.stringify(result,null,2);
  try{await refresh();}catch{/* Keep the completed action result visible. */}
 }catch(error){output.textContent=error.message;}finally{if(kind==='armPayment')field('armPayment').disabled=false;}}
-for(const kind of ['openCardVault','payCheckout','armPayment','check','resume','prepareCheckout','verifyPayment','cancel','reset','reconcileBasket','reconcileSelection','archiveFailedCheckout','saveSettings','reconcileManualPayment','testDiscountCheckout','resetUnpaidTest','assessRecovery','verifyEarlier','reportEarlierManualPayment'])field(kind).addEventListener('click',()=>send(kind));
+for(const kind of ['reloadExtension','openCardVault','payCheckout','armPayment','check','resume','prepareCheckout','verifyPayment','cancel','reset','reconcileBasket','reconcileSelection','archiveFailedCheckout','saveSettings','reconcileManualPayment','testDiscountCheckout','resetUnpaidTest','assessRecovery','verifyEarlier','reportEarlierManualPayment'])field(kind).addEventListener('click',()=>send(kind));
 field('earlierAttempt').addEventListener('change',updateEarlierManual);
 for(const control of document.querySelectorAll('input,select'))control.addEventListener('input',()=>{formEdited=true;});
 field('preferredHours').addEventListener('change',()=>{if(Number(field('minHours').value)>Number(field('preferredHours').value))field('minHours').value=field('preferredHours').value;});

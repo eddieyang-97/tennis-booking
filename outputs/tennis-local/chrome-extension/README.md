@@ -1,6 +1,6 @@
 # Chrome extension: setup, testing and recovery
 
-This is the **operating guide** for the active Manifest V3 extension. The installed version is shown at the top of the popup; the source version is defined in [`manifest.json`](manifest.json) (**0.9.11**, one-click Arm recovery, 2 November 2026). A source change does not update an installed extension.
+This is the **operating guide** for the active Manifest V3 extension. The installed version is shown at the top of the popup; the source version is defined in [`manifest.json`](manifest.json) (**0.9.12**, developer releases and guarded reload, 2 November 2026). A source change does not update an installed extension.
 
 - [Project overview and safety model](../../../README.md)
 - [Architecture and checkout state diagrams](../../../docs/architecture.md)
@@ -13,7 +13,7 @@ This is the **operating guide** for the active Manifest V3 extension. The instal
 
 1. In normal Chrome, sign in to [Courtside](https://tennistowerhamlets.com/).
 2. Open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select this `chrome-extension/` directory.
-3. After changing source, reload the extension at `chrome://extensions`. Reload relevant Courtside tabs too, because open tabs may still have old content scripts.
+3. For a tested development release, follow the [local updater guide](../../../docs/developer-updates.md): close Chrome, update the **existing** directory, then reopen Chrome. For source-only updates, use **Advanced diagnostics and recovery → Developer tools → Reload updated extension** while no job is armed/running. Keep Developer mode enabled. Reload relevant Courtside tabs too, because open tabs may still have old content scripts.
 4. Open the extension popup. Its readiness panel reports version, card state, existing checkout blockers and armed-job details.
 
 An extension reload or Chrome restart **locks the local payment card session**, while persistent jobs and journals survive. Do the final extension reload **before** unlocking the card for a scheduled payment.

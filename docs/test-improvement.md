@@ -458,3 +458,9 @@ Real merchant checks may still be necessary for Cloudflare/human-verification, b
 - [Historical releases and acceptance notes](release-notes.md)
 - [Extension source and tests](../outputs/tennis-local/chrome-extension/)
 - Key modules: `background.js`, `checkout.js`, `payment.js`, `reconciliation.js`, `stage-rules.js`, `stage-content.js`, `page-read.js`, `grid-read.js`, `run-log.js` and `diagnostics.js`.
+
+## Developer delivery regressions (v0.9.12)
+
+`npm test` includes mocked GitHub publication tests; `test:scenarios` includes worker reload serialization and journal-retention faults. `scripts/test-release.ps1` exercises the actual installer/updater with disposable files and stubbed HTTP/process reads under PowerShell 7 and Windows PowerShell 5.1: content/hash validation, unsafe/duplicate ZIP entries, permission/downgrade refusal, interrupted-copy rollback, preservation of unrelated files, release ancestry and tag/origin checks. The browser gate additionally invokes the supported reload API in an isolated profile with synthetic payment holds and Developer mode enabled. Runtime ZIPs still contain only `runtime-files.json` entries.
+
+The main-only publication job is skipped for PRs. Mocked publication is not proof of a published release; verify the first merged-main job and assets separately. Update/reload acceptance does not establish real merchant or unattended payment compatibility.
