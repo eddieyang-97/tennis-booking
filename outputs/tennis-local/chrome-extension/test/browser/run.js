@@ -276,7 +276,8 @@ try{
  await popup.locator('#diagnosticControls > summary').click();await popup.locator('#earlierAttempt').selectOption(opened.key);
  assert.equal(await popup.locator('#earlierManualPaymentRow').isVisible(),true);
  await popup.locator('#earlierManualReference').fill('100000');await popup.locator('#reportEarlierManualPayment').click();
- await popup.waitForFunction(()=>document.querySelector('#result').textContent.includes('Unique matching purchase'));
+ await popup.waitForFunction(()=>document.querySelector('#result').textContent!=='Checking…');
+ assert.match(await popup.locator('#result').textContent(),/Paid purchase not verified; payment remains unresolved/);
  const heldEarlier=(await send({kind:'status'})).checkoutRecords[0];assert.ok(heldEarlier.manualPaymentReportedAt);assert.equal(heldEarlier.paymentDispatchedAt,undefined);assert.deepEqual(heldEarlier.priorReferences,opened.priorReferences);assert.equal(heldEarlier.reference,opened.reference);
  await restartWorker();merchant.state.purchases=[{reference:'100000',total:14,state:'Confirmed'}];await popup.reload();
  await popup.locator('#diagnosticControls > summary').click();await popup.locator('#verifyEarlier').click();
