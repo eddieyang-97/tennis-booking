@@ -12,6 +12,7 @@ export async function startWorker(merchant,state={},version='simulation'){
   if(!label&&after?.reference&&!before?.reference)label='reference';
   if(!label&&value.checkoutRecords?.some(r=>r.status==='confirmed'&&!state.checkoutRecords?.some(old=>old.key===r.key&&old.status==='confirmed')))label='confirmation';
   if(value.checkoutRecords?.some(r=>r.runRetirement&&!state.checkoutRecords?.find(old=>old.key===r.key)?.runRetirement))label='retirement';
+  if(value.checkoutRecords?.some(r=>r.manualPaymentReportedAt&&!state.checkoutRecords?.find(old=>old.key===r.key)?.manualPaymentReportedAt))label='manual-report';
   if(!label&&value.abandonedCheckouts?.length>(state.abandonedCheckouts?.length||0))label='archive';
   if(label)merchant.boundary(`persist:${label}:before`);Object.assign(state,structuredClone(value));if(label)merchant.boundary(`persist:${label}:after`);
  },remove:async keys=>{for(const key of typeof keys==='string'?[keys]:keys)delete state[key];}};

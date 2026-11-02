@@ -35,3 +35,19 @@ test('retired journals are visible as unknown history, not unresolved controls o
   await assert.rejects(prepareCheckout({...slot,court:2},{load:async()=>retired,read:async()=>reads++,select:async()=>mutations++,save:async()=>mutations++}),/earlier attempt.*unknown/i);assert.equal(reads,0);assert.equal(mutations,0);
  }finally{Date.now=realNow;}
 });
+
+import {earlierManualPaymentAllowed} from './readiness.js';
+test('initial arm checks stay distinct from required scheduled preflight in the popup',()=>{
+ const job={day,when:releaseAt(day),mode:'payment',prepared:false,armReadyAt:new Date(now).toISOString()},status={localCardUnlocked:true,checkoutRecords:[],job};
+ const initial=readiness(status,now);assert.equal(initial.ready,false);assert.match(initial.summary,/initial checks passed.*scheduled preflight pending/);assert.match(initial.lines.join('\n'),/Arm-time readiness checks passed/);assert.ok(initial.lines.includes('Scheduled preflight pending'));assert.ok(!initial.lines.includes('Preflight passed'));
+ const scheduled=readiness({...status,job:{...job,prepared:true,preparedAt:new Date(now+1000).toISOString()}},now+1000);assert.equal(scheduled.ready,true);assert.ok(scheduled.lines.includes('Preflight passed'));
+});
+test('earlier manual report control is available only for an ordinary non-free unsubmitted retired checkout',()=>{
+ const realNow=Date.now;Date.now=()=>now;
+ try{
+  const [retired]=retireAttempts([record({phase:'checkout-opening',paymentDispatchedAt:undefined,freeBookingDispatchedAt:undefined})],day,now);
+  delete retired.paymentDispatchedAt;delete retired.freeBookingDispatchedAt;
+  assert.equal(earlierManualPaymentAllowed(retired),true);
+  for(const patch of [{status:'confirmed'},{test:true},{checkoutTestOnly:true},{basketOnly:true},{paymentDispatchedAt:null},{freeBookingDispatchedAt:null},{discount:{totalGBP:'0.00'}},{runRetirement:undefined}])assert.equal(earlierManualPaymentAllowed({...retired,...patch}),false);
+ }finally{Date.now=realNow;}
+});

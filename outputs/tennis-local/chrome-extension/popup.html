@@ -39,6 +39,10 @@
 <label>Earlier attempt <select id="earlierAttempt"></select></label>
 <p><button id="verifyEarlier">Verify earlier outcome (read only)</button> Preserves the original journal. Does not cancel or resubmit. Cancel the scheduled run before inspecting an earlier outcome.</p>
 </div>
+<div id="earlierManualPaymentRow" hidden>
+<label>Earlier manual payment confirmation reference <input id="earlierManualReference" type="text" maxlength="22" autocomplete="off"></label>
+<p><button id="reportEarlierManualPayment">I paid the selected earlier checkout — verify</button> Only if you actually paid that checkout manually. Saves your report before read-only verification; never submits Pay. Cancel a scheduled run first.</p>
+</div>
 <details id="recoveryControls" hidden><summary>Recover a stopped booking</summary>
 <p id="recoveryHelp" class="note" role="status"></p>
 <p id="assessRecoveryRow" hidden><button id="assessRecovery">Assess recovery (read only)</button> Inspects the journal and open purchase pages; does not pay, cancel or remove items.</p>

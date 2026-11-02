@@ -3,6 +3,9 @@ import {pendingArmBlocker,unreferencedCheckoutTest,failedCheckoutIdentity} from 
 import {releaseAt} from './core.js';
 // Presentation hints only: worker guards still authorize every action using
 // current durable state and merchant evidence. Rendering never sends a mutation.
+export function earlierManualPaymentAllowed(record) {
+ return !!record&&isRetiredAttempt(record)&&record.status==='pending'&&!record.test&&!record.checkoutTestOnly&&!record.basketOnly&&!Object.hasOwn(record,'paymentDispatchedAt')&&!Object.hasOwn(record,'freeBookingDispatchedAt')&&record.discount?.totalGBP!=='0.00';
+}
 export function recoveryPresentation(status={}) {
  const pending=pendingAttempts(status.checkoutRecords),r=pending[0],unique=pending.length===1;
  const has=field=>!!r&&Object.hasOwn(r,field);
@@ -52,8 +55,9 @@ export function readiness(status,now=Date.now(),selectedDay=null) {
   lines.push(`Playing ${status.job.day}; release ${release} London`);
   if(status.job.settings){const s=status.job.settings;lines.push(`${s.earliestStart}–${s.latestFinish}, prefer ${s.preferredHours}h, minimum ${s.minHours}h; cap £${s.maxTotalGBP}, 1h cap £${s.maxOneHourGBP}`);}else lines.push('Legacy job: original evening preferences');
   lines.push(status.job.discountCode?'Discount requested':'No discount requested');
-  lines.push(!valid||when<=now?'Release passed or invalid: inspect result':status.job.prepared?'Preflight passed':'Preflight pending');
+  if(status.job.armReadyAt)lines.push('Arm-time readiness checks passed');
+  lines.push(!valid||when<=now?'Release passed or invalid: inspect result':status.job.prepared?'Preflight passed':'Scheduled preflight pending');
  }
  const ready=!!status.localCardUnlocked&&!pending&&status.job?.mode==='payment'&&status.job.when>now&&status.job.prepared===true;
- return {ready,lines,testRecoveryGuide,failedCheckoutGuide,recovery:recoveryPresentation(status),armBlocker:automaticRecovery?'Click Arm to retire earlier attempts and check readiness. Their outcomes remain unknown; no earlier action is repeated.':pendingArmBlocker(active),summary:automaticRecovery&&!status.job?'Ready to recover and arm':ready?'Preflight passed — keep Chrome open and awake':testRecoveryGuide?'Unfinished checkout test needs review':pending?'Recovery required for an earlier checkout':status.job?'Armed run: review readiness below':'Not armed'};
+ return {ready,lines,testRecoveryGuide,failedCheckoutGuide,recovery:recoveryPresentation(status),armBlocker:automaticRecovery?'Click Arm to retire earlier attempts and check readiness. Their outcomes remain unknown; no earlier action is repeated.':pendingArmBlocker(active),summary:automaticRecovery&&!status.job?'Ready to recover and arm':ready?'Preflight passed — keep Chrome open and awake':testRecoveryGuide?'Unfinished checkout test needs review':pending?'Recovery required for an earlier checkout':status.job?.armReadyAt?'Armed — initial checks passed; scheduled preflight pending':status.job?'Armed run: review readiness below':'Not armed'};
 }

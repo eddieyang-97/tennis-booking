@@ -251,17 +251,39 @@ try{
  await popup.addInitScript(now=>{const RealDate=Date;globalThis.Date=class extends RealDate{constructor(...args){super(...(args.length?args:[Date.now()]));}static now(){return now+performance.now();}};},Date.parse('2026-10-19T13:00:00Z'));
  await popup.reload();await popup.locator('#day').fill('2026-10-27');
  await popup.locator('#armPayment').click();await popup.waitForFunction(()=>document.querySelector('#result').textContent.includes('Armed for '));
- let armStatus=await send({kind:'status'});assert.equal(armStatus.job.prepared,true);assert.equal(armStatus.running,null);assert.deepEqual(armStatus.checkoutResult,previousResult);
+ let armStatus=await send({kind:'status'});assert.equal(armStatus.job.prepared,false);assert.ok(armStatus.job.armReadyAt);assert.equal(armStatus.running,null);assert.deepEqual(armStatus.checkoutResult,previousResult);
  const {runRetirement,...originalJournal}=armStatus.checkoutRecords[0];assert.deepEqual(originalJournal,old);assert.equal(runRetirement.reason,'release-window-passed');
  assert.equal(await popup.locator('#diagnosticControls').getAttribute('open'),null);assert.equal(await popup.locator('#recoveryControls').isVisible(),false);assert.equal(await popup.locator('#historyOutcomeRow').isVisible(),false);
- assert.match(await popup.locator('#readiness').textContent(),/Preflight passed/);assert.match(await popup.locator('#readiness').textContent(),/No current checkout blocker/);assert.match(await popup.locator('#readiness').textContent(),/earlier attempt.*unknown outcome/);assert.ok(Object.values(merchant.state.counts).every(n=>n===0));
+ assert.match(await popup.locator('#readiness').textContent(),/initial checks passed; scheduled preflight pending/);assert.match(await popup.locator('#readiness').textContent(),/No current checkout blocker/);assert.match(await popup.locator('#readiness').textContent(),/earlier attempt.*unknown outcome/);assert.ok(Object.values(merchant.state.counts).every(n=>n===0));
  await popup.screenshot({path:path.join(output,'one-click-arm.png'),fullPage:true});
  const retiredJournal=armStatus.checkoutRecords[0];await restartWorker();
  assert.equal((await send({kind:'payCheckout'})).status,'stopped');assert.equal((await send({kind:'resetUnpaidTest'})).status,'stopped');
+ const missedPreflight=await worker.evaluate(async()=>{const {job}=await chrome.storage.local.get('job');globalThis.__testClock=job.when;return globalThis.__testAlarm({name:'release'});});
+ assert.equal(missedPreflight.status,'stopped');assert.match(missedPreflight.error,/Preflight did not complete/);assert.ok(Object.values(merchant.state.counts).every(n=>n===0));
+ reports.push({scenario:'popup-missed-scheduled-preflight-stops-after-worker-recreation',outcome:'passed',mutations:{...merchant.state.counts}});
+ await worker.evaluate(async()=>{const {job}=await chrome.storage.local.get('job');globalThis.__testClock=job.when-300000;await globalThis.__testAlarm({name:'prepare'});});
+ assert.equal((await send({kind:'status'})).job.prepared,true);
  await worker.evaluate(async()=>{const {job}=await chrome.storage.local.get('job');globalThis.__testClock=job.when;await globalThis.__testAlarm({name:'release'});});
  armStatus=await send({kind:'status'});assert.equal(armStatus.checkoutResult.status,'confirmed',armStatus.checkoutResult.error);assert.deepEqual(armStatus.checkoutRecords.find(r=>r.key===old.key),retiredJournal);
  assert.equal(merchant.state.counts.selection,2);assert.equal(merchant.state.counts.pay,1);assert.equal(merchant.state.counts.discount,0);assert.equal(merchant.state.counts.removal,0);
  reports.push({scenario:'popup-one-click-arm-retires-history-without-replay',outcome:'passed',evidence:'synthetic-journal-real-worker-recreation',mutations:{...merchant.state.counts}});
+ // Retiring an opened checkout must not strand a later owner-reported
+ // manual payment. The report and verification are read-only merchant actions.
+ await fresh('retired-manual-payment-profile');
+ const opened={slot:oldSlot,key:old.key,status:'pending',test:false,phase:'checkout-opening',reference:'100000',checkoutOpenDispatchedAt:'2026-10-18T00:00:20Z',priorReferences:[{reference:'99999'}]};
+ await worker.evaluate(opened=>chrome.storage.local.set({checkoutRecords:[opened]}),opened);
+ assert.equal((await send({kind:'armPayment',day:'2026-10-27'})).status,'armed');await send({kind:'cancel'});await popup.reload();
+ await popup.locator('#diagnosticControls > summary').click();await popup.locator('#earlierAttempt').selectOption(opened.key);
+ assert.equal(await popup.locator('#earlierManualPaymentRow').isVisible(),true);
+ await popup.locator('#earlierManualReference').fill('100000');await popup.locator('#reportEarlierManualPayment').click();
+ await popup.waitForFunction(()=>document.querySelector('#result').textContent.includes('Unique matching purchase'));
+ const heldEarlier=(await send({kind:'status'})).checkoutRecords[0];assert.ok(heldEarlier.manualPaymentReportedAt);assert.equal(heldEarlier.paymentDispatchedAt,undefined);assert.deepEqual(heldEarlier.priorReferences,opened.priorReferences);assert.equal(heldEarlier.reference,opened.reference);
+ await restartWorker();merchant.state.purchases=[{reference:'100000',total:14,state:'Confirmed'}];await popup.reload();
+ await popup.locator('#diagnosticControls > summary').click();await popup.locator('#verifyEarlier').click();
+ await popup.waitForFunction(()=>document.querySelector('#result').textContent.includes('"status": "confirmed"'));
+ const paidEarlier=(await send({kind:'status'})).checkoutRecords[0];assert.equal(paidEarlier.status,'confirmed');assert.equal(paidEarlier.manualPaymentReportedAt,heldEarlier.manualPaymentReportedAt);assert.equal(paidEarlier.paymentDispatchedAt,undefined);assert.deepEqual(paidEarlier.runRetirement,heldEarlier.runRetirement);
+ assert.equal((await send({kind:'payCheckout'})).status,'stopped');assert.ok(Object.values(merchant.state.counts).every(n=>n===0));
+ reports.push({scenario:'popup-retired-manual-payment-report-and-worker-reconciliation',outcome:'passed',evidence:'synthetic-manual-payment-purchase',mutations:{...merchant.state.counts}});
  // DST and validation use the real popup and worker settings boundary.
  await fresh('settings-profile');await popup.locator('#day').fill('2026-11-02');await popup.locator('#armPayment').click();await popup.waitForFunction(()=>document.querySelector('#result').textContent.includes('Armed for '));
  assert.equal((await send({kind:'status'})).job.when,Date.parse('2026-10-26T00:00:00Z'));

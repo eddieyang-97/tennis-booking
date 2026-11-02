@@ -12,7 +12,7 @@ The live implementation runs as an unpacked extension in **normal Chrome**, usin
 
 1. Open `chrome://extensions`, enable **Developer mode**, and load [`outputs/tennis-local/chrome-extension/`](outputs/tennis-local/chrome-extension/) with **Load unpacked**.
 2. Sign in to Courtside in that Chrome profile. Use **Set up or unlock card file** in the extension to create or unlock the locally encrypted card file. Keep the file outside this repository.
-3. Choose a **future playing date**, set venue/time/duration/cost preferences, and click **Arm midnight booking and payment**. The release is London midnight **seven days before play**; Arm checks card/account/empty-basket readiness immediately; preflight repeats five minutes earlier. Earlier attempts whose release window passed are retained as unknown history, rather than blocking a different future playing date.
+3. Choose a **future playing date**, set venue/time/duration/cost preferences, and click **Arm midnight booking and payment**. The release is London midnight **seven days before play**; Arm checks card/account/empty-basket readiness immediately; the separate, required scheduled preflight runs five minutes earlier. Arm-time checks cannot satisfy that release gate. Earlier attempts whose release window passed are retained as unknown history, rather than blocking a different future playing date.
 4. Keep Chrome running and the computer **awake**, with the card still unlocked. Chrome alarms cannot wake a sleeping computer; human verification or bank approval may require intervention.
 
 **Updating the extension:** Reload it at `chrome://extensions` after source changes, and reload relevant open merchant tabs so content scripts match. **Unlock the card after the final reload**; extension reload/browser restart clears the unlocked session, though saved jobs/journals remain.
@@ -45,7 +45,7 @@ The popup initially suggests London today + 8 days; it does not automatically ch
 
 For component ownership, the scheduled sequence, persistent state and a checkout lifecycle diagram, see the [architecture and state guide](docs/architecture.md). Detailed merchant recovery rules remain in the [payment-system reference](docs/payment-system.md).
 
-1. Arm retires eligible earlier attempts locally, preserving their journals, and checks card/account/empty-basket readiness. Five-minute preflight rechecks account/card readiness. At the release, the service worker checks the account, reads eligible court grids, and chooses an authorized candidate.
+1. Arm retires eligible earlier attempts locally, preserving their journals, and checks card/account/empty-basket readiness. The required five-minute preflight checks account/card readiness separately; a missed preflight blocks release even if Arm-time checks passed. At the release, the service worker checks the account, reads eligible court grids, and chooses an authorized candidate.
 2. It checks the basket, records selection intent, dispatches hourly selection **sequentially**, and validates stable basket contents: venue, playing date, each hour/court, original prices, totals and payment boundary.
 3. If requested, it applies and verifies a discount once. It opens card checkout only from a verified basket, then checks the net amount and provisional merchant reference before attempting Pay.
 4. It **persists a payment dispatch marker before clicking Pay once**. An uncertain or interrupted payment is receipt/account-reconciliation-only, never an automatic second charge.

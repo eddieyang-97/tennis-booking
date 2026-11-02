@@ -7,7 +7,8 @@ Notes below describe changes made *at each release*, not instructions to install
 ## v0.9.11 — One-click Arm recovery (2 November 2026)
 
 - Arm retires eligible past release attempts for a different future date, preserving their full pending journals, immutable authorization, submission markers and unknown outcomes. Same-date replay remains blocked; keyed outcome verification is read-only.
-- Arm recovers interrupted read-only availability locks, checks unlocked card, signed-in account and empty basket immediately, then schedules. Scheduled preflight repeats account/card checks and clears stale readiness before checking.
+- Arm recovers interrupted read-only availability locks, checks unlocked card, signed-in account and empty basket immediately, then schedules. Initial readiness (`armReadyAt`) is separate from the required scheduled preflight (`prepared`/`preparedAt`); a missed or failed prepare alarm blocks release. Repeated preflight clears stale readiness before checking.
+- An ordinary retired checkout paid manually can receive an explicit keyed owner report before read-only verification. The hold and original retirement/authorization evidence survive failure or restart, without fabricating or repeating a Pay dispatch.
 - Individual recovery/manual/test actions move under Advanced diagnostics and recovery. Downloads retain retirement evidence and the Arm summary. Merchant basket items are never removed automatically by Arm.
 - Deterministic and isolated Chromium regressions cover restart/persistence boundaries, history preservation, same-date guards and next-date execution. These are simulations; live unattended merchant/payment acceptance remains unverified. No installed extension or live journal is changed by this branch.
 
