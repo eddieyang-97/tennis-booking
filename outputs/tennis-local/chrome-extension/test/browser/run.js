@@ -244,13 +244,16 @@ try{
  const oldSlot={venue:'bethnal-green-gardens',date:'2026-10-25',court:1,start:'20:00',hours:2,totalGBP:'14.00'};
  const old={slot:oldSlot,key:JSON.stringify([oldSlot.venue,oldSlot.date,1,'20:00',2]),status:'pending',test:false,phase:'payment-uncertain',reference:'100000',paymentDispatchedAt:'2026-10-18T00:00:20Z',priorReferences:[{reference:'99999'}]};
  const previousResult={status:'stopped',error:'Previous outcome unknown'};
- await worker.evaluate(async({old,previousResult})=>chrome.storage.local.set({checkoutRecords:[old],checkoutResult:previousResult,running:{day:old.slot.date,started:Date.now()-60000}}),{old,previousResult});
+ await worker.evaluate(async({old,previousResult})=>{await chrome.storage.local.set({checkoutRecords:[old],checkoutResult:previousResult,running:{day:old.slot.date,started:Date.now()-60000}});await chrome.storage.session.set({localPaymentCard:{testOnly:true}});},{old,previousResult});
+ // Align this popup's synthetic clock and fake unlocked session with its worker,
+ // so we verify the visible ready state rather than only the saved job flag.
+ await popup.addInitScript(now=>{const RealDate=Date;globalThis.Date=class extends RealDate{constructor(...args){super(...(args.length?args:[Date.now()]));}static now(){return now+performance.now();}};},Date.parse('2026-10-19T12:00:00Z'));
  await popup.reload();await popup.locator('#day').fill('2026-10-27');
  await popup.locator('#armPayment').click();await popup.waitForFunction(()=>document.querySelector('#result').textContent.includes('Armed for '));
  let armStatus=await send({kind:'status'});assert.equal(armStatus.job.prepared,true);assert.equal(armStatus.running,null);assert.deepEqual(armStatus.checkoutResult,previousResult);
  const {runRetirement,...originalJournal}=armStatus.checkoutRecords[0];assert.deepEqual(originalJournal,old);assert.equal(runRetirement.reason,'release-window-passed');
  assert.equal(await popup.locator('#diagnosticControls').getAttribute('open'),null);assert.equal(await popup.locator('#recoveryControls').isVisible(),false);assert.equal(await popup.locator('#historyOutcomeRow').isVisible(),false);
- assert.match(await popup.locator('#readiness').textContent(),/earlier attempt.*unknown outcome/);assert.ok(Object.values(merchant.state.counts).every(n=>n===0));
+ assert.match(await popup.locator('#readiness').textContent(),/Preflight passed/);assert.match(await popup.locator('#readiness').textContent(),/No current checkout blocker/);assert.match(await popup.locator('#readiness').textContent(),/earlier attempt.*unknown outcome/);assert.ok(Object.values(merchant.state.counts).every(n=>n===0));
  await popup.screenshot({path:path.join(output,'one-click-arm.png'),fullPage:true});
  const retiredJournal=armStatus.checkoutRecords[0];await restartWorker();
  assert.equal((await send({kind:'payCheckout'})).status,'stopped');assert.equal((await send({kind:'resetUnpaidTest'})).status,'stopped');
