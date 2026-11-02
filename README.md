@@ -2,7 +2,7 @@
 
 A Manifest V3 Chrome extension that checks and attempts to book tennis courts on [Tower Hamlets Courtside](https://tennistowerhamlets.com/) at the London midnight release, with configurable preferences, strict basket/payment verification, a local encrypted card file and recovery of uncertain payments.
 
-**Active implementation:** [`outputs/tennis-local/chrome-extension/`](outputs/tennis-local/chrome-extension/) · **Version:** [`0.9.10`](outputs/tennis-local/chrome-extension/manifest.json), discount-navigation observation (30 October 2026). This branch is not a merged release claim.
+**Active implementation:** [`outputs/tennis-local/chrome-extension/`](outputs/tennis-local/chrome-extension/) · **Version:** [`0.9.11`](outputs/tennis-local/chrome-extension/manifest.json), one-click Arm recovery (2 November 2026). This branch is not a merged release claim.
 
 **Release status:** In active development, **not yet verified for unattended end-to-end midnight payment**. A real £2.50 one-hour card payment and its subsequent account-purchase reconciliation were verified on 13 October. Live two-hour basket selection was verified, but an automated two-hour Pay and a complete unattended midnight booking have not been established. See [release notes and live-evidence limits](docs/release-notes.md).
 
@@ -12,7 +12,7 @@ The live implementation runs as an unpacked extension in **normal Chrome**, usin
 
 1. Open `chrome://extensions`, enable **Developer mode**, and load [`outputs/tennis-local/chrome-extension/`](outputs/tennis-local/chrome-extension/) with **Load unpacked**.
 2. Sign in to Courtside in that Chrome profile. Use **Set up or unlock card file** in the extension to create or unlock the locally encrypted card file. Keep the file outside this repository.
-3. Choose a **future playing date**, set venue/time/duration/cost preferences, and click **Arm midnight booking and payment**. The release is London midnight **seven days before play**; preflight begins five minutes earlier.
+3. Choose a **future playing date**, set venue/time/duration/cost preferences, and click **Arm midnight booking and payment**. The release is London midnight **seven days before play**; Arm checks card/account/empty-basket readiness immediately; the separate, required scheduled preflight runs five minutes earlier. Arm-time checks cannot satisfy that release gate. Earlier attempts whose release window passed are retained as unknown history, rather than blocking a different future playing date.
 4. Keep Chrome running and the computer **awake**, with the card still unlocked. Chrome alarms cannot wake a sleeping computer; human verification or bank approval may require intervention.
 
 **Updating the extension:** Reload it at `chrome://extensions` after source changes, and reload relevant open merchant tabs so content scripts match. **Unlock the card after the final reload**; extension reload/browser restart clears the unlocked session, though saved jobs/journals remain.
@@ -31,7 +31,7 @@ All preferences below are configurable in the popup. The saved job's settings sn
 | Duration | Prefer **2 hours**, accept **1 hour** by default; configurable minimum |
 | Courts | Prefer consecutive hours on the same court; allow different courts at the same venue when enabled |
 | Price authorization | **£14 total** by default, with **£7 one-hour cap**; caps check gross price before any optional discount |
-| Duplication | A previously confirmed booking for the same playing date or unresolved checkout blocks a conflicting new checkout |
+| Duplication | A previously confirmed booking for the same playing date or unresolved/retired attempt for the same date blocks a conflicting new checkout |
 
 Candidate priority is **venue → duration → earliest eligible start time → court configuration** (same court first for a given start). A valid candidate at a higher-ranked venue can take priority over a longer booking at a fallback venue.
 
@@ -45,7 +45,7 @@ The popup initially suggests London today + 8 days; it does not automatically ch
 
 For component ownership, the scheduled sequence, persistent state and a checkout lifecycle diagram, see the [architecture and state guide](docs/architecture.md). Detailed merchant recovery rules remain in the [payment-system reference](docs/payment-system.md).
 
-1. Five-minute preflight checks account/card readiness. At the release, the service worker checks the account, reads eligible court grids, and chooses an authorized candidate.
+1. Arm retires eligible earlier attempts locally, preserving their journals, and checks card/account/empty-basket readiness. The required five-minute preflight checks account/card readiness separately; a missed preflight blocks release even if Arm-time checks passed. At the release, the service worker checks the account, reads eligible court grids, and chooses an authorized candidate.
 2. It checks the basket, records selection intent, dispatches hourly selection **sequentially**, and validates stable basket contents: venue, playing date, each hour/court, original prices, totals and payment boundary.
 3. If requested, it applies and verifies a discount once. It opens card checkout only from a verified basket, then checks the net amount and provisional merchant reference before attempting Pay.
 4. It **persists a payment dispatch marker before clicking Pay once**. An uncertain or interrupted payment is receipt/account-reconciliation-only, never an automatic second charge.
@@ -61,6 +61,8 @@ After a journaled discount attempt, unclassified message failures on the same tr
 Selection acknowledgement shares one elapsed-time budget across both hours (60 seconds scheduled, 15 seconds manual). A suspended/throttled tab checks the deadline when it runs again; it cannot guarantee callback delivery at exactly the deadline. Diagnostics retain per-hour dispatch timestamps, elapsed time, checkbox reversion, badge counts and safe page/alert categories. Optional same-origin fetch/XHR status observations cover the selection window only; they do not identify the add-to-basket request or prove rejection. Raw URLs, headers, response bodies and alert text are excluded. An empty basket or HTTP error does not automatically authorize switching courts; the uncertain journal stays held. Exact authorized one-hour basket fallback remains supported without another selection click.
 
 Manual availability checks and verification resumes are paused while a release job is armed, so they cannot occupy its queue. Cancel the job before checking manually. Read-only recovery assessment remains independent; Cancel does not preempt a queued or running release.
+
+**One-click Arm recovery:** Older attempts become non-blocking only for a different future playing date, after their release-start window (release + 60 seconds) has passed. `runRetirement` metadata is added without changing their original status, phase, authorization, references or submission markers. Their payment/booking/cancellation/refund outcomes remain unknown. The same playing date cannot be selected again; old outcomes remain read-only-verifiable under **Advanced diagnostics and recovery**. Arm also clears an interrupted read-only availability lock while preserving its identity in diagnostics. It never replays old mutations or removes merchant basket items. Leftover items, locked card, sign-in or verification requirements produce a specific next step before scheduling.
 
 **Do not delete or reset `checkoutRecords` / `paymentDispatchedAt` / `manualPaymentReportedAt` to clear a stopped run.** Use the extension's guarded reconciliation controls. For recovery instructions, see the [usage guide](outputs/tennis-local/chrome-extension/README.md).
 

@@ -445,7 +445,7 @@ test('popup rearm overlapping preflight cannot be overwritten by the old alarm j
  const worker=await startWorker(merchant,state),preflight=worker.alarm({name:'prepare'});
  while(!merchant.accountStarted)await new Promise(resolve=>setImmediate(resolve));
  const rearm=worker.send({kind:'armPayment',day:'2026-10-26'});await new Promise(resolve=>setImmediate(resolve));release();
- await preflight;assert.equal((await rearm).status,'armed');assert.equal(state.job.day,'2026-10-26');assert.equal(state.job.prepared,false);
+ await preflight;assert.equal((await rearm).status,'armed');assert.equal(state.job.day,'2026-10-26');assert.equal(state.job.prepared,false);assert.ok(state.job.armReadyAt);
 });
 test('scheduled alarm reaches paid evidence with one dispatch per mutation',async()=>{
  const merchant=new Merchant();merchant.clock=Date.parse('2026-10-16T23:00:00Z');
@@ -590,4 +590,125 @@ for(const phase of ['basket-verified','discount-verified','reference','confirmat
  const label=`persist:${phase}:${when}`;merchant.fault(label);const result=await worker.send({kind});assert.equal(merchant.faults.has(label),false,`${label} not reached: ${result.error||result.status}`);
  const resumed=await startWorker(merchant,state,'after-ack-restart'),record=state.checkoutRecords?.find(r=>r.status==='pending');if(record?.tabId)resumed.seedTab(record.tabId,merchant.readyAt!==undefined?'https://tennistowerhamlets.com/basket/pay/card':'https://tennistowerhamlets.com/basket');
  await resumed.send({kind});assert.ok(merchant.counts.pay<=1);assert.ok(merchant.counts.opening<=1);assert.ok(merchant.counts.discount<=1);assert.ok(merchant.counts.selection<=2);
+});
+
+test('one Arm retires the earlier uncertain free submission and keeps its original financial journal',async()=>{
+ const merchant=new Merchant();merchant.clock=Date.parse('2026-11-02T12:00:00Z');
+ const slot={...merchant.slot,date:'2026-11-09',hours:1,start:'21:00',totalGBP:'7.00'},old=merchant.record({slot,key:JSON.stringify([slot.venue,slot.date,slot.court,slot.start,slot.hours]),test:false,checkoutTestOnly:false,phase:'free-booking-dispatched',freeBookingDispatchedAt:'2026-11-02T00:00:20Z',paymentDispatchedAt:'2026-11-02T00:00:20Z'});
+ const history={status:'stopped',error:'FREE_BOOKING_UNRESOLVED'},state={checkoutRecords:[old],checkoutResult:history},worker=await startWorker(merchant,state);
+ const result=await worker.send({kind:'armPayment',day:'2026-11-10'});assert.equal(result.status,'armed',result.error);assert.equal(state.job.prepared,false);assert.ok(state.job.armReadyAt);
+ const {runRetirement,...retained}=state.checkoutRecords[0];assert.deepEqual(retained,old);assert.equal(runRetirement.reason,'release-window-passed');assert.deepEqual(state.checkoutResult,history);assert.ok(Object.values(merchant.counts).every(count=>count===0));
+});
+
+function pastAttemptFixture(patch={}){
+ const merchant=new Merchant();merchant.clock=Date.parse('2026-11-02T12:00:00Z');
+ const slot={...merchant.slot,date:'2026-11-09'},old=merchant.record({slot,key:JSON.stringify([slot.venue,slot.date,slot.court,slot.start,slot.hours]),test:false,checkoutTestOnly:false,phase:'discount-dispatched',discountDispatchedAt:'2026-11-02T00:00:16Z',...patch});
+ const history={status:'stopped',error:'Previous attempt'},state={checkoutRecords:[old],checkoutResult:history};return {merchant,old,state,history};
+}
+for(const patch of [
+ {phase:'selection-dispatched'},
+ {phase:'checkout-opening',checkoutOpenDispatchedAt:'2026-11-02T00:00:20Z',reference:'100001',priorReferences:[{reference:'100000'}]},
+ {phase:'card-filling',cardFillDispatchedAt:'2026-11-02T00:00:20Z',cardFillRecoveryRequired:true},
+ {phase:'payment-dispatched',paymentDispatchedAt:'2026-11-02T00:00:20Z',reference:'100001'},
+ {phase:'manual-payment-reported',manualPaymentReportedAt:'2026-11-02T00:00:20Z',reference:'100001'},
+ {phase:'checkout-test-opening',checkoutTestOnly:true}
+])test(`one-click Arm preserves and retires ${patch.phase}, restart never replays it`,async()=>{
+ const f=pastAttemptFixture(patch);f.state.running={day:f.old.slot.date,started:f.merchant.clock-60000};
+ let worker=await startWorker(f.merchant,f.state),result=await worker.send({kind:'armPayment',day:'2026-11-10'});
+ assert.equal(result.status,'armed',result.error);assert.equal(result.armReadinessPassed,true);assert.equal(result.retiredAttempts,1);assert.equal(f.state.running,null);assert.equal(f.state.armRecovery.interruptedCheck.day,f.old.slot.date);
+ assert.deepEqual(f.state.checkoutResult,f.history);assert.deepEqual(f.state.checkoutRecords[0],{...f.old,runRetirement:f.state.checkoutRecords[0].runRetirement});
+ const retired=structuredClone(f.state.checkoutRecords[0]);worker=await startWorker(f.merchant,f.state);
+ await worker.send({kind:'armPayment',day:'2026-11-10'});assert.deepEqual(f.state.checkoutRecords[0],retired);
+ for(const kind of ['payCheckout','prepareCheckout','resetUnpaidTest','reconcileSelection'])assert.equal((await worker.send({kind})).status,'stopped');
+ assert.ok(Object.values(f.merchant.counts).every(n=>n===0));assert.deepEqual(f.state.checkoutRecords[0],retired);
+});
+for(const point of ['before','after'])test(`Arm retirement storage interruption ${point} is restart-safe and cannot lose financial evidence`,async()=>{
+ const f=pastAttemptFixture({paymentDispatchedAt:'2026-11-02T00:00:20Z',phase:'payment-uncertain',reference:'100001'});f.merchant.fault('persist:retirement:'+point);
+ let worker=await startWorker(f.merchant,f.state);assert.equal((await worker.send({kind:'armPayment',day:'2026-11-10'})).status,'stopped');assert.equal(f.state.job,undefined);
+ assert.equal(f.state.checkoutRecords[0].paymentDispatchedAt,f.old.paymentDispatchedAt);assert.deepEqual(f.state.checkoutResult,f.history);
+ worker=await startWorker(f.merchant,f.state);assert.equal((await worker.send({kind:'armPayment',day:'2026-11-10'})).status,'armed');assert.equal(f.state.checkoutRecords.length,1);assert.ok(Object.values(f.merchant.counts).every(n=>n===0));
+});
+test('retired same-date attempts block new selection on another court, while a future release retains all journals',async()=>{
+ const f=pastAttemptFixture({paymentDispatchedAt:'2026-11-02T00:00:20Z',phase:'payment-uncertain',reference:'100001'}),worker=await startWorker(f.merchant,f.state);
+ assert.equal((await worker.send({kind:'armPayment',day:'2026-11-10'})).status,'armed');const retired=structuredClone(f.state.checkoutRecords[0]);
+ await worker.send({kind:'cancel'});assert.equal((await worker.send({kind:'check',day:'2026-11-09'})).status,'complete');
+ assert.equal((await worker.send({kind:'prepareCheckout'})).status,'stopped');assert.equal(f.merchant.counts.selection,0);
+ assert.equal((await worker.send({kind:'armPayment',day:'2026-11-10'})).status,'armed');
+ f.merchant.reference='100002';f.merchant.clock=f.state.job.when-300000;await worker.alarm({name:'prepare'});f.merchant.clock=f.state.job.when;await worker.alarm({name:'release'});
+ assert.equal(f.state.checkoutResult.status,'confirmed',f.state.checkoutResult.error);assert.equal(f.merchant.counts.selection,2);assert.equal(f.merchant.counts.pay,1);assert.equal(f.merchant.counts.fill,1);assert.equal(f.merchant.counts.discount,0);
+ assert.deepEqual(f.state.checkoutRecords.find(r=>r.key===retired.key),retired);assert.equal(f.state.checkoutRecords.length,2);assert.equal(f.state.checkoutRecords[1].slot.date,'2026-11-10');
+});
+test('retired outcomes remain explicitly reconcilable by key without changing financial intent or submitting again',async()=>{
+ const f=pastAttemptFixture({paymentDispatchedAt:'2026-11-02T00:00:20Z',phase:'payment-uncertain',reference:'100001'}),worker=await startWorker(f.merchant,f.state);
+ await worker.send({kind:'armPayment',day:'2026-11-10'});await worker.send({kind:'cancel'});f.merchant.purchases.set('100001',{state:'Confirmed',totalGBP:'14.00'});
+ const result=await worker.send({kind:'verifyPayment',recordKey:f.old.key});assert.equal(result.status,'confirmed',result.error);assert.equal(result.booked,null);assert.equal(f.state.checkoutRecords[0].paymentDispatchedAt,f.old.paymentDispatchedAt);assert.ok(f.state.checkoutRecords[0].runRetirement);assert.ok(Object.values(f.merchant.counts).every(n=>n===0));
+});
+test('Arm never guesses about malformed or current attempts and never submits them to unblock scheduling',async()=>{
+ for(const patch of [{key:'bad'},{phase:'payment-uncertain',paymentDispatchedAt:null,key:'bad'}, {slot:{venue:'bethnal-green-gardens',date:'2026-11-10',court:1,start:'20:00',hours:2,totalGBP:'14.00'}}]){
+  const f=pastAttemptFixture(patch),before=structuredClone(f.state.checkoutRecords),worker=await startWorker(f.merchant,f.state);
+  const result=await worker.send({kind:'armPayment',day:'2026-11-10'});assert.equal(result.status,'stopped');assert.deepEqual(f.state.checkoutRecords,before);assert.equal(f.state.job,undefined);assert.ok(Object.values(f.merchant.counts).every(n=>n===0));
+ }
+});
+test('Arm surfaces a failed account check, and a failed release preflight invalidates earlier readiness',async()=>{
+ const f=pastAttemptFixture(),worker=await startWorker(f.merchant,f.state),send=worker.chrome.tabs.sendMessage;let fail=true;
+ worker.chrome.tabs.sendMessage=async(id,request)=>request.kind==='account'&&fail?{ok:false,error:'Sign in to Courtside'}:send(id,request);
+ const result=await worker.send({kind:'armPayment',day:'2026-11-10'});assert.equal(result.status,'stopped');assert.equal(f.state.job,undefined);assert.ok(f.state.checkoutRecords[0].runRetirement);
+ fail=false;assert.equal((await worker.send({kind:'armPayment',day:'2026-11-10'})).armReadinessPassed,true);
+ fail=true;await worker.alarm({name:'prepare'});assert.equal(f.state.job.prepared,false);f.merchant.clock=f.state.job.when;await worker.alarm({name:'release'});assert.equal(f.merchant.counts.selection,0);
+});
+
+test('Arm detects leftover basket items now and neither removes them nor schedules a failing run',async()=>{
+ const f=pastAttemptFixture({phase:'payment-uncertain',paymentDispatchedAt:'2026-11-02T00:00:20Z'});f.merchant.selected();const basket=structuredClone(f.merchant.basket),worker=await startWorker(f.merchant,f.state);
+ const result=await worker.send({kind:'armPayment',day:'2026-11-10'});assert.equal(result.reasonCode,'BASKET_NOT_EMPTY');assert.match(result.error,/Remove the earlier items/);assert.equal(f.state.job,undefined);assert.deepEqual(f.merchant.basket,basket);assert.equal(f.state.checkoutRecords[0].paymentDispatchedAt,f.old.paymentDispatchedAt);assert.ok(Object.values(f.merchant.counts).every(n=>n===0));
+});
+test('Arm retires a valid old legacy basket test without claiming that it was cleared on the merchant',async()=>{
+ const f=pastAttemptFixture();f.state.basketTest={key:f.old.key,slot:f.old.slot,status:'selected',updatedAt:'original'};const original=structuredClone(f.state.basketTest),worker=await startWorker(f.merchant,f.state);
+ assert.equal((await worker.send({kind:'armPayment',day:'2026-11-10'})).status,'armed');const {runRetirement,...legacy}=f.state.basketTest;assert.deepEqual(legacy,original);assert.ok(runRetirement);f.merchant.reference='100002';f.merchant.clock=f.state.job.when-300000;await worker.alarm({name:'prepare'});f.merchant.clock=f.state.job.when;await worker.alarm({name:'release'});assert.equal(f.state.checkoutResult.status,'confirmed',f.state.checkoutResult.error);assert.equal(f.merchant.counts.removal,0);
+});
+
+test('arm-time readiness cannot replace a missed scheduled preflight, including after worker recreation',async()=>{
+ const f=pastAttemptFixture(),worker=await startWorker(f.merchant,f.state);
+ const result=await worker.send({kind:'armPayment',day:'2026-11-10'});assert.equal(result.status,'armed');
+ f.merchant.clock=f.state.job.when;let restarted=await startWorker(f.merchant,f.state);
+ const missed=await restarted.alarm({name:'release'});assert.equal(missed.status,'stopped');assert.match(missed.error,/Preflight did not complete/);assert.ok(Object.values(f.merchant.counts).every(n=>n===0));
+});
+test('a manually paid retired ordinary checkout can persist its keyed hold and reconcile after restart',async()=>{
+ const f=pastAttemptFixture({phase:'checkout-opening',reference:'100001',checkoutOpenDispatchedAt:'2026-11-02T00:00:20Z'});let worker=await startWorker(f.merchant,f.state);
+ await worker.send({kind:'armPayment',day:'2026-11-10'});await worker.send({kind:'cancel'});
+ const original=structuredClone(f.state.checkoutRecords[0]);
+ const result=await worker.send({kind:'reconcileManualPayment',recordKey:original.key,reference:'100001'});assert.equal(result.status,'stopped');assert.ok(f.state.checkoutRecords[0].manualPaymentReportedAt);assert.equal(f.state.checkoutRecords[0].paymentDispatchedAt,undefined);
+ worker=await startWorker(f.merchant,f.state);f.merchant.purchases.set('100001',{state:'Confirmed',totalGBP:'14.00'});
+ const verified=await worker.send({kind:'verifyPayment',recordKey:original.key});assert.equal(verified.status,'confirmed',verified.error);assert.equal(verified.manualPayment,true);assert.deepEqual(f.state.checkoutRecords[0].runRetirement,original.runRetirement);assert.equal(f.state.checkoutRecords[0].reference,original.reference);
+ assert.ok(Object.values(f.merchant.counts).every(n=>n===0));
+});
+
+for(const point of ['before','after'])test(`retired manual-report persistence interruption ${point} preserves the exact keyed hold across restart`,async()=>{
+ const f=pastAttemptFixture({phase:'checkout-opening',reference:'100001',priorReferences:[{reference:'100000'}]}),worker=await startWorker(f.merchant,f.state);
+ await worker.send({kind:'armPayment',day:'2026-11-10'});await worker.send({kind:'cancel'});const original=structuredClone(f.state.checkoutRecords[0]);f.merchant.fault('persist:manual-report:'+point);
+ const report={kind:'reconcileManualPayment',recordKey:original.key,reference:'100001'};assert.equal((await worker.send(report)).status,'stopped');assert.equal(f.merchant.faults.size,0);
+ const saved=f.state.checkoutRecords[0];assert.equal(!!saved.manualPaymentReportedAt,point==='after');assert.equal(saved.paymentDispatchedAt,undefined);assert.deepEqual(saved.priorReferences,original.priorReferences);assert.deepEqual(saved.runRetirement,original.runRetirement);
+ const restarted=await startWorker(f.merchant,f.state);restarted.chrome.storage.session.get=async()=>{throw Error('Reconciliation must not read card');};
+ f.merchant.purchases.set('100001',{state:'Confirmed',totalGBP:'14.00'});
+ const result=await restarted.send(point==='before'?report:{kind:'verifyPayment',recordKey:original.key});assert.equal(result.status,'confirmed',result.error);assert.ok(f.state.checkoutRecords[0].manualPaymentReportedAt);assert.equal(f.state.checkoutRecords[0].paymentDispatchedAt,undefined);
+ for(const kind of ['payCheckout','prepareCheckout'])assert.equal((await restarted.send({kind})).status,'stopped');assert.ok(Object.values(f.merchant.counts).every(n=>n===0));
+});
+test('explicit retired manual reporting rejects stale/missing keys and conflicts without targeting a newer checkout',async()=>{
+ const f=pastAttemptFixture({phase:'checkout-opening',reference:'100001'}),worker=await startWorker(f.merchant,f.state);await worker.send({kind:'armPayment',day:'2026-11-10'});await worker.send({kind:'cancel'});
+ const slot={...f.old.slot,date:'2026-11-10'},current=f.merchant.record({slot,key:JSON.stringify([slot.venue,slot.date,slot.court,slot.start,slot.hours]),test:false,checkoutTestOnly:false,reference:'100001'});f.state.checkoutRecords.push(current);
+ const original=structuredClone(f.state.checkoutRecords);
+ for(const recordKey of ['',null,undefined,'stale',current.key]){
+  assert.equal((await worker.send({kind:'reconcileManualPayment',recordKey,reference:'100001'})).status,'stopped');assert.deepEqual(f.state.checkoutRecords,original);
+ }
+ for(const reference of ['', '100002']){
+  assert.equal((await worker.send({kind:'reconcileManualPayment',recordKey:f.old.key,reference})).status,'stopped');assert.deepEqual(f.state.checkoutRecords,original);
+ }
+ f.state.checkoutRecords.push(structuredClone(f.state.checkoutRecords[0]));const duplicated=structuredClone(f.state.checkoutRecords);
+ assert.equal((await worker.send({kind:'reconcileManualPayment',recordKey:f.old.key,reference:'100001'})).status,'stopped');assert.deepEqual(f.state.checkoutRecords,duplicated);
+ assert.ok(Object.values(f.merchant.counts).every(n=>n===0));
+});
+test('retired manual reports are paused while armed and cannot convert a free completion into payment evidence',async()=>{
+ const f=pastAttemptFixture({phase:'checkout-opening',reference:'100001'}),worker=await startWorker(f.merchant,f.state);await worker.send({kind:'armPayment',day:'2026-11-10'});
+ const original=structuredClone(f.state.checkoutRecords);assert.equal((await worker.send({kind:'reconcileManualPayment',recordKey:f.old.key,reference:'100001'})).reasonCode,'MANUAL_CHECK_WHILE_ARMED');assert.deepEqual(f.state.checkoutRecords,original);
+ await worker.send({kind:'cancel'});f.state.checkoutRecords[0].discount={subtotalGBP:'14.00',discountGBP:'14.00',totalGBP:'0.00'};
+ const free=structuredClone(f.state.checkoutRecords);assert.equal((await worker.send({kind:'reconcileManualPayment',recordKey:f.old.key,reference:'100001'})).status,'stopped');assert.deepEqual(f.state.checkoutRecords,free);assert.ok(Object.values(f.merchant.counts).every(n=>n===0));
 });

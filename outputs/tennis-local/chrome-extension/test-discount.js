@@ -90,9 +90,9 @@ test('observed free label is parsed narrowly and keeps the original hourly gross
  total='£ free';button='Pay with card';assert.equal(vm.runInNewContext('basketSummary()',context).freeBookingBoundary,undefined);
 });
 test('arming snapshots the optional code, rejects malformed codes before changes, and blank rearming clears it',()=>fixed(async()=>{
- let listener;const state={checkoutRecords:[]},alarms=[];
+ let listener,currentReadUrl;const state={checkoutRecords:[]},alarms=[];
  // Public test card fixture; no real payment data or browser is used.
- globalThis.chrome={storage:{local:{get:async()=>structuredClone(state),set:async value=>Object.assign(state,structuredClone(value))},session:{get:async()=>({localPaymentCard:{number:'4111111111111111',cvc:'123',expiry:'12/30',postcode:'SW1A 1AA'}})}},tabs:{},alarms:{clear:async()=>{},create:async(name,value)=>alarms.push({name,...value}),onAlarm:{addListener:()=>{}}},runtime:{id:'test',getURL:path=>'chrome-extension://test/'+path,onMessage:{addListener:f=>listener=f},onStartup:{addListener:()=>{}},onInstalled:{addListener:()=>{}}}};
+ globalThis.chrome={storage:{local:{get:async()=>structuredClone(state),set:async value=>Object.assign(state,structuredClone(value))},session:{get:async()=>({localPaymentCard:{number:'4111111111111111',cvc:'123',expiry:'12/30',postcode:'SW1A 1AA'}})}},tabs:{create:async({url})=>{currentReadUrl=url;return {id:1};},get:async()=>({id:1,url:currentReadUrl,status:'complete'}),remove:async()=>{},sendMessage:async(id,request)=>{if(request.kind==='basket-read')return {ok:true,value:{empty:true,items:[]}};assert.equal(request.kind,'account');return {ok:true,signedIn:true};}},alarms:{clear:async()=>{},create:async(name,value)=>alarms.push({name,...value}),onAlarm:{addListener:()=>{}}},runtime:{id:'test',getURL:path=>'chrome-extension://test/'+path,onMessage:{addListener:f=>listener=f},onStartup:{addListener:()=>{}},onInstalled:{addListener:()=>{}}}};
  try{
   await import('./background.js');
   const send=message=>new Promise(resolve=>listener(message,{id:'test',url:'chrome-extension://test/popup.html'},resolve));
