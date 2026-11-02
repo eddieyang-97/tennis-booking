@@ -1,3 +1,4 @@
+import {pendingAttempts,assertFreshPlayingDate} from './attempt-history.js';
 import {validateSlot,verifyBasket,sameSlot,basketEvidence} from './stage-rules.js';
 import {londonDay,addDays,slotKey,slotCourts} from './core.js';
 import {normalizeDiscount} from './discount.js';
@@ -43,7 +44,8 @@ export async function prepareCheckout(slot,deps,{test=false,adopt=false,basketOn
  discountCode=normalizeDiscount(discountCode);
  if(discountCode&&(test||basketOnly))throw Error('Discount not supported in basket-only tests');
  if(basketOnly&&(test||adopt))throw Error('Daytime test cannot adopt or pay');
- const records=await deps.load(),existing=records.find(r=>r.key===slotKey(slot));
+ const records=await deps.load();assertFreshPlayingDate(records,slot.date);
+ const existing=records.find(r=>r.key===slotKey(slot));
  // Never apply new popup preferences to an existing or legacy journal.
  settings=existing?(existing.settings||null):(settings?normalizeSettings(settings):null);
  let key=basketOnly?basketTestKey(slot):checkoutKey(slot,test,settings);
@@ -52,7 +54,7 @@ export async function prepareCheckout(slot,deps,{test=false,adopt=false,basketOn
  if(record&&!!record.checkoutTestOnly!==checkoutTestOnly)throw Error('Another checkout requires reconciliation');
  if(record && (record.manualPaymentReportedAt || record.paymentDispatchedAt || ['payment-dispatched','payment-uncertain'].includes(record.phase)))throw Error('Payment requires receipt reconciliation; checkout preparation cannot reset it');
  if(records.some(r=>r.status==='confirmed' && r.slot.date===slot.date))throw Error('A booking for this date is already confirmed');
- if(records.some(r=>r.key!==key && r.status!=='confirmed'))throw Error('Another checkout requires reconciliation');
+ if(pendingAttempts(records).some(r=>r.key!==key))throw Error('Another checkout requires reconciliation');
  const persist=async phase=>{
   record={...record,key,slot,test,...(settings?{settings}:{}),...(!record?.discountCode&&discountCode?{discountCode}:{}),...(basketOnly?{basketOnly:true}:{}),...(checkoutTestOnly?{checkoutTestOnly:true}:{}),phase,status:'pending',updatedAt:new Date().toISOString()};
   await deps.save([...records.filter(r=>r.key!==key&&r.key!==originalKey),record]);
@@ -109,7 +111,7 @@ export async function prepareCheckout(slot,deps,{test=false,adopt=false,basketOn
  }
 }
 export function reconcileClearedSelection(records,basket,{unpaidTestConfirmed=false}={}) {
- const pending=records.filter(r=>r.status!=='confirmed');
+ const pending=pendingAttempts(records);
  const testCleanup=pending.length===1&&pending[0].checkoutTestOnly===true&&unpaidTestConfirmed===true&&['selection-dispatched','awaiting-payment','discount-dispatched','checkout-test-opening','checkout-test-ready','test-cleanup-checking','test-cleanup-removing'].includes(pending[0].phase);
  if(pending.length!==1||pending[0].manualPaymentReportedAt||pending[0].paymentDispatchedAt||(!testCleanup&&(!['selection-dispatched','awaiting-payment','discount-dispatched'].includes(pending[0].phase)||Object.hasOwn(pending[0],'reference'))))throw Error('Only an unsubmitted selection can be reconciled. For a checkout test, confirm you did not pay; preserve payment journals');
  if(basket?.empty!==true||!Array.isArray(basket.items)||basket.items.length!==0)throw Error('Remove the partial selection from the site basket first; no items were removed automatically');
@@ -123,10 +125,10 @@ export function confirmCheckout(record,receipt) {
  return {...record,status:'confirmed',phase:'receipt-verified',reference:receipt.reference,receiptSource:receipt.source||'booking-receipt',bookingState:receipt.bookingState||'confirmed',confirmedAt:new Date().toISOString()};
 }
 export function assertFailedCheckoutAttestation(records,{noPaymentConfirmed=false,attestationIdentity=''}={}) {
- const identity=failedCheckoutIdentity(records);
+ const identity=failedCheckoutIdentity(pendingAttempts(records));
  if(noPaymentConfirmed!==true)throw Error('Confirm that you did not submit payment for this failed checkout');
  if(!identity||identity!==attestationIdentity)throw Error('Failed checkout changed or confirmation is stale; inspect the current journal');
- return records.find(r=>r.status!=='confirmed');
+ return pendingAttempts(records)[0];
 }
 export function archiveFailedCheckout(records,basket,options={}) {
  const record=assertFailedCheckoutAttestation(records,options);

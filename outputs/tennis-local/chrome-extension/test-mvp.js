@@ -20,11 +20,13 @@ test('mixed-court two-hour MVP flow selects once, fills once, dispatches once an
 test('worker reconciles old paid journal with closed tab and locked card before arming a new payment job',async()=>{
  const key=JSON.stringify(['victoria-park','2026-10-17',2,'07:00',1]);
  const state={checkoutRecords:[{slot:PAYMENT_TEST_SLOT,key,test:true,reference:'100001',tabId:9,status:'pending',phase:'payment-uncertain',paymentDispatchedAt:'2026-10-13T00:00:00Z'}]};
- let listener,sessionReads=0,mutations=0,accountReads=0;const alarms=[];
+ let listener,sessionReads=0,mutations=0,accountReads=0;const alarms=[];let currentReadUrl;
  const local={get:async keys=>Object.fromEntries((typeof keys==='string'?[keys]:keys).map(k=>[k,state[k]])),set:async values=>Object.assign(state,structuredClone(values)),remove:async keys=>{for(const k of typeof keys==='string'?[keys]:keys)delete state[k];}};
  const runtime={id:'own',getManifest:()=>({version:'0.6.0'}),getURL:path=>'chrome-extension://own/'+path,onMessage:{addListener:f=>listener=f},onStartup:{addListener(){}},onInstalled:{addListener(){}}};
  const oldChrome=globalThis.chrome,oldNow=Date.now;
- globalThis.chrome={runtime,storage:{local,session:{get:async()=>{sessionReads++;return {};}}},tabs:{get:async id=>{if(id===9)throw Error('No tab with id');return {id,url:'https://tennistowerhamlets.com/account',status:'complete'};},create:async()=>({id:10}),remove:async()=>{},sendMessage:async(id,request)=>{
+ globalThis.chrome={runtime,storage:{local,session:{get:async()=>{sessionReads++;return {};}}},tabs:{get:async id=>{if(id===9)throw Error('No tab with id');return {id,url:currentReadUrl,status:'complete'};},create:async({url})=>{currentReadUrl=url;return {id:10};},remove:async()=>{},sendMessage:async(id,request)=>{
+  if(request.kind==='basket-read')return {ok:true,value:{empty:true,items:[]}};
+  if(request.kind==='account')return {ok:true,signedIn:true};
   assert.equal(request.kind,'purchase-read');accountReads++;return {ok:true,value:{status:'confirmed',key,reference:'100001',source:'account-purchase',bookingState:'unknown'}};
  },update:async()=>mutations++,onUpdated:{addListener(){},removeListener(){}}},action:{setBadgeText:async()=>{},setTitle:async()=>{}},notifications:{onClicked:{addListener(){}},create:async()=>{}},alarms:{onAlarm:{addListener(){}},clear:async()=>{},create:async(...args)=>alarms.push(args)}};
  Date.now=()=>Date.parse('2026-10-13T00:00:00Z');

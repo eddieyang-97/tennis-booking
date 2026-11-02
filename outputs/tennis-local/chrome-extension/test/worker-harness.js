@@ -1,15 +1,17 @@
+import {isRetiredAttempt} from '../attempt-history.js';
 import vm from 'node:vm';import fs from 'node:fs/promises';import {fileURLToPath} from 'node:url';import {webcrypto} from 'node:crypto';
 const root=new URL('../',import.meta.url);
 export async function startWorker(merchant,state={},version='simulation'){
  const worker={tabs:new Map(),nextTab:1,state,version};
  const local={get:async keys=>{const list=typeof keys==='string'?[keys]:keys||Object.keys(state);return structuredClone(Object.fromEntries(list.map(key=>[key,state[key]])));},set:async value=>{
-  const before=(state.checkoutRecords||[]).find(r=>r.status==='pending'),after=value.checkoutRecords?.find(r=>r.status==='pending');
+  const before=(state.checkoutRecords||[]).find(r=>r.status==='pending'&&!isRetiredAttempt(r,merchant.clock)),after=value.checkoutRecords?.find(r=>r.status==='pending'&&!isRetiredAttempt(r,merchant.clock));
   let label;
   if(after){label=after.paymentDispatchedAt&&!before?.paymentDispatchedAt?'pay':after.cardFillDispatchedAt&&!before?.cardFillDispatchedAt?'fill':after.checkoutOpenDispatchedAt&&!before?.checkoutOpenDispatchedAt?'opening':after.discountDispatchedAt&&!before?.discountDispatchedAt?'discount':after.cleanupDispatched?.fingerprint!==before?.cleanupDispatched?.fingerprint?'removal':after.phase==='selection-dispatched'&&!before?'selection':null;}
   if(!label&&after?.basketVerifiedAt&&!before?.basketVerifiedAt)label='basket-verified';
   if(!label&&after?.discount&&!before?.discount)label='discount-verified';
   if(!label&&after?.reference&&!before?.reference)label='reference';
   if(!label&&value.checkoutRecords?.some(r=>r.status==='confirmed'&&!state.checkoutRecords?.some(old=>old.key===r.key&&old.status==='confirmed')))label='confirmation';
+  if(value.checkoutRecords?.some(r=>r.runRetirement&&!state.checkoutRecords?.find(old=>old.key===r.key)?.runRetirement))label='retirement';
   if(!label&&value.abandonedCheckouts?.length>(state.abandonedCheckouts?.length||0))label='archive';
   if(label)merchant.boundary(`persist:${label}:before`);Object.assign(state,structuredClone(value));if(label)merchant.boundary(`persist:${label}:after`);
  },remove:async keys=>{for(const key of typeof keys==='string'?[keys]:keys)delete state[key];}};

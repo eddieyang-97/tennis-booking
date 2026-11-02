@@ -32,6 +32,12 @@ flowchart LR
 4. If a code was requested, `discount.js` journals its one-shot dispatch and verifies the basket gross/discount/net arithmetic before payment. The worker verifies the basket again before checkout opening.
 5. For a positive payable amount, `payment.js` journals opening and card-fill intent, verifies the provisional reference/amount, persists `paymentDispatchedAt` **before** Pay, then checks a receipt or account purchase. A verified zero-total basket uses a separate one-shot **Complete my booking** command: persist `freeBookingDispatchedAt` and the compatibility `paymentDispatchedAt` submission hold first, then require an exact free-booking receipt. Mixed-court free slots stop before submission because their receipt contract is unsupported. Payment and active reservation status are distinct.
 
+## Operational retirement and one-click Arm
+
+`attempt-history.js` owns the distinction between the **current run** and preserved earlier attempts. Arm can add validated `runRetirement` metadata to a valid pending older date once its release-start window passed, then check card/account/empty-basket readiness and schedule a different future date. Original statuses, phases and financial evidence do not change. The record remains in `checkoutRecords`, is excluded from automatic continuation, and blocks fresh checkout for its playing date. Explicit keyed receipt reconciliation can still confirm its outcome. This is independent of the lifecycle below and does not mean merchant cancellation or refund.
+
+Arm resets only an interrupted read-only availability lock, preserving its identity in `armRecovery`. That summary and every original financial journal remain downloadable. The five-minute preflight repeats readiness checks and invalidates an earlier pass before checking, so failure cannot leave stale readiness active. Individual recovery/manual/test controls live under Advanced diagnostics; Arm is the normal entry point.
+
 ## Durable checkout lifecycle
 
 The named nodes below (apart from **Needs review**) correspond to checkout record `phase` values. `status` is a separate field: a record is not `confirmed` until trusted paid evidence or an exact free-booking receipt is matched. **Needs review** describes a stopped/held *outcome*, not a new persisted phase; the last journal phase and markers remain intact.
@@ -101,7 +107,7 @@ The normal scheduled **local-card** path is `selection-dispatched` → `awaiting
 - Verify the **saved slot, courts/hours, date, authorized cap and basket amounts** before checkout or Pay. Changing popup preferences does not rewrite an existing checkout authorization.
 - `paymentDispatchedAt` or `manualPaymentReportedAt` makes the checkout **receipt/account-reconciliation-only**. Interrupted card filling also blocks automatic refill/Pay pending manual review.
 - A free-completion hold permits **exact booking-receipt observation only**, never account-price inference, another completion click or ordinary test cleanup. Legacy pending journals are not automatically opted into free submission. Successful free receipt layouts are simulated; live acceptance remains unverified.
-- Read-only retry and recovery are narrowly bounded. Unrelated items, changed identity, missing evidence, a pending other checkout or uncertain site state preserve the hold.
+- Read-only retry and recovery are narrowly bounded. Unrelated items, changed identity, missing evidence, a current pending other checkout or uncertain site state preserve its hold. Validly retired earlier dates remain reconciliation-only history and cannot be booked again automatically.
 - A matching paid purchase establishes **payment**, not necessarily an active booking or a refund. Keep payment, reservation, cancellation and refund evidence separate.
 
 ## Where details belong

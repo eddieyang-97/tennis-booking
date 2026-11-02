@@ -1,8 +1,15 @@
 # Release notes
 
-This is the historical change log for the **active Chrome extension** in [`outputs/tennis-local/chrome-extension/`](../outputs/tennis-local/chrome-extension/). The authoritative source version is [`manifest.json`](../outputs/tennis-local/chrome-extension/manifest.json), **0.9.10** on the discount-navigation observation branch (30 October 2026). Branch builds are not merged release claims.
+This is the historical change log for the **active Chrome extension** in [`outputs/tennis-local/chrome-extension/`](../outputs/tennis-local/chrome-extension/). The authoritative source version is [`manifest.json`](../outputs/tennis-local/chrome-extension/manifest.json), **0.9.11** on the one-click Arm recovery branch (2 November 2026). Branch builds are not merged release claims.
 
 Notes below describe changes made *at each release*, not instructions to install or downgrade to older builds. Historical test counts and unverified behaviors are not current release-quality claims. For up-to-date setup, use the [project README](../README.md) and [extension usage guide](../outputs/tennis-local/chrome-extension/README.md). For original investigation and detailed timestamps, see [payment-system.md](payment-system.md).
+
+## v0.9.11 — One-click Arm recovery (2 November 2026)
+
+- Arm retires eligible past release attempts for a different future date, preserving their full pending journals, immutable authorization, submission markers and unknown outcomes. Same-date replay remains blocked; keyed outcome verification is read-only.
+- Arm recovers interrupted read-only availability locks, checks unlocked card, signed-in account and empty basket immediately, then schedules. Scheduled preflight repeats account/card checks and clears stale readiness before checking.
+- Individual recovery/manual/test actions move under Advanced diagnostics and recovery. Downloads retain retirement evidence and the Arm summary. Merchant basket items are never removed automatically by Arm.
+- Deterministic and isolated Chromium regressions cover restart/persistence boundaries, history preservation, same-date guards and next-date execution. These are simulations; live unattended merchant/payment acceptance remains unverified. No installed extension or live journal is changed by this branch.
 
 ## Latest verification status (16 October 2026)
 

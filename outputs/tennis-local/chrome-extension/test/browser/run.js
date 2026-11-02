@@ -46,7 +46,7 @@ try{
  await launch();
  console.log('Browser gate: popup ready');
  // Exercise the actual popup form, saved immutable policy, alarms and adapters.
- await popup.locator('#day').fill('2026-10-25');await popup.locator('#armPayment').click();await popup.waitForFunction(()=>document.querySelector('#result').textContent.includes('"armed"'));
+ await popup.locator('#day').fill('2026-10-25');await popup.locator('#armPayment').click();await popup.waitForFunction(()=>document.querySelector('#result').textContent.includes('Armed for '));
  await popup.locator('#firstVenue').selectOption('victoria-park');await popup.locator('#secondVenue').selectOption('');await popup.locator('#thirdVenue').selectOption('');await popup.locator('#maxTotalGBP').fill('12.00');await popup.locator('#saveSettings').click();await popup.waitForFunction(()=>document.querySelector('#result').textContent.includes('preferences-saved'));
  const job=(await send({kind:'status'})).job;assert.equal(job.settings.venues[0],'bethnal-green-gardens');assert.equal(job.settings.maxTotalGBP,'14.00');
  console.log('Browser gate: settings snapshot verified');
@@ -94,6 +94,7 @@ try{
  for(const state of uiStates){
   const record={...uiRecord,...state.patch};
   await worker.evaluate(record=>chrome.storage.local.set({checkoutRecords:[record]}),record);await popup.reload();await popup.waitForFunction(()=>document.querySelector('#readiness').textContent.includes('Version'));
+  await popup.locator('#diagnosticControls > summary').click();
   assert.equal(await popup.locator('#recoveryControls').isVisible(),true);assert.equal(await popup.locator('#verifyPaymentRow').evaluate(el=>!el.hidden),state.verify);assert.equal(await popup.locator('#payCheckoutRow').evaluate(el=>!el.hidden),state.pay);assert.equal(await popup.locator('#reconcileSelectionRow').evaluate(el=>!el.hidden),state.cleanup);
   assert.equal(await popup.locator('#unpaidTestConfirmedRow').isVisible(),!!state.unpaidTest);
   if(state.reportedTest){assert.equal(await popup.locator('#reconcileManualPaymentRow').isVisible(),false);assert.equal(await popup.locator('#resetUnpaidTestRow').isVisible(),false);}
@@ -107,7 +108,7 @@ try{
  for(const freeError of [false,true]){
   console.log('Browser gate: free booking case',freeError?'error':'success');
   await fresh(freeError?'free-error-profile':'free-success-profile');merchant.state.options.freeBooking=true;merchant.state.options.freeError=freeError;
-  await popup.locator('#day').fill('2026-10-27');await popup.locator('#discountCode').fill('SYNTHETIC');await popup.locator('#armPayment').click();await popup.waitForFunction(()=>document.querySelector('#result').textContent.includes('"armed"'));
+  await popup.locator('#day').fill('2026-10-27');await popup.locator('#discountCode').fill('SYNTHETIC');await popup.locator('#armPayment').click();await popup.waitForFunction(()=>document.querySelector('#result').textContent.includes('Armed for '));
   await within(worker.evaluate(async()=>{await globalThis.__testAlarm({name:'prepare'});const {job}=await chrome.storage.local.get('job');globalThis.__testClock=job.when;await globalThis.__testAlarm({name:'release'});}),90000,'Free booking alarm');
   const freeStatus=await send({kind:'status'}),freeResult=freeStatus.checkoutResult;
   assert.equal(freeResult.status,freeError?'stopped':'confirmed',freeResult.error);assert.equal(freeResult.paid,false);assert.equal(freeResult.booked,freeError?null:true);
@@ -237,8 +238,28 @@ try{
  }
  await discountReadBrowserCase({fresh,send,currentWorker:()=>worker,merchant,reports});
  await discountNavigationBrowserCases({fresh,send,currentWorker:()=>worker,restart:restartWorker,returnToBasket:async()=>{const page=context.pages().find(page=>page.url()===merchant.origin+'/basket/discount');assert.ok(page);await page.goto(merchant.origin+'/basket');await page.waitForLoadState('load');},merchant,reports});
+ // One real popup click retires an old financial hold, checks readiness and
+ // arms a different date. The old record survives actual MV3 recreation.
+ await fresh('one-click-arm-profile');
+ const oldSlot={venue:'bethnal-green-gardens',date:'2026-10-25',court:1,start:'20:00',hours:2,totalGBP:'14.00'};
+ const old={slot:oldSlot,key:JSON.stringify([oldSlot.venue,oldSlot.date,1,'20:00',2]),status:'pending',test:false,phase:'payment-uncertain',reference:'100000',paymentDispatchedAt:'2026-10-18T00:00:20Z',priorReferences:[{reference:'99999'}]};
+ const previousResult={status:'stopped',error:'Previous outcome unknown'};
+ await worker.evaluate(async({old,previousResult})=>chrome.storage.local.set({checkoutRecords:[old],checkoutResult:previousResult,running:{day:old.slot.date,started:Date.now()-60000}}),{old,previousResult});
+ await popup.reload();await popup.locator('#day').fill('2026-10-27');
+ await popup.locator('#armPayment').click();await popup.waitForFunction(()=>document.querySelector('#result').textContent.includes('Armed for '));
+ let armStatus=await send({kind:'status'});assert.equal(armStatus.job.prepared,true);assert.equal(armStatus.running,null);assert.deepEqual(armStatus.checkoutResult,previousResult);
+ const {runRetirement,...originalJournal}=armStatus.checkoutRecords[0];assert.deepEqual(originalJournal,old);assert.equal(runRetirement.reason,'release-window-passed');
+ assert.equal(await popup.locator('#diagnosticControls').getAttribute('open'),null);assert.equal(await popup.locator('#recoveryControls').isVisible(),false);assert.equal(await popup.locator('#historyOutcomeRow').isVisible(),false);
+ assert.match(await popup.locator('#readiness').textContent(),/earlier attempt.*unknown outcome/);assert.ok(Object.values(merchant.state.counts).every(n=>n===0));
+ await popup.screenshot({path:path.join(output,'one-click-arm.png'),fullPage:true});
+ const retiredJournal=armStatus.checkoutRecords[0];await restartWorker();
+ assert.equal((await send({kind:'payCheckout'})).status,'stopped');assert.equal((await send({kind:'resetUnpaidTest'})).status,'stopped');
+ await worker.evaluate(async()=>{const {job}=await chrome.storage.local.get('job');globalThis.__testClock=job.when;await globalThis.__testAlarm({name:'release'});});
+ armStatus=await send({kind:'status'});assert.equal(armStatus.checkoutResult.status,'confirmed',armStatus.checkoutResult.error);assert.deepEqual(armStatus.checkoutRecords.find(r=>r.key===old.key),retiredJournal);
+ assert.equal(merchant.state.counts.selection,2);assert.equal(merchant.state.counts.pay,1);assert.equal(merchant.state.counts.discount,0);assert.equal(merchant.state.counts.removal,0);
+ reports.push({scenario:'popup-one-click-arm-retires-history-without-replay',outcome:'passed',evidence:'synthetic-journal-real-worker-recreation',mutations:{...merchant.state.counts}});
  // DST and validation use the real popup and worker settings boundary.
- await fresh('settings-profile');await popup.locator('#day').fill('2026-11-02');await popup.locator('#armPayment').click();await popup.waitForFunction(()=>document.querySelector('#result').textContent.includes('"armed"'));
+ await fresh('settings-profile');await popup.locator('#day').fill('2026-11-02');await popup.locator('#armPayment').click();await popup.waitForFunction(()=>document.querySelector('#result').textContent.includes('Armed for '));
  assert.equal((await send({kind:'status'})).job.when,Date.parse('2026-10-26T00:00:00Z'));
  result=await send({kind:'saveSettings',settings:{venues:['unknown']}});assert.equal(result.status,'stopped');assert.equal((await send({kind:'status'})).job.settings.maxTotalGBP,'14.00');
  reports.push({scenario:'popup-dst-and-invalid-settings',outcome:'passed'});

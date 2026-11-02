@@ -6,6 +6,10 @@
 **Evidence update:** Four private diagnostic exports from 16 October 2026, spanning installed versions v0.8.7–v0.8.9. Only sanitized findings are included here; original logs must not be committed.
 **Review update (17 October 2026):** Added existing-purchase-page recovery, P0 restart/concurrency coverage, an explicit receipt-source decision contract, baseline CI from PR 1 and enforceable browser network/package isolation. These remain proposed requirements, not implemented or live-verified behavior.
 
+## One-click Arm regression contract (2 November 2026)
+
+Permanent coverage must distinguish operational retirement from payment reconciliation: preserve every financial field and historical result; permit a different future date; reject same-date selection on any court; keep malformed/current/future intents blocking; and never replay old selection/discount/opening/fill/Pay/removal. Exercise retirement storage failure before/after persistence, restart with the same ledger, next-date release, explicit keyed read-only verification, legacy basket tests, interrupted read-only locks, leftover basket items and a failed repeat preflight. The Chromium case uses the real popup click, worker recreation and synthetic merchant, and checks mutation counts plus collapsed advanced controls. These are isolated simulations, not live acceptance.
+
 ## Executive summary
 
 **28 October free-checkout regression:** v0.9.8 adds permanent `test-free-booking.js`, discount/parser regressions, actual-worker interruption tests and isolated Chromium success/error cases for a full discount and `£ free`. Assert one free completion and zero card opening/fill/Pay; persist the submission hold before mutation, preserve it on restart/error, and reject legacy journals or ambiguous receipts. The screenshot supports the basket/button contract only. Success receipts are synthetic and require a separate live acceptance gate.

@@ -12,6 +12,7 @@ import {readGrid,gridReadPolicy} from './grid-read.js';
 import {readPageState,pageReadBudget,waitPaymentState,responseWithin} from './page-read.js';
 import {normalizeDiscount,ensureDiscount,payableSlot} from './discount.js';
 import {normalizeSettings,pendingArmBlocker} from './booking-settings.js';
+import {pendingAttempts,isRetiredBasketTest,retireAttempts,assertFreshPlayingDate} from './attempt-history.js';
 import {clearUnpaidTest} from './test-cleanup.js';
 import {failureFor} from './failures.js';
 import {selectionEvidence,selectionFailure} from './selection-evidence.js';
@@ -84,24 +85,48 @@ async function check(day, scheduled=false,settings=null,retainForCheckout=false)
 }
 async function arm(day,mode='availability',code='',settings=null) {
   const discountCode=normalizeDiscount(code);
-  settings=normalizeSettings(settings||undefined);
-  addDays(day,0);
+  settings=normalizeSettings(settings||undefined);addDays(day,0);
   const when=releaseAt(day);
-  if(when<=Date.now()) throw Error('This date has already released; use Check now');
+  if(when<=Date.now())throw Error('This date has already released; use Check now');
+  if(!['availability','checkout','payment'].includes(mode))throw Error('Unknown release mode');
+  if(busy)throw Error('Another run is active');
+  const snapshot=await chrome.storage.local.get(['checkoutRecords','basketTest','running']);
+  const records=snapshot.checkoutRecords||[];
+  assertFreshPlayingDate(records,day);
+  const now=Date.now(),retired=retireAttempts(records,day,now);
+  let basketTest=snapshot.basketTest;
+  if(basketTest&&basketTest.status!=='cleared'){
+   const [candidate]=retireAttempts([{...basketTest,status:'pending'}],day,now);
+   if(candidate.runRetirement)basketTest={...basketTest,runRetirement:candidate.runRetirement};
+  }
+  // One local write keeps every financial journal and result. Only the
+  // interrupted read-only availability lock is reset; no site action is sent.
+  const retiredAttempts=retired.filter((r,i)=>r!==records[i]).length;
+  const armRecovery={at:new Date(now).toISOString(),day,retiredAttempts,...(snapshot.running?{interruptedCheck:{day:snapshot.running.day,started:snapshot.running.started}}:{})};
+  await chrome.storage.local.set({checkoutRecords:retired,...(basketTest?{basketTest}:{}),armRecovery,running:null});
+  if(basketTest&&basketTest.status!=='cleared'&&!isRetiredBasketTest(basketTest))throw Error('A current basket test needs review in Advanced diagnostics');
+  let prepared=false;
   if(mode==='payment'){
    try{await resolvePendingPayment();}catch(error){
-    const {checkoutRecords=[]}=await chrome.storage.local.get('checkoutRecords'),blocker=pendingArmBlocker(checkoutRecords);
-    if(blocker)throw Object.assign(Error(`The selected date ${day} has not released yet and can be scheduled. ${blocker}`),{code:'UNRESOLVED_CHECKOUT',attemptedDay:day});
+    const {checkoutRecords=[]}=await chrome.storage.local.get('checkoutRecords'),blocker=pendingArmBlocker(pendingAttempts(checkoutRecords));
+    if(blocker)throw Object.assign(Error(blocker),{code:'UNRESOLVED_CHECKOUT',attemptedDay:day});
     throw error;
    }
-   await paymentCard(chrome.storage,null);
+   busy=true;trace=newRun('arm-readiness',day);
+   try{await step('started');await paymentCard(chrome.storage,null);await account();
+    const basket=await readPage(BASE+'/basket',{kind:'basket-read'});
+    if(!basket.ok)throw Object.assign(Error('Basket could not be checked. Inspect the retained Courtside tab, then click Arm again.'),{code:'BASKET_LAYOUT_UNKNOWN'});
+    if(basket.value?.empty!==true||!Array.isArray(basket.value.items)||basket.value.items.length!==0)throw Object.assign(Error('The Courtside basket still contains items. Remove the earlier items on Courtside, then click Arm again. No items were changed automatically.'),{code:'BASKET_NOT_EMPTY'});
+    await step('arm-basket-empty');prepared=true;await trace.finish('complete');}
+   catch(error){await step('stopped',failureFor(error,{operation:'arm-readiness'}));await trace.finish('stopped');throw error;}
+   finally{busy=false;trace=null;}
   }
-  await chrome.alarms.clear('prepare'); await chrome.alarms.clear('release');
-  if(!['availability','checkout','payment'].includes(mode))throw Error('Unknown release mode');
-  await chrome.storage.local.set({job:{day,when,prepared:false,mode,settings,...(discountCode?{discountCode}:{})},bookingSettings:settings});
+  if(when<=Date.now())throw Error('Release passed during readiness checks; no late booking was scheduled');
+  await chrome.storage.local.set({job:{day,when,prepared,mode,settings,...(prepared?{preparedAt:new Date().toISOString()}:{}),...(discountCode?{discountCode}:{})},bookingSettings:settings});
+  await chrome.alarms.clear('prepare');await chrome.alarms.clear('release');
   await chrome.alarms.create('prepare',{when:Math.max(Date.now()+1000,when-300000)});
   await chrome.alarms.create('release',{when});
-  return {status:'armed',day,release:new Date(when).toISOString(),mode,paymentAutomatic:mode==='payment',discountRequested:!!discountCode,settings};
+  return {status:'armed',day,release:new Date(when).toISOString(),mode,paymentAutomatic:mode==='payment',preflightPassed:prepared,retiredAttempts,discountRequested:!!discountCode,settings};
 }
 function checkoutCommands(tabId) {
  const command=async request=>{
@@ -141,7 +166,7 @@ async function automaticPayment(test=false,scheduled=false,basketHandoff=null) {
  let tab,record;
  try {
   let {checkoutRecords=[]}=await chrome.storage.local.get('checkoutRecords');
-  record=checkoutRecords.find(r=>r.status!=='confirmed');
+  record=pendingAttempts(checkoutRecords)[0];
   if(record?.basketOnly||record?.checkoutTestOnly)throw Error('Unpaid test cannot submit payment; clear and reconcile its basket');
   if(test && record && record.key!==checkoutKey(PAYMENT_TEST_SLOT,true))throw Error('Another checkout requires reconciliation');
   if(record?.manualPaymentReportedAt || record?.paymentDispatchedAt || ['payment-dispatched','payment-uncertain'].includes(record?.phase)) {
@@ -220,14 +245,16 @@ async function checkout(expectedDay=null,scheduled=false,basketOnly=false,discou
  let tab,slot;
  try {
  const {result,basketTest,checkoutRecords=[]}=await chrome.storage.local.get(['result','basketTest','checkoutRecords']);
- if(basketTest && basketTest.status!=='cleared')throw Error('Basket test needs reconciliation first');
- const pending=checkoutRecords.find(r=>r.status!=='confirmed');
+ if(basketTest && basketTest.status!=='cleared'&&!isRetiredBasketTest(basketTest))throw Error('Basket test needs reconciliation first');
+ if(expectedDay)assertFreshPlayingDate(checkoutRecords,expectedDay);
+ const pending=pendingAttempts(checkoutRecords)[0];
  if(pending&&!!pending.checkoutTestOnly!==checkoutTestOnly)throw Error('Another checkout requires reconciliation');
  settings=basketOnly?null:pending?(pending.settings||null):(settings||result?.settings||null);
  if(settings)settings=normalizeSettings(settings);
  if(pending && !!pending.basketOnly!==basketOnly)throw Error('Another checkout requires reconciliation');
  if(expectedDay && pending && pending.slot.date!==expectedDay)throw Error('Another date has an unresolved checkout; release preparation stopped');
  slot=pending?.slot || (!basketOnly && result?.status==='complete'?checkoutCandidate(result.results,settings):null);
+ if(slot)assertFreshPlayingDate(checkoutRecords,slot.date);
  if(basketOnly && !slot) {
   addDays(expectedDay,0);
   if(expectedDay<londonDay()||expectedDay>addDays(londonDay(),7))throw Error('Choose a released date within the next seven days');
@@ -321,7 +348,7 @@ async function resetUnpaidTest(){
  try{
   const {checkoutRecords=[],abandonedCheckouts=[],job}=await chrome.storage.local.get(['checkoutRecords','abandonedCheckouts','job']);
   if(job)throw Error('Cancel the scheduled run before clearing an unpaid test');
-  const pending=checkoutRecords.filter(r=>r.status!=='confirmed');if(pending.length!==1)throw Error('No unique unfinished unpaid test to clear');
+  const pending=pendingAttempts(checkoutRecords);if(pending.length!==1)throw Error('No unique unfinished unpaid test to clear');
   let record=pending[0];trace=newRun('unpaid-test-cleanup',record.slot.date);await step('started');
   const store=async value=>{record=value;await chrome.storage.local.set({checkoutRecords:checkoutRecords.map(r=>r.key===value.key?value:r)});await step(value.phase);};
   const read=async()=>{
@@ -353,13 +380,13 @@ async function testDiscountCheckout(code='') {
  if(busy)throw Error('Another run is active');
  const discountCode=normalizeDiscount(code),saved=await chrome.storage.local.get(['checkoutRecords','job','result']);
  if(saved.job)throw Error('Cancel the scheduled run before running an unpaid checkout test');
- let record=(saved.checkoutRecords||[]).find(r=>r.status!=='confirmed');
+ let record=pendingAttempts(saved.checkoutRecords)[0];
  if(record&&!record.checkoutTestOnly)throw Error('Resolve the existing checkout before starting an unpaid checkout test');
  if(record&&((record.discountCode||'')!==discountCode||(saved.result?.status==='complete'&&(saved.result.day!==record.slot.date||JSON.stringify(saved.result.settings||null)!==JSON.stringify(record.settings||null)))||record.phase?.startsWith('test-cleanup-'))){await resetUnpaidTest();record=null;}
  if(!record){const prepared=await checkout(null,false,false,discountCode,null,true);if(prepared.status!=='checkout-test-prepared')return prepared;}
  if(busy)throw Error('Another run is active');busy=true;
  try{
-  let {checkoutRecords=[]}=await chrome.storage.local.get('checkoutRecords');record=checkoutRecords.find(r=>r.status!=='confirmed');
+  let {checkoutRecords=[]}=await chrome.storage.local.get('checkoutRecords');record=pendingAttempts(checkoutRecords)[0];
   if(!record?.checkoutTestOnly||record.manualPaymentReportedAt||record.paymentDispatchedAt)throw Error('No eligible unpaid checkout test');
   trace=newRun('unpaid-checkout-test',record.slot.date);await step('started',{key:record.key});
   const store=async value=>{record=value;checkoutRecords=checkoutRecords.map(r=>r.key===value.key?value:r);await chrome.storage.local.set({checkoutRecords});await step(value.phase);};
@@ -434,14 +461,14 @@ async function finishPaidRecord(record,scheduled=false) {
 }
 async function resolvePendingPayment(scheduled=false) {
  const {checkoutRecords=[]}=await chrome.storage.local.get('checkoutRecords');
- if(checkoutRecords.some(r=>r.status!=='confirmed'))await verifyPayment(scheduled);
+ if(pendingAttempts(checkoutRecords).length)await verifyPayment(scheduled);
 }
-async function verifyPayment(scheduled=false,manualReference=null) {
+async function verifyPayment(scheduled=false,manualReference=null,recordKey=null) {
  if(busy)throw Error('Another run is active');
  busy=true;
  try {
  const {checkoutRecords=[]}=await chrome.storage.local.get('checkoutRecords');
- let record=checkoutRecords.find(r=>r.status!=='confirmed');if(!record)throw Error('No pending checkout record');
+ let record=recordKey?checkoutRecords.find(r=>r.key===recordKey&&r.status!=='confirmed'):pendingAttempts(checkoutRecords)[0];if(!record)throw Error('No pending checkout record; choose an earlier attempt in Advanced diagnostics');
  trace=newRun(manualReference!==null?'manual-payment-reconciliation':'payment-reconciliation',record.slot.date);await step('started');
  if(manualReference!==null){
   record=reportManualPayment(record,manualReference);
@@ -458,7 +485,7 @@ async function verifyPayment(scheduled=false,manualReference=null) {
 }
 chrome.notifications?.onClicked.addListener(async id=>{
  if(id!=='tennis-checkout')return;
- const {checkoutRecords=[]}=await chrome.storage.local.get('checkoutRecords');const record=checkoutRecords.find(r=>r.status!=='confirmed');
+ const {checkoutRecords=[]}=await chrome.storage.local.get('checkoutRecords');const record=pendingAttempts(checkoutRecords)[0];
  if(record?.tabId)await chrome.tabs.update(record.tabId,{active:true}).catch(()=>{});
 });
 async function admitManualCheck(){
@@ -483,6 +510,7 @@ async function runAlarm(alarm){
   const {job}=await chrome.storage.local.get('job'); if(!job) return;
   try {
     if(alarm.name==='prepare') {
+     await chrome.storage.local.set({job:{...job,prepared:false}});
      if(job.mode==='payment')await resolvePendingPayment(true);
      if(busy)throw Error('Another run is active; preflight stopped');
      busy=true;trace=newRun('release-preflight',job.day);
@@ -502,7 +530,7 @@ async function runAlarm(alarm){
       await chrome.storage.local.remove('job');
       return outcome;
     }
-  } catch(e) {const {checkoutRecords=[]}=await chrome.storage.local.get('checkoutRecords'),possible=checkoutRecords.some(r=>r.status!=='confirmed'&&(r.paymentDispatchedAt||r.manualPaymentReportedAt));if(!e.recorded)await save({status:'stopped',day:job.day,checkedAt:new Date().toISOString(),step:alarm.name,error:e.message,...e.diagnostic,booked:possible?null:false,paid:possible?null:false});await notifyPaymentResult({status:'stopped'});return {status:'stopped',...failureFor(e,{paymentPossible:possible}),error:e.message,paid:possible?null:false,booked:possible?null:false};}
+  } catch(e) {const {checkoutRecords=[]}=await chrome.storage.local.get('checkoutRecords'),possible=pendingAttempts(checkoutRecords).some(r=>r.paymentDispatchedAt||r.manualPaymentReportedAt);if(!e.recorded)await save({status:'stopped',day:job.day,checkedAt:new Date().toISOString(),step:alarm.name,error:e.message,...e.diagnostic,booked:possible?null:false,paid:possible?null:false});await notifyPaymentResult({status:'stopped'});return {status:'stopped',...failureFor(e,{paymentPossible:possible}),error:e.message,paid:possible?null:false,booked:possible?null:false};}
 }
 chrome.alarms.onAlarm.addListener(alarm=>enqueueAction(()=>executeAction(chrome.storage.local,alarm.name,()=>runAlarm(alarm),{version:chrome.runtime.getManifest?.().version||'unknown',source:'alarm'})));
 chrome.runtime.onMessage.addListener((message,sender,respond)=>{
@@ -519,7 +547,7 @@ chrome.runtime.onMessage.addListener((message,sender,respond)=>{
      const unknown={status:'needs-user-action',paymentState:'unknown',merchantCancellationState:'unknown',automaticReplayAllowed:false};
      const deadline=Date.now()+5000;
      try{return await responseWithin(async()=>{
-     const {checkoutRecords=[]}=await chrome.storage.local.get('checkoutRecords'),record=checkoutRecords.find(r=>r.status!=='confirmed');
+     const {checkoutRecords=[]}=await chrome.storage.local.get('checkoutRecords'),record=pendingAttempts(checkoutRecords)[0];
      if(!record)return {status:'no-pending-checkout'};
      const pages=[];let incomplete=false;
      for(const tab of await responseWithin(()=>chrome.tabs.query({url:BASE+'/*'}),1000)){
@@ -527,7 +555,7 @@ chrome.runtime.onMessage.addListener((message,sender,respond)=>{
       try{const response=await responseWithin(()=>chrome.tabs.sendMessage(tab.id,{kind:'checkout-progress'}),1000);if(response?.ok&&response.value?.stage==='existing-purchase')pages.push(response.value);else incomplete=true;}catch{incomplete=true;}
      }
      const current=(await chrome.storage.local.get('checkoutRecords')).checkoutRecords||[];
-     if(JSON.stringify(current.find(r=>r.status!=='confirmed'))!==JSON.stringify(record))return {...unknown,reasonCode:'RECOVERY_STATE_CHANGED'};
+     if(JSON.stringify(pendingAttempts(current)[0])!==JSON.stringify(record))return {...unknown,reasonCode:'RECOVERY_STATE_CHANGED'};
      const matching=pages.filter(p=>record.reference&&p.reference===record.reference&&p.totalGBP===payableSlot(record).totalGBP);
      return {...unknown,reasonCode:incomplete?'RECOVERY_EVIDENCE_REQUIRED':pages.length?(matching.length===1?'EXISTING_PURCHASE_READ_ONLY':'REFERENCE_UNAVAILABLE'):'RECOVERY_EVIDENCE_REQUIRED',observationIncomplete:incomplete,referenceRecorded:!!record.reference,existingPurchasePages:pages.length,exactReferenceMatches:matching.length};
      },5000);}catch{return {...unknown,reasonCode:'RECOVERY_EVIDENCE_REQUIRED',observationIncomplete:true};}
@@ -535,7 +563,7 @@ chrome.runtime.onMessage.addListener((message,sender,respond)=>{
     if(message.kind==='daytimeBasketTest')return checkout(message.day,false,true);
     if(message.kind==='testDiscountCheckout')return testDiscountCheckout(message.discountCode);
     if(message.kind==='resetUnpaidTest')return resetUnpaidTest();
-    if(message.kind==='verifyPayment')return verifyPayment();
+    if(message.kind==='verifyPayment'){if(message.recordKey)await admitManualCheck();return verifyPayment(false,null,message.recordKey||null);}
     if(message.kind==='reconcileManualPayment')return verifyPayment(false,message.reference||'');
     if(message.kind==='openCardVault'){await chrome.tabs.create({url:chrome.runtime.getURL('card-vault.html'),active:true});return {status:'local-card-setup-opened'};}
     if(message.kind==='payCheckout')return automaticPayment();
@@ -561,7 +589,7 @@ chrome.runtime.onMessage.addListener((message,sender,respond)=>{
      if(busy)throw Error('Another run is active');busy=true;
      try {
       const {checkoutRecords=[],abandonedCheckouts=[]}=await chrome.storage.local.get(['checkoutRecords','abandonedCheckouts']);
-      const pendingTest=checkoutRecords.find(r=>r.status!=='confirmed'&&r.checkoutTestOnly);
+      const pendingTest=pendingAttempts(checkoutRecords).find(r=>r.checkoutTestOnly);
       if(pendingTest&&message.unpaidTestConfirmed===true&&message.attestationIdentity!==JSON.stringify([pendingTest.key,pendingTest.reference||'',pendingTest.checkoutOpenDispatchedAt||'']))throw Error('Unpaid test confirmation is stale; reopen the popup and confirm the current test');
       const response=await readPage(BASE+'/basket',{kind:'basket-read'});if(!response.ok)throw Error(response.error);
       const reconciled=reconcileClearedSelection(checkoutRecords,response.value,{unpaidTestConfirmed:message.unpaidTestConfirmed===true});
@@ -583,7 +611,7 @@ chrome.runtime.onMessage.addListener((message,sender,respond)=>{
     if(message.kind==='cancel') {await chrome.alarms.clear('prepare');await chrome.alarms.clear('release');await chrome.storage.local.remove('job');return {status:'cancelled'};}
     if(message.kind==='reset' && !busy) {await chrome.storage.local.remove('running');return {status:'reset'};}
     if(message.kind==='status') {
-     const status=await chrome.storage.local.get(['latestAction','result','job','running','basketTest','basketTestResult','runHistory','checkoutRecords','checkoutResult','abandonedCheckouts','bookingSettings']);
+     const status=await chrome.storage.local.get(['latestAction','result','job','running','basketTest','basketTestResult','runHistory','checkoutRecords','checkoutResult','abandonedCheckouts','bookingSettings','armRecovery']);
      let localCardUnlocked=false;try{localCardUnlocked=!!(await chrome.storage.session.get('localPaymentCard')).localPaymentCard;}catch{}
      return {...status,localCardUnlocked,version:chrome.runtime.getManifest().version};
     }
