@@ -15,15 +15,9 @@ The live implementation runs as an unpacked extension in **normal Chrome**, usin
 3. Choose a **future playing date**, set venue/time/duration/cost preferences, and click **Arm midnight booking and payment**. The release is London midnight **seven days before play**; Arm checks card/account/empty-basket readiness immediately; the separate, required scheduled preflight runs five minutes earlier. Arm-time checks cannot satisfy that release gate. Earlier attempts whose release window passed are retained as unknown history, rather than blocking a different future playing date.
 4. Keep Chrome running and the computer **awake**, with the card still unlocked. Chrome alarms cannot wake a sleeping computer; human verification or bank approval may require intervention.
 
-**Updating the extension:** Successful main CI publishes an exact, versioned **development prerelease** with its source commit and checksums. From a current repository checkout, close Chrome and run:
+**Updating the extension from this checkout.** With no job armed or running, close Chrome and pull `main` in the same checkout. Reopen Chrome using the same profile and extension path, verify the popup version, then unlock the card. Review any local edits before pulling. [Repository update steps](docs/developer-updates.md#update-a-repository-backed-install)
 
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\update-extension.ps1 -InstallDirectory 'C:\path\to\existing\chrome-extension' -OpenChrome
-```
-
-Use the **same directory already loaded in Chrome**. The updater verifies the release and every runtime file, backs up replaced files and rolls back copy failures; it does not access Chrome storage. Chrome restarts with the new code. Unlock the card afterward, verify the popup version, refresh merchant tabs and arm again if required. Use `-DownloadOnly` to verify a build without installing while Chrome is open. See [developer update details](docs/developer-updates.md).
-
-For source-only updates already installed safely, **Advanced diagnostics and recovery → Developer tools → Reload updated extension** invokes Chrome's supported reload API. It refuses armed/running jobs, preserves payment journals and locks the card.
+**Updating a standalone extension folder.** Successful main CI publishes a versioned development prerelease. The Windows updater verifies that build and backs up the runtime files it replaces. First-time adoption of an older folder requires `-AdoptUntracked` after reviewing local edits. [Standalone updater instructions](docs/developer-updates.md#update-a-standalone-install)
 
 See the [extension usage guide](outputs/tennis-local/chrome-extension/README.md) for unpaid testing, recovery controls and troubleshooting. **An armed job or preflight success is not evidence of a reservation or payment.**
 

@@ -1,4 +1,11 @@
-param([Parameter(Mandatory=$true)][string]$InstallDirectory,[string]$Tag,[switch]$DownloadOnly,[switch]$OpenChrome,[string]$WorkDirectory=(Join-Path $env:LOCALAPPDATA 'TennisBooking/updates'))
+param(
+ [Parameter(Mandatory=$true)][string]$InstallDirectory,
+ [string]$Tag,
+ [switch]$DownloadOnly,
+ [switch]$OpenChrome,
+ [string]$WorkDirectory=(Join-Path $env:LOCALAPPDATA 'TennisBooking/updates'),
+ [switch]$AdoptUntracked
+)
 $ErrorActionPreference='Stop'
 Import-Module (Join-Path $PSScriptRoot 'scripts/Release.psm1') -Force
 [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12
@@ -41,7 +48,7 @@ if(Test-Path -LiteralPath $installed) {
 }
 $zip=Get-Asset $metadata.zip.name;Test-TennisArchive $zip $metadata
 if($DownloadOnly) {[pscustomobject]@{status='downloaded-and-verified';version=$metadata.version;commit=$metadata.commit;archive=$zip};return}
-Install-TennisRuntime $zip $metadata $InstallDirectory $WorkDirectory
+Install-TennisRuntime $zip $metadata $InstallDirectory $WorkDirectory -AdoptUntracked:$AdoptUntracked
 if($OpenChrome) {
  $paths=@((Join-Path $env:ProgramFiles 'Google/Chrome/Application/chrome.exe'),(Join-Path $env:LOCALAPPDATA 'Google/Chrome/Application/chrome.exe'))
  $chrome=$paths | Where-Object {Test-Path -LiteralPath $_} | Select-Object -First 1

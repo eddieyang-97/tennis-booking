@@ -49,7 +49,7 @@ function New-TennisReleaseManifest([string]$RepositoryRoot,[string]$Commit,[stri
 function Assert-TennisChromeClosed {
  if(@(Get-Process chrome -ErrorAction SilentlyContinue).Count) {throw 'Close Chrome before applying this update. No browser process will be closed automatically.'}
 }
-function Install-TennisRuntime([string]$ZipPath,$Metadata,[string]$InstallDirectory,[string]$WorkDirectory) {
+function Install-TennisRuntime([string]$ZipPath,$Metadata,[string]$InstallDirectory,[string]$WorkDirectory,[switch]$AdoptUntracked) {
  Test-TennisArchive $ZipPath $Metadata
  $target=Get-Item -LiteralPath $InstallDirectory -ErrorAction Stop
  if(!$target.PSIsContainer -or ($target.Attributes -band [IO.FileAttributes]::ReparsePoint)) {throw 'Choose the existing unpacked extension directory, not a link'}
@@ -62,7 +62,14 @@ function Install-TennisRuntime([string]$ZipPath,$Metadata,[string]$InstallDirect
   foreach($file in $prior.files) {if(!(Test-Path -LiteralPath (Join-Path $root $file.path)) -or (Get-TennisHash (Join-Path $root $file.path)) -cne $file.sha256) {throw 'Installed runtime has local changes; preserve/review them before updating'}}
   if($prior.commit -ceq $Metadata.commit) {return [pscustomobject]@{status='already-current';version=$old.version;directory=$root}}
  }
- if([version]$old.version -eq [version]$Metadata.version -and !$prior) {throw 'Same-version update requires installed provenance; use a newer version or inspect the build manually'}
+ if(!$prior) {
+  if([version]$old.version -eq [version]$Metadata.version) {
+   throw 'Same-version replacement requires installed provenance. For a repository-backed install, update with Git and reload the existing extension.'
+  }
+  if(!$AdoptUntracked) {
+   throw 'Installed runtime has no release provenance. Update repository-backed installs with Git. For an older standalone install, review local changes before opting in with -AdoptUntracked.'
+  }
+ }
  $taskStage=Join-Path $WorkDirectory ('stage-'+[guid]::NewGuid().ToString('N'));$backup=Join-Path $WorkDirectory ('backup-'+[guid]::NewGuid().ToString('N'))
  New-Item -ItemType Directory -Path $taskStage,$backup -Force | Out-Null
  [IO.Compression.ZipFile]::ExtractToDirectory($ZipPath,$taskStage)

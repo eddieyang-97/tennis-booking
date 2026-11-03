@@ -11,15 +11,27 @@ This is the development update route for the existing unpacked extension. It doe
 
 Until the workflow is merged and succeeds on main, this is implemented/tested delivery code, **not an observed published release**. Repository Actions permissions must permit this job's `contents: write`; a denied permission fails visibly and needs repository-owner configuration.
 
-## One local update command
+## Update a repository-backed install
 
-Use Windows PowerShell 5.1 or PowerShell 7. Run from a current repository checkout containing `update-extension.ps1` and `scripts/Release.psm1`:
+If Chrome loaded `outputs/tennis-local/chrome-extension/` directly from a checkout, Git supplies the runtime files. Before the first update, finish active work, cancel any armed job and close Chrome normally. In that checkout, review `git status --short` and preserve any local edits. From a clean `main` branch, run:
+
+```powershell
+git pull --ff-only origin main
+```
+
+Reopen Chrome in the same profile with the existing unpacked extension path. If needed, click **Reload** for that extension at `chrome://extensions`. Check the popup version, refresh the Courtside tabs and unlock the card. Keeping the path and profile preserves preferences and payment journals. This is also the first upgrade path from v0.9.11 to v0.9.12. Pulling already updates the runtime, so the ZIP updater's same-version refusal is expected for this layout.
+
+## Update a standalone install
+
+Use Windows PowerShell 5.1 or PowerShell 7. Run from a current repository checkout containing `update-extension.ps1` and `scripts/Release.psm1`. Point it at the standalone folder Chrome already loads:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\update-extension.ps1 -InstallDirectory 'C:\path\to\existing\chrome-extension' -OpenChrome
 ```
 
-`-InstallDirectory` is the **same folder containing `manifest.json` that is already loaded in Chrome**. Do not remove the extension, load a new path or copy another person's Chrome profile. Use a separate source checkout for development if the installed runtime has local edits.
+`-InstallDirectory` is the **same standalone folder containing `manifest.json` that is already loaded in Chrome**. Keep that path and Chrome profile.
+
+An older folder without `installed-release.json` has no baseline for checking edits. The default command refuses it before replacing any files. For a first upgrade to a newer version, review and preserve your edits, then append `-AdoptUntracked` to the command to authorize replacing those runtime files. The updater backs up the original bytes and records the new provenance. Later updates verify the recorded file hashes even if the adoption switch is supplied. Same-version replacement without provenance is refused even with the switch.
 
 Before applying: cancel any scheduled run, let active work finish, close Chrome normally (including background processes), and keep the computer away from a release deadline. The updater never closes Chrome for you and refuses writes while any Chrome process runs. It cannot inspect booking state in a closed browser, and is not an unattended update daemon. Do not launch Chrome until it completes. `-OpenChrome` reopens Chrome after verified installation, which loads the new files without a separate extension-manager reload.
 
@@ -35,7 +47,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\update-extension.ps1 -Inst
 powershell -NoProfile -ExecutionPolicy Bypass -File .\update-extension.ps1 -InstallDirectory 'C:\path\to\existing\chrome-extension' -Tag 'dev-v0.9.12-0123456789ab'
 ```
 
-The example tag is illustrative; select a real published tag. Default selection uses recent main commit ancestry rather than release publication time. If no release matches the bounded recent history, it stops and asks for an exact tag. With saved installed provenance, the candidate must be the same commit or a descendant. Numeric version downgrades, tracked local file edits, ambiguous release identity, new permissions/site access, unsafe/duplicate archive entries, symlinks and hash mismatches stop installation. An initial same-version replacement without provenance requires manual inspection rather than guessing.
+The example tag is illustrative. Select a real published tag. Default selection uses recent main commit ancestry. If no release matches the bounded recent history, it stops and asks for an exact tag. With saved installed provenance, the candidate must be the same commit or a descendant. Numeric version downgrades, tracked local file edits, ambiguous release identity, new permissions/site access, unsafe/duplicate archive entries, symlinks and hash mismatches stop installation.
 
 The updater downloads public GitHub assets over HTTPS and verifies their commit/tag identity and SHA-256 content. Checksums protect transfer/content consistency; they are **not independent signing or protection from a compromised repository/CI**. No GitHub token or merchant credentials are needed locally. It does not read browser profiles or Chrome storage.
 

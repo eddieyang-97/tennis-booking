@@ -24,7 +24,7 @@ function Fixture {
  $metadata=[pscustomobject]@{schemaVersion=1;repository='eddieyang-97/tennis-booking';channel='development';version='0.9.12';commit=('a'*40);tag=('dev-v0.9.12-'+('a'*12));zip=[pscustomobject]@{name='tennis-booking-v0.9.12.zip';sha256=(Get-TennisHash $zip)};files=@(Get-ChildItem $source -File | ForEach-Object {[pscustomobject]@{path=$_.Name;sha256=(Get-TennisHash $_.FullName)}})}
  return [pscustomobject]@{Zip=$zip;Metadata=$metadata;Source=$source;Install=$install;Work=$work}
 }
-function Install($f){Install-TennisRuntime $f.Zip $f.Metadata $f.Install $f.Work}
+function Install($f){Install-TennisRuntime $f.Zip $f.Metadata $f.Install $f.Work -AdoptUntracked}
 function Unchanged($f){Check ((Get-Content -Raw (Join-Path $f.Install 'background.js')) -ceq 'old-background.js') 'Old runtime changed';Check ((Get-Content -Raw (Join-Path $f.Install 'owner-state.sentinel')) -ceq 'preserve unrelated files') 'Unrelated data changed'}
 function Case([string]$Name,[scriptblock]$Run){& $Run;$script:count++;Write-Output ('PASS '+$Name)}
 Case 'update exact runtime, preserve path/unrelated files, backup and verify provenance' {
@@ -32,7 +32,22 @@ Case 'update exact runtime, preserve path/unrelated files, backup and verify pro
  foreach($entry in $f.Metadata.files){Check ((Get-TennisHash (Join-Path $f.Install $entry.path)) -ceq $entry.sha256) 'Wrong installed bytes'}
  Check ((Get-Content -Raw (Join-Path $f.Install 'owner-state.sentinel')) -ceq 'preserve unrelated files') 'Lost sentinel'
  Check ((Install $f).status -eq 'already-current') 'Retry not idempotent'
- [IO.File]::AppendAllText((Join-Path $f.Install 'background.js'),'local edit');Reject {Install $f} 'local changes'
+ [IO.File]::AppendAllText((Join-Path $f.Install 'background.js'),'local edit');Reject {Install-TennisRuntime $f.Zip $f.Metadata $f.Install $f.Work -AdoptUntracked} 'local changes'
+}
+Case 'first adoption refuses local edits by default and backs them up after explicit opt-in' {
+ $f=Fixture
+ $runtime=Join-Path $f.Install 'background.js'
+ [IO.File]::AppendAllText($runtime,' local edit')
+ $editedHash=Get-TennisHash $runtime
+ $manifestHash=Get-TennisHash (Join-Path $f.Install 'manifest.json')
+ Reject {Install-TennisRuntime $f.Zip $f.Metadata $f.Install $f.Work} 'AdoptUntracked'
+ Check ((Get-TennisHash $runtime) -ceq $editedHash) 'Default update overwrote local edit'
+ Check ((Get-TennisHash (Join-Path $f.Install 'manifest.json')) -ceq $manifestHash) 'Default update changed manifest'
+ Check (!(Test-Path (Join-Path $f.Install 'installed-release.json'))) 'Default update wrote provenance'
+ $result=Install-TennisRuntime $f.Zip $f.Metadata $f.Install $f.Work -AdoptUntracked
+ Check ($result.status -eq 'updated') 'Explicit adoption failed'
+ Check ((Get-TennisHash (Join-Path $result.backup 'background.js')) -ceq $editedHash) 'Backup lost the local edit'
+ Check ((Install-TennisRuntime $f.Zip $f.Metadata $f.Install $f.Work).status -eq 'already-current') 'Adoption did not establish provenance'
 }
 Case 'running Chrome refuses writes, never closes processes' {
  $f=Fixture;& $module {$script:chromeRunning=$true};try{Reject {Install $f} 'Close Chrome';Unchanged $f}finally{& $module {$script:chromeRunning=$false}}
@@ -53,7 +68,10 @@ foreach($variant in @('duplicate','unexpected','missing','symlink')){Case ('reje
 }}
 Case 'refuse downgrade and untracked same-version replacement' {
  $f=Fixture;$manifest=Get-Content -Raw (Join-Path $f.Install 'manifest.json') | ConvertFrom-Json;$manifest.version='1.0.0';$manifest | ConvertTo-Json | Set-Content (Join-Path $f.Install 'manifest.json');Reject {Install $f} 'downgrade';Unchanged $f
- $manifest.version='0.9.12';$manifest | ConvertTo-Json | Set-Content (Join-Path $f.Install 'manifest.json');Reject {Install $f} 'Same-version';Unchanged $f
+ $manifest.version='0.9.12';$manifest | ConvertTo-Json | Set-Content (Join-Path $f.Install 'manifest.json')
+ Reject {Install-TennisRuntime $f.Zip $f.Metadata $f.Install $f.Work} 'Same-version.*repository-backed.*Git'
+ Reject {Install $f} 'Same-version.*repository-backed.*Git'
+ Unchanged $f
 }
 Case 'new permissions require review before writes' {
  $f=Fixture;$manifest=Get-Content -Raw (Join-Path $f.Install 'manifest.json') | ConvertFrom-Json;$manifest.permissions=@('storage');$manifest | ConvertTo-Json | Set-Content (Join-Path $f.Install 'manifest.json');Reject {Install $f} 'permissions';Unchanged $f
@@ -110,6 +128,12 @@ Case 'updater selects by main ancestry and verifies download without touching in
 Case 'updater rejects changed tag commit before ZIP download' {
  $f=Fixture;ApiFixture $f;$global:tennisTesttagSha='b'*40
  Reject {& (Join-Path $PSScriptRoot '../update-extension.ps1') -InstallDirectory $f.Install -WorkDirectory $f.Work -DownloadOnly} 'exact tested commit';Check ($global:tennisTestassetReads.Count -eq 1) 'Downloaded ZIP despite wrong tag';Unchanged $f
+}
+Case 'public updater refuses a first install without explicit adoption' {
+ $f=Fixture;ApiFixture $f
+ Reject {& (Join-Path $PSScriptRoot '../update-extension.ps1') -InstallDirectory $f.Install -WorkDirectory $f.Work} 'AdoptUntracked'
+ Unchanged $f
+ Check (!(Test-Path (Join-Path $f.Install 'installed-release.json'))) 'Refused install wrote provenance'
 }
 Case 'updater rejects rollback ancestry before ZIP download' {
  $f=Fixture;ApiFixture $f;$global:tennisTestcomparison='behind';$f.Metadata | ConvertTo-Json -Depth 8 | Set-Content (Join-Path $f.Install 'installed-release.json') -Encoding utf8
