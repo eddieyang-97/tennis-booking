@@ -1,6 +1,6 @@
 # Distribution flow
 
-**Status:** Planned — do not begin Phase 1 until automatic booking passes the acceptance gate below.  
+**Status:** Friend/public distribution remains gated. Separately authorized developer release/update automation is implemented in v0.9.12; see [developer updates](developer-updates.md). Do not begin Phase 1 until automatic booking passes the acceptance gate below.
 **Initial audience:** One trusted friend, not the general public.  
 **Active product:** The Chrome Manifest V3 extension in [`outputs/tennis-local/chrome-extension/`](../outputs/tennis-local/chrome-extension/).  
 **Decision (16 October 2026):** **Build Phase 1 as soon as automatic booking is fully proven working.** Do not start a parallel public-launch or hosting project now.
@@ -69,7 +69,7 @@ This gate calls for **at least one complete, genuinely unattended paid live acce
 - Keep the same installed unpacked extension identity/profile where possible. Removing and reinstalling as a different extension can orphan existing browser storage and unresolved journals. **Do not delete or migrate checkout records casually** to make an update install.
 - Reloading clears the locally unlocked card session: if applicable, unlock only **after the final reload**.
 - Keep old versions available for debugging; distribute a fix only after testing it with realistic stored journals and recovery states.
-- No automatic update checks, hosted update service or CRX self-installation are needed for Phase 1.
+- The separately authorized developer updater can replace files from a tested development prerelease while Chrome is closed. It is not a CRX installer or a Chrome Web Store update service; it does not satisfy the friend distribution gate.
 
 ### Phase 1 deliverables and exit criteria
 
@@ -80,7 +80,7 @@ This gate calls for **at least one complete, genuinely unattended paid live acce
 - [ ] Any observed regressions captured as sanitized, deterministic offline scenarios before another release.
 - [ ] User-facing payment/security controls reviewed and any outstanding concerns resolved before a payment-enabled handoff.
 
-**Scope discipline:** No hosted backend, new account system, automated updater, general-purpose installer, or Web Store work is necessary for this phase.
+**Scope discipline:** No hosted backend, new account system, general-purpose installer, or Web Store work is necessary for this phase. Developer release automation is separately scoped and does not open this distribution gate.
 
 ## 4. Phase 2 — Chrome Web Store beta (defer)
 

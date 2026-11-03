@@ -21,6 +21,7 @@ const enqueueAction=createSerialExecutor();
 const linkFrames=createLinkFrames(chrome.tabs,{step:(name,detail)=>step(name,detail)});
 const BASE='https://tennistowerhamlets.com';
 let busy=false;
+let reloadRequested=false;
 let resumedTab=null;
 let trace=null;
 function newRun(kind,day){return startRun(chrome.storage.local,kind,day,{version:chrome.runtime.getManifest?.().version||'unknown'});}
@@ -544,7 +545,9 @@ async function runAlarm(alarm){
   } catch(e) {const {checkoutRecords=[]}=await chrome.storage.local.get('checkoutRecords'),possible=pendingAttempts(checkoutRecords).some(r=>r.paymentDispatchedAt||r.manualPaymentReportedAt);if(!e.recorded)await save({status:'stopped',day:job.day,checkedAt:new Date().toISOString(),step:alarm.name,error:e.message,...e.diagnostic,booked:possible?null:false,paid:possible?null:false});await notifyPaymentResult({status:'stopped'});return {status:'stopped',...failureFor(e,{paymentPossible:possible}),error:e.message,paid:possible?null:false,booked:possible?null:false};}
 }
 chrome.alarms.onAlarm.addListener(alarm=>enqueueAction(()=>executeAction(chrome.storage.local,alarm.name,()=>runAlarm(alarm),{version:chrome.runtime.getManifest?.().version||'unknown',source:'alarm'})));
-chrome.runtime.onMessage.addListener((message,sender,respond)=>{
+chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{
+  let answered=false;
+  const respond=value=>{if(!answered){answered=true;sendResponse(value);}};
   if(message.kind==='link-frame' && sender.id===chrome.runtime.id) {
    linkFrames.register(sender).then(ok=>respond({ok}),()=>respond({ok:false}));return true;
   }
@@ -577,6 +580,12 @@ chrome.runtime.onMessage.addListener((message,sender,respond)=>{
     if(message.kind==='verifyPayment'){const key=explicitRecoveryKey(message);if(key!==null)await admitManualCheck();return verifyPayment(false,null,key);}
     if(message.kind==='reconcileManualPayment'){const key=explicitRecoveryKey(message);if(key!==null)await admitManualCheck();return verifyPayment(false,message.reference||'',key);}
     if(message.kind==='openCardVault'){await chrome.tabs.create({url:chrome.runtime.getURL('card-vault.html'),active:true});return {status:'local-card-setup-opened'};}
+    if(message.kind==='reloadExtension'){
+     const {job,running}=await chrome.storage.local.get(['job','running']);
+     if(busy||job||running)throw Error('Cancel the scheduled run and finish any active or interrupted run before reloading. Saved checkout journals are preserved.');
+     await chrome.storage.session.remove('localPaymentCard');
+     return {status:'reloading',cardUnlocked:false,journalsPreserved:true};
+    }
     if(message.kind==='payCheckout')return automaticPayment();
     if(message.kind==='armPayment')return arm(message.day,'payment',message.discountCode,message.settings);
     if(message.kind==='archiveFailedCheckout') {
@@ -630,7 +639,10 @@ chrome.runtime.onMessage.addListener((message,sender,respond)=>{
   };
   const tracked=()=>executeAction(chrome.storage.local,message.kind,run,{version:chrome.runtime.getManifest?.().version||'unknown'});
   // Assessment only observes snapshots; it cannot occupy the mutation/alarm queue.
-  const action=message.kind==='status'?run():message.kind==='assessRecovery'?tracked():enqueueAction(tracked);
+  // Finish durable metadata before reload; hold the queue so a later Arm
+  // cannot slip between the idle check and Chrome replacing this worker.
+  const queued=async()=>{if(reloadRequested)throw Error('Extension is reloading; reopen the popup.');const result=await tracked();if(message.kind==='reloadExtension'){reloadRequested=true;chrome.runtime.reload();respond(result);}return result;};
+  const action=message.kind==='status'?run():message.kind==='assessRecovery'?tracked():enqueueAction(queued);
   action.then(respond,e=>{const uncertain=['verifyPayment','reconcileManualPayment','armPayment','payCheckout','resetUnpaidTest','testDiscountCheckout'].includes(message.kind);respond({status:'stopped',error:e.message,...failureFor(e,{operation:message.kind,paymentPossible:uncertain}),...(e.code?{errorCode:e.code}:{}),...(e.attemptedDay?{attemptedDay:e.attemptedDay}:{}),booked:uncertain?null:false,paid:uncertain?null:false});}); return true;
 });
 // Recreate one-shot alarms after restart without starting a missed release.

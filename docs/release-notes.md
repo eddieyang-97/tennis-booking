@@ -1,8 +1,15 @@
 # Release notes
 
-This is the historical change log for the **active Chrome extension** in [`outputs/tennis-local/chrome-extension/`](../outputs/tennis-local/chrome-extension/). The authoritative source version is [`manifest.json`](../outputs/tennis-local/chrome-extension/manifest.json), **0.9.11** on the one-click Arm recovery branch (2 November 2026). Branch builds are not merged release claims.
+This is the historical change log for the **active Chrome extension** in [`outputs/tennis-local/chrome-extension/`](../outputs/tennis-local/chrome-extension/). The authoritative source version is [`manifest.json`](../outputs/tennis-local/chrome-extension/manifest.json), **0.9.12** on the developer release/update branch (2 November 2026). Branch builds are not merged release claims.
 
 Notes below describe changes made *at each release*, not instructions to install or downgrade to older builds. Historical test counts and unverified behaviors are not current release-quality claims. For up-to-date setup, use the [project README](../README.md) and [extension usage guide](../outputs/tennis-local/chrome-extension/README.md). For original investigation and detailed timestamps, see [payment-system.md](payment-system.md).
+
+## v0.9.12 — Tested development releases and local updates (2 November 2026)
+
+- Main publication waits for both Reliability gate jobs and uploads the **same ZIP** checked under PowerShell 7 and Windows PowerShell 5.1. Version-and-commit prereleases carry per-file SHA-256 provenance; PR runs cannot publish, and superseded main runs cannot become the newest developer build.
+- The Windows updater selects releases by main ancestry, verifies archive contents and hashes, preserves the installation directory and rolls back partial copies. An older standalone install without provenance requires explicit adoption after reviewing local edits. Repository-backed installs update through Git in the existing checkout. Close Chrome before updating and use `-OpenChrome` to reopen it after a standalone update.
+- The extension offers a guarded `chrome.runtime.reload()` action. It refuses armed/active/interrupted work, clears the unlocked card session, and preserves durable journals, authorizations and historical results. Reload cannot authorize mutation replay.
+- Publication/update tests use mocked GitHub responses and disposable files; reload tests use synthetic journals and isolated Chromium. Actual publication is enabled only after this workflow merges and passes on main. No live merchant or unattended booking acceptance is implied; friend/payment distribution gates remain separate.
 
 ## v0.9.11 — One-click Arm recovery (2 November 2026)
 

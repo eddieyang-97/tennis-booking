@@ -2,7 +2,7 @@ import {isRetiredAttempt} from '../attempt-history.js';
 import vm from 'node:vm';import fs from 'node:fs/promises';import {fileURLToPath} from 'node:url';import {webcrypto} from 'node:crypto';
 const root=new URL('../',import.meta.url);
 export async function startWorker(merchant,state={},version='simulation'){
- const worker={tabs:new Map(),nextTab:1,state,version};
+ const worker={tabs:new Map(),nextTab:1,state,version,reloads:0,sessionRemovals:[]};
  const local={get:async keys=>{const list=typeof keys==='string'?[keys]:keys||Object.keys(state);return structuredClone(Object.fromEntries(list.map(key=>[key,state[key]])));},set:async value=>{
   const before=(state.checkoutRecords||[]).find(r=>r.status==='pending'&&!isRetiredAttempt(r,merchant.clock)),after=value.checkoutRecords?.find(r=>r.status==='pending'&&!isRetiredAttempt(r,merchant.clock));
   let label;
@@ -16,7 +16,7 @@ export async function startWorker(merchant,state={},version='simulation'){
   if(!label&&value.abandonedCheckouts?.length>(state.abandonedCheckouts?.length||0))label='archive';
   if(label)merchant.boundary(`persist:${label}:before`);Object.assign(state,structuredClone(value));if(label)merchant.boundary(`persist:${label}:after`);
  },remove:async keys=>{for(const key of typeof keys==='string'?[keys]:keys)delete state[key];}};
- const chrome={storage:{local,session:{get:async()=>({localPaymentCard:{number:'4242424242424242',expiry:'12/30',cvc:'123',postcode:'TEST'}})}},runtime:{id:'test',getManifest:()=>({version}),getURL:path=>'chrome-extension://test/'+path,onMessage:{addListener:fn=>worker.listener=fn},onStartup:{addListener(){}},onInstalled:{addListener(){}}},alarms:{onAlarm:{addListener:fn=>worker.alarm=fn},create:async()=>{},clear:async()=>{}},notifications:{onClicked:{addListener(){}},create:async()=>{}},action:{setBadgeText:async()=>{},setTitle:async()=>{}},tabs:{create:async({url})=>{const tab={id:worker.nextTab++,url,status:merchant.options.loading?'loading':'complete'};worker.tabs.set(tab.id,tab);return tab;},get:async id=>{
+ const chrome={storage:{local,session:{remove:async key=>worker.sessionRemovals.push(key),get:async()=>({localPaymentCard:{number:'4242424242424242',expiry:'12/30',cvc:'123',postcode:'TEST'}})}},runtime:{reload:()=>{worker.reloads++;},id:'test',getManifest:()=>({version}),getURL:path=>'chrome-extension://test/'+path,onMessage:{addListener:fn=>worker.listener=fn},onStartup:{addListener(){}},onInstalled:{addListener(){}}},alarms:{onAlarm:{addListener:fn=>worker.alarm=fn},create:async()=>{},clear:async()=>{}},notifications:{onClicked:{addListener(){}},create:async()=>{}},action:{setBadgeText:async()=>{},setTitle:async()=>{}},tabs:{create:async({url})=>{const tab={id:worker.nextTab++,url,status:merchant.options.loading?'loading':'complete'};worker.tabs.set(tab.id,tab);return tab;},get:async id=>{
   const tab=worker.tabs.get(id);if(!tab)throw Error('No tab with id: '+id);
   if(merchant.readyAt!==undefined&&merchant.clock>=merchant.readyAt&&tab.url.includes('/basket'))tab.url='https://tennistowerhamlets.com/basket/pay/card';return {...tab};
  },update:async(id,changes)=>{const tab=worker.tabs.get(id);if(!tab)throw Error('No tab with id');Object.assign(tab,changes);return {...tab};},remove:async id=>worker.tabs.delete(id),query:async({url}={})=>[...worker.tabs.values()].filter(t=>!url||(url.endsWith('/*')?t.url.startsWith(url.slice(0,-1)):t.url===url)),sendMessage:async(id,request)=>{const tab=worker.tabs.get(id);if(!tab)throw Error('No tab with id');return merchant.message(tab,request,worker);}}};
