@@ -57,8 +57,9 @@ export function candidates(rows, venue, day, {basketOnly=false,settings=null}={}
   const found=[];
   const durations=policy?[2,1].filter(hours=>hours<=policy.preferredHours&&hours>=policy.minHours):(basketOnly?[2]:[2,1]);
   for (const hours of durations) for (const hour of (policy?Array.from({length:hourValue(policy.latestFinish,{end:true})-hourValue(policy.earliestStart)-hours+1},(_,i)=>hourValue(policy.earliestStart)+i):(basketOnly?[9]:[20,21]))) {
-    const choices=[1,2,3,4].map(court=>Array(hours).fill(court));
-    if(hours===2&&(!policy||policy.allowCourtSwitch))for(let first=1;first<=4;first++)for(let second=1;second<=4;second++)if(first!==second)choices.push([first,second]);
+    const courtPreference=[4,3,2,1];
+    const choices=courtPreference.map(court=>Array(hours).fill(court));
+    if(hours===2&&(!policy||policy.allowCourtSwitch))for(const first of courtPreference)for(const second of courtPreference)if(first!==second)choices.push([first,second]);
     for(const courts of choices) {
      const prices=courts.map((court,i)=>available.get(`${hour+i}:${court}`));
      if(prices.every(p=>p!==undefined)&&(!policy||prices.reduce((a,b)=>a+b,0)<=settingsCap(policy,hours)))found.push({venue:NAMES[venue],date:day,court:courts[0],...(courts.some(c=>c!==courts[0])?{courts}:{}),start:`${String(hour).padStart(2,'0')}:00`,hours,totalGBP:(prices.reduce((a,b)=>a+b,0)/100).toFixed(2)});

@@ -2,7 +2,7 @@
 
 A Manifest V3 Chrome extension that checks and attempts to book tennis courts on [Tower Hamlets Courtside](https://tennistowerhamlets.com/) at the London midnight release, with configurable preferences, strict basket/payment verification, a local encrypted card file and recovery of uncertain payments.
 
-**Active implementation:** [`outputs/tennis-local/chrome-extension/`](outputs/tennis-local/chrome-extension/) · **Version:** [`0.9.12`](outputs/tennis-local/chrome-extension/manifest.json), developer releases and guarded reload (2 November 2026). Source availability does not establish installation or live acceptance.
+**Active implementation:** [`outputs/tennis-local/chrome-extension/`](outputs/tennis-local/chrome-extension/) · **Version:** [`0.9.13`](outputs/tennis-local/chrome-extension/manifest.json), developer releases and guarded reload (2 November 2026). Source availability does not establish installation or live acceptance.
 
 **Release status:** In active development, **not yet verified for unattended end-to-end midnight payment**. A real £2.50 one-hour card payment and its subsequent account-purchase reconciliation were verified on 13 October. Live two-hour basket selection was verified, but an automated two-hour Pay and a complete unattended midnight booking have not been established. See [release notes and live-evidence limits](docs/release-notes.md).
 
@@ -35,7 +35,7 @@ All preferences below are configurable in the popup. The saved job's settings sn
 | Price authorization | **£14 total** by default, with **£7 one-hour cap**; caps check gross price before any optional discount |
 | Duplication | A previously confirmed booking for the same playing date or unresolved/retired attempt for the same date blocks a conflicting new checkout |
 
-Candidate priority is **venue → duration → earliest eligible start time → court configuration** (same court first for a given start). A valid candidate at a higher-ranked venue can take priority over a longer booking at a fallback venue.
+Candidate priority is **venue → duration → earliest eligible start time → court configuration**. For a given start, same-court bookings come first, with courts preferred in descending order from 4 to 1. Mixed-court bookings use that order for each hour. A valid candidate at a higher-ranked venue can take priority over a longer booking at a fallback venue.
 
 A scheduled two-hour selection may be treated as a one-hour booking **only** when the observed basket contains precisely one intended, authorized hour and the saved minimum duration, time and one-hour cap allow it. No extra click is issued to manufacture a fallback.
 

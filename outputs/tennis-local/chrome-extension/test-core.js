@@ -22,3 +22,13 @@ test('same-court options precede mixed courts, and unavailable hours cannot form
  const result=candidates(rows,'victoria-park','2026-10-20');assert.equal(result[0].court,2);assert.equal(result[0].courts,undefined);assert.deepEqual(result[1].courts,[1,2]);
  assert.ok(candidates([rows[0],{time:'10pm',inputs:rows[1].inputs}],'victoria-park','2026-10-20').every(x=>x.hours===1));
 });
+
+test('higher court numbers are preferred within the same time and duration',()=>{
+ const inputs=[1,2,3,4].map(court=>({label:`Tennis court ${court}£7`,disabled:false}));
+ const rows=[{time:'8pm',inputs},{time:'9pm',inputs}];
+ const result=candidates(rows,'bethnal-green-gardens','2026-10-20');
+ assert.deepEqual(result.slice(0,4).map(slot=>slot.court),[4,3,2,1]);
+ assert.deepEqual(result[4].courts,[4,3]);
+ const stJohns=candidates(rows.map(row=>({...row,inputs:row.inputs.slice(0,2)})),'st-johns-park','2026-10-20');
+ assert.deepEqual(stJohns.slice(0,2).map(slot=>slot.court),[2,1]);
+});
