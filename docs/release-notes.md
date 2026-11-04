@@ -1,8 +1,13 @@
 # Release notes
 
-This is the historical change log for the **active Chrome extension** in [`outputs/tennis-local/chrome-extension/`](../outputs/tennis-local/chrome-extension/). The authoritative source version is [`manifest.json`](../outputs/tennis-local/chrome-extension/manifest.json), **0.9.12** on the developer release/update branch (2 November 2026). Branch builds are not merged release claims.
+This is the historical change log for the **active Chrome extension** in [`outputs/tennis-local/chrome-extension/`](../outputs/tennis-local/chrome-extension/). The authoritative source version is [`manifest.json`](../outputs/tennis-local/chrome-extension/manifest.json), **0.9.13** on the developer release/update branch (2 November 2026). Branch builds are not merged release claims.
 
 Notes below describe changes made *at each release*, not instructions to install or downgrade to older builds. Historical test counts and unverified behaviors are not current release-quality claims. For up-to-date setup, use the [project README](../README.md) and [extension usage guide](../outputs/tennis-local/chrome-extension/README.md). For original investigation and detailed timestamps, see [payment-system.md](payment-system.md).
+
+## v0.9.13 — Court preference
+
+- Prefer higher-numbered courts within the existing venue, duration, start-time and same-court priorities. St Johns Park uses its available courts 2 then 1.
+- Candidate-order tests use simulated availability. Live booking remains subject to merchant availability and the existing payment safeguards.
 
 ## v0.9.12 — Tested development releases and local updates (2 November 2026)
 
