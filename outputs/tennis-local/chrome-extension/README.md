@@ -1,6 +1,6 @@
 # Chrome extension: setup, testing and recovery
 
-This is the **operating guide** for the active Manifest V3 extension. The installed version is shown at the top of the popup; the source version is defined in [`manifest.json`](manifest.json) (**0.9.13**, developer releases and guarded reload, 2 November 2026). A source change does not update an installed extension.
+This is the **operating guide** for the active Manifest V3 extension. The installed version is shown at the top of the popup. The source version is **0.9.14**, defined in [`manifest.json`](manifest.json). A source change does not update an installed extension.
 
 - [Project overview and safety model](../../../README.md)
 - [Architecture and checkout state diagrams](../../../docs/architecture.md)

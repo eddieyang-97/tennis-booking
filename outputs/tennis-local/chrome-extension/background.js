@@ -20,6 +20,7 @@ import {executeAction,createSerialExecutor} from './actions.js';
 const enqueueAction=createSerialExecutor();
 const linkFrames=createLinkFrames(chrome.tabs,{step:(name,detail)=>step(name,detail)});
 const BASE='https://tennistowerhamlets.com';
+const RELEASE_BASKET_MAX_AGE_MS=10000;
 let busy=false;
 let reloadRequested=false;
 let resumedTab=null;
@@ -56,17 +57,37 @@ async function check(day, scheduled=false,settings=null,retainForCheckout=false)
     if(prior.running) throw Error('An earlier check was interrupted; reset the dry-run state after review');
     await chrome.storage.local.set({running:{day,started:Date.now()}});
     ownsRunning=true;
-    await account(scheduled);
+    const venues=settings?.venues||VENUES;
+    const gridFor=venue=>readPage(`${BASE}/book/courts/${venue}/${day}#book`,{kind:'grid',venue,day},{scheduled,retainGrid:scheduled&&retainForCheckout});
+    let firstGrid,initialBasket;
+    if(scheduled&&retainForCheckout){
+     await step('release-reads-overlapped',{venue:venues[0]});
+     const startedAt=Date.now();
+     const [accountRead,gridRead,basketRead]=await Promise.allSettled([
+      account(true),gridFor(venues[0]),readPage(BASE+'/basket',{kind:'basket-read'},{scheduled:true})
+     ]);
+     // Join every read before changing trace or starting checkout. Retain only
+     // failed read tabs for inspection if another required check stops release.
+     firstGrid=gridRead.value;
+     const failed=[accountRead,gridRead,basketRead].find(read=>read.status==='rejected');
+     if(failed||!basketRead.value?.ok){
+      if(firstGrid?.gridTabId)await chrome.tabs.remove(firstGrid.gridTabId).catch(()=>{});
+      if(failed)throw failed.reason;
+      const response=basketRead.value;
+      throw Object.assign(Error(response.error),{diagnostic:{page:response.page,errorCode:response.reasonCode,retainedTabId:response.retainedTabId}});
+     }
+     initialBasket={value:basketRead.value.value,startedAt};
+    }else await account(scheduled);
     const results=[];let gridHandoff=null;
-    for(const venue of (settings?.venues||VENUES)) {
-      const response=await readPage(`${BASE}/book/courts/${venue}/${day}#book`,{kind:'grid',venue,day},{scheduled,retainGrid:scheduled&&retainForCheckout});
+    for(const venue of venues) {
+      const response=venue===venues[0]&&firstGrid?firstGrid:await gridFor(venue);
       if(!response.ok) throw Object.assign(Error(response.error),{diagnostic:{page:response.page,retainedTabId:response.retainedTabId}});
       results.push({venue,candidates:candidates(response.rows,venue,day,{settings})});
       // The scheduled flow chooses this venue first anyway. Do not delay an
       // eligible preferred candidate behind a slow fallback-venue request.
       if(scheduled) {
        let eligible=false;try{checkoutCandidate(results,settings);eligible=true;}catch{}
-       if(eligible){if(retainForCheckout)gridHandoff={tabId:response.gridTabId,venue,day};await step('preferred-candidate-found',{venue});break;}
+       if(eligible){if(retainForCheckout)gridHandoff={tabId:response.gridTabId,venue,day,initialBasket};await step('preferred-candidate-found',{venue});break;}
        if(retainForCheckout)await chrome.tabs.remove(response.gridTabId).catch(()=>{});
       }
     }
@@ -294,7 +315,17 @@ async function checkout(expectedDay=null,scheduled=false,basketOnly=false,discou
   const read=async()=>{
    let response;
    if(reuseGrid&&!selectionStarted){
-    // Inspect the shared basket once without navigating away from the grid.
+    const initial=gridHandoff.initialBasket;
+    if(initial){
+     const ageMs=Date.now()-initial.startedAt;
+     // Never discard evidence of existing items, even when the read is old.
+     if(initial.value.empty!==true||(ageMs>=0&&ageMs<RELEASE_BASKET_MAX_AGE_MS)){
+      await step('release-basket-read-reused',{ageMs,basketEmpty:initial.value.empty===true});
+      await step('basket-observed',basketEvidence(initial.value,slot));return initial.value;
+     }
+     await step('release-basket-read-expired',{ageMs});
+    }
+    // Refresh older evidence without navigating away from the grid.
     response=await readPageState(chrome.tabs,BASE+'/basket',{kind:'basket-read'},{timeoutMs:pageReadBudget(scheduled),step});
    }else{
     if(!basketLoaded){

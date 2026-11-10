@@ -210,6 +210,55 @@ test('uncertain hourly acknowledgement may still use one exactly verified author
  assert.deepEqual(f.merchant.counts,{selection:1,discount:0,opening:1,fill:1,pay:1,removal:0});
 });
 
+for(const failure of [null,'account','basket','grid'])test(`release overlaps independent reads and gates selection: ${failure||'success'}`,async()=>{
+ const f=await navigationRun(),{create,sendMessage}=f.worker.chrome.tabs,seen=new Set();
+ let started,unblock,timer;
+ const allStarted=new Promise(resolve=>started=resolve),gate=new Promise(resolve=>unblock=resolve);
+ f.worker.chrome.tabs.create=async changes=>{
+  const path=new URL(changes.url).pathname;
+  seen.add(path);if(seen.size===3)started();
+  await gate;
+  return create(changes);
+ };
+ f.worker.chrome.tabs.sendMessage=async(id,request)=>
+  request.kind===failure||(failure==='basket'&&request.kind==='basket-read')
+   ?{ok:false,error:'Synthetic read rejection'}:sendMessage(id,request);
+ const release=f.worker.alarm({name:'release'});
+ try{
+  await Promise.race([allStarted,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('Release reads did not overlap')),1000);})]);
+  assert.ok(Object.values(f.merchant.counts).every(count=>count===0));
+  assert.equal(f.state.checkoutRecords,undefined);
+ }finally{clearTimeout(timer);unblock();await release;}
+ if(failure){
+  assert.equal(f.state.latestAction.outcome,'stopped');
+  assert.equal(f.state.checkoutRecords,undefined);
+  assert.ok(Object.values(f.merchant.counts).every(count=>count===0));
+  assert.equal([...f.worker.tabs.values()].filter(tab=>tab.url.includes('/book/courts/')).length,failure==='grid'?1:0);
+ }else{
+  assert.equal(f.state.checkoutResult.status,'confirmed',f.state.checkoutResult.error);
+  assert.deepEqual(f.merchant.counts,{selection:2,discount:0,opening:1,fill:1,pay:1,removal:0});
+ }
+});
+
+test('expired release basket observation is replaced with a fresh read before any selection',async()=>{
+ const f=await navigationRun(),send=f.worker.chrome.tabs.sendMessage;
+ const set=f.worker.chrome.storage.local.set;let basketReads=0;
+ f.worker.chrome.storage.local.set=async value=>{
+  if(value.result?.status==='complete'&&basketReads===1)f.merchant.clock+=11000;
+  return set(value);
+ };
+ f.worker.chrome.tabs.sendMessage=async(id,request)=>{
+  if(request.kind==='basket-read'&&++basketReads===2)f.merchant.selected();
+  return send(id,request);
+ };
+ await f.worker.alarm({name:'release'});
+ assert.equal(f.state.checkoutResult.status,'stopped');
+ assert.match(f.state.checkoutResult.error,/Existing basket items/);
+ assert.equal(basketReads,2);assert.equal(f.state.checkoutRecords,undefined);
+ assert.ok(f.state.runHistory.some(run=>run.steps.some(step=>step.name==='release-basket-read-expired')));
+ assert.ok(Object.values(f.merchant.counts).every(count=>count===0));
+});
+
 test('scheduled release reuses one freshly read grid and verified basket through one fake payment',async()=>{
  const f=await navigationRun();await f.worker.alarm({name:'release'});
  assert.equal(f.state.checkoutResult?.status,'confirmed',f.state.checkoutResult?.error||f.state.result?.error);
