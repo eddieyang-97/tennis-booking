@@ -52,6 +52,7 @@ export async function prepareCheckout(slot,deps,{test=false,adopt=false,basketOn
  const originalKey=key;
  let record=records.find(r=>r.key===key);
  if(record&&!!record.checkoutTestOnly!==checkoutTestOnly)throw Error('Another checkout requires reconciliation');
+ if(record?.selectionNotSent)throw Error('Selection was not sent; resolve the basket before continuing');
  if(record && (record.manualPaymentReportedAt || record.paymentDispatchedAt || ['payment-dispatched','payment-uncertain'].includes(record.phase)))throw Error('Payment requires receipt reconciliation; checkout preparation cannot reset it');
  if(records.some(r=>r.status==='confirmed' && r.slot.date===slot.date))throw Error('A booking for this date is already confirmed');
  if(pendingAttempts(records).some(r=>r.key!==key))throw Error('Another checkout requires reconciliation');
@@ -83,6 +84,13 @@ export async function prepareCheckout(slot,deps,{test=false,adopt=false,basketOn
   record={...record,freeBookingAllowed:true};
   if(Number.isInteger(deps.tabId))record={...record,tabId:deps.tabId};
   await persist('selection-dispatched');
+  if(deps.beforeSelection){
+   try{await deps.beforeSelection(slot);}
+   catch(error){
+    record={...record,selectionNotSent:true,selectionFailure:failureFor(error)};
+    throw error;
+   }
+  }
   try{const selected=await deps.select(slot);if(selected?.selectionDiagnostic)record={...record,selectionDiagnostic:selected.selectionDiagnostic};}catch(error){
    if(error.selectionDiagnostic)record={...record,selectionDiagnostic:error.selectionDiagnostic};
    record={...record,selectionFailure:failureFor(error)};
