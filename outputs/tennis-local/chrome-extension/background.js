@@ -195,6 +195,7 @@ async function automaticPayment(test=false,scheduled=false,basketHandoff=null) {
    trace=newRun('payment-reconciliation',record.slot.date);await step('started');
    return await finishPaidRecord(record,scheduled);
   }
+  if(record?.selectionNotSent)throw Error('Selection was not sent; resolve the basket before continuing');
   assertCardFillProvenance(record);
   if(test && checkoutRecords.some(r=>r.test&&r.status==='confirmed'))throw Error('This paid test is already confirmed; it cannot be charged again');
   if(test){tab=(await readTab(()=>chrome.tabs.query({active:true,currentWindow:true})))[0];if(![BASE+'/basket',BASE+'/basket/pay/card'].includes(tab?.url))throw Error('Open the £2.50 test basket or card checkout');}
@@ -312,48 +313,68 @@ async function checkout(expectedDay=null,scheduled=false,basketOnly=false,discou
   // Never navigate away from a card form or bank challenge to "resume" selection.
   if(pending && tab.url!==BASE+'/basket')throw Error('Checkout/payment is in progress; use Verify payment confirmation');
   let selectionStarted=false,basketLoaded=!pending&&!reuseGrid;
+  let basketReadStartedAt=gridHandoff?.initialBasket?.startedAt;
+  const basketAge=()=>Date.now()-basketReadStartedAt;
+  const basketIsFresh=()=>basketAge()>=0&&basketAge()<RELEASE_BASKET_MAX_AGE_MS;
+  const refreshInitialBasket=async(timeoutMs=pageReadBudget(scheduled))=>{
+   basketReadStartedAt=Date.now();
+   const response=await readPageState(chrome.tabs,BASE+'/basket',{kind:'basket-read'},{timeoutMs,step});
+   if(!response.ok)throw Object.assign(Error(response.error),failureFor(response));
+   await step('basket-observed',basketEvidence(response.value,slot));
+   return response.value;
+  };
   const read=async()=>{
-   let response;
    if(reuseGrid&&!selectionStarted){
     const initial=gridHandoff.initialBasket;
     if(initial){
-     const ageMs=Date.now()-initial.startedAt;
      // Never discard evidence of existing items, even when the read is old.
-     if(initial.value.empty!==true||(ageMs>=0&&ageMs<RELEASE_BASKET_MAX_AGE_MS)){
-      await step('release-basket-read-reused',{ageMs,basketEmpty:initial.value.empty===true});
+     if(initial.value.empty!==true||basketIsFresh()){
+      await step('release-basket-read-reused',{ageMs:basketAge(),basketEmpty:initial.value.empty===true});
       await step('basket-observed',basketEvidence(initial.value,slot));return initial.value;
      }
-     await step('release-basket-read-expired',{ageMs});
+     await step('release-basket-read-expired',{ageMs:basketAge()});
     }
     // Refresh older evidence without navigating away from the grid.
-    response=await readPageState(chrome.tabs,BASE+'/basket',{kind:'basket-read'},{timeoutMs:pageReadBudget(scheduled),step});
-   }else{
-    if(!basketLoaded){
-     const current=await readTab(()=>chrome.tabs.get(tab.id));
-     if(![BASE+'/basket',`${BASE}/book/courts/${slot.venue}/${slot.date}#book`].includes(current.url))throw Object.assign(Error('Checkout tab route changed; no basket navigation sent'),{pageCode:'PAGE_BASKET_ROUTE_CHANGED'});
-    }
-    response=await readPageState(chrome.tabs,BASE+'/basket',{kind:'basket-read'},{tabId:tab.id,navigate:!basketLoaded,timeoutMs:pageReadBudget(scheduled),step});
-    basketLoaded=true;
+    return refreshInitialBasket();
    }
+   if(!basketLoaded){
+    const current=await readTab(()=>chrome.tabs.get(tab.id));
+    if(![BASE+'/basket',`${BASE}/book/courts/${slot.venue}/${slot.date}#book`].includes(current.url))throw Object.assign(Error('Checkout tab route changed; no basket navigation sent'),{pageCode:'PAGE_BASKET_ROUTE_CHANGED'});
+   }
+   const response=await readPageState(chrome.tabs,BASE+'/basket',{kind:'basket-read'},{tabId:tab.id,navigate:!basketLoaded,timeoutMs:pageReadBudget(scheduled),step});
+   basketLoaded=true;
    if(!response.ok)throw Error(response.error);await step('basket-observed',basketEvidence(response.value,slot));return response.value;
+  };
+  const readSelectionGrid=async s=>{
+   const url=`${BASE}/book/courts/${s.venue}/${s.date}#book`,request={kind:'grid',venue:s.venue,day:s.date};
+   const grid=reuseGrid
+    ?await readGrid(chrome.tabs,url,request,{tabId:tab.id,navigate:false,step,...gridReadPolicy(scheduled)})
+    :await readPage(url,request,{scheduled});
+   if(!grid.ok)throw Error(grid.error);
+   if(reuseGrid&&!candidates(grid.rows,s.venue,s.date,{settings}).some(candidate=>candidate.totalGBP===s.totalGBP&&checkoutKey({...candidate,venue:s.venue},false,settings)===checkoutKey(s,false,settings)))throw Object.assign(Error('Selected slot availability or price changed; no selection sent'),{gridCode:'GRID_CANDIDATE_CHANGED'});
   };
   const output=await prepareCheckout(slot,{
    tabId:tab.id,
    load:async()=> (await chrome.storage.local.get('checkoutRecords')).checkoutRecords||[],
    save:async records=>{const record={...records.at(-1),preparationRunId:trace.record.id};await chrome.storage.local.set({checkoutRecords:[...records.slice(0,-1),record]});await step(record.phase,{key:record.key,...(record.fallbackFrom?{fallbackFrom:record.fallbackFrom}:{})});},
-   read,select:async s=>{
+   read,
+   ...(reuseGrid?{beforeSelection:async s=>{
+    await readSelectionGrid(s);
+    if(basketIsFresh())return;
+    await step('release-basket-read-expired',{ageMs:basketAge(),beforeSelection:true});
+    const basket=await refreshInitialBasket(RELEASE_BASKET_MAX_AGE_MS);
+    if(basket.empty!==true||!Array.isArray(basket.items)||basket.items.length!==0)throw Error('Existing basket items or ambiguous basket; no selection sent');
+    if(!basketIsFresh())throw Object.assign(Error('Basket freshness window expired; no selection sent'),{pageCode:'PAGE_READY_TIMEOUT'});
+   }}:{}),
+   select:async s=>{
     selectionStarted=true;basketLoaded=false;
-    const url=`${BASE}/book/courts/${s.venue}/${s.date}#book`,request={kind:'grid',venue:s.venue,day:s.date};
-    const grid=reuseGrid
-     ?await readGrid(chrome.tabs,url,request,{tabId:tab.id,navigate:false,step,...gridReadPolicy(scheduled)})
-     :await readPage(url,request,{scheduled});
-    if(!grid.ok)throw Error(grid.error);
-    if(reuseGrid&&!candidates(grid.rows,s.venue,s.date,{settings}).some(candidate=>candidate.totalGBP===s.totalGBP&&checkoutKey({...candidate,venue:s.venue},false,settings)===checkoutKey(s,false,settings)))throw Object.assign(Error('Selected slot availability or price changed; no selection sent'),{gridCode:'GRID_CANDIDATE_CHANGED'});
+    if(!reuseGrid)await readSelectionGrid(s);
     // One mutation dispatch. Reconciliation occurs in prepareCheckout, never replay.
-    const timeoutMs=pageReadBudget(scheduled);await step('selection-message-dispatched',{timeoutMs});
-    const dispatched=Date.now();let response;
-    try{response=await chrome.tabs.sendMessage(tab.id,{kind:'select-slot',slot:s,selectionTimeoutMs:timeoutMs});}
+    const timeoutMs=pageReadBudget(scheduled),dispatched=Date.now();let selection;
+    try{selection=chrome.tabs.sendMessage(tab.id,{kind:'select-slot',slot:s,selectionTimeoutMs:timeoutMs}).catch(()=>undefined);}
     catch{/* Lost acknowledgement remains uncertain; never replay this message. */}
+    await step('selection-message-dispatched',{timeoutMs});
+    const response=await selection;
     const selectionDiagnostic=selectionEvidence(response?.selectionDiagnostic||response?.value?.selectionDiagnostic),failure=selectionFailure(response);
     await step('selection-result',{ok:response?.ok===true,messageElapsedMs:Math.max(0,Date.now()-dispatched),selectionDiagnostic,...(response?.ok===true?{}:failureFor(failure))});
     if(response?.ok!==true)throw Object.assign(failure,{selectionDiagnostic});

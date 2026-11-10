@@ -273,6 +273,57 @@ test('scheduled release reuses one freshly read grid and verified basket through
  assert.equal(JSON.stringify(f.state).includes('gridTabId'),false,'tab handoff must not become durable authorization');
 });
 
+for(const outcome of ['empty','nonempty','unreadable'])test(`release refreshes the basket after a slow grid re-read: ${outcome}`,async()=>{
+ const f=await navigationRun(),send=f.worker.chrome.tabs.sendMessage;
+ let gridReads=0,basketReads=0;
+ f.worker.chrome.tabs.sendMessage=async(id,request)=>{
+  if(request.kind==='grid'&&++gridReads===2){
+   f.merchant.clock+=11000;
+   if(outcome==='nonempty'){
+    // Another tab added the exact same candidate. This worker must not adopt it.
+    f.merchant.slot={...f.merchant.slot,venue:'bethnal-green-gardens',date:f.state.job.day};f.merchant.selected();
+   }
+  }
+  if(request.kind==='basket-read'&&++basketReads===2&&outcome==='unreadable')return {ok:false,reasonCode:'BASKET_LAYOUT_UNKNOWN',error:'Unknown basket layout'};
+  return send(id,request);
+ };
+ await f.worker.alarm({name:'release'});
+ assert.equal(f.navigations.filter(n=>n.kind==='create'&&n.url.endsWith('/basket')).length,2);
+ if(outcome==='empty'){
+  assert.equal(f.state.checkoutResult.status,'confirmed',f.state.checkoutResult.error);
+  assert.deepEqual(f.merchant.counts,{selection:2,discount:0,opening:1,fill:1,pay:1,removal:0});
+ }else{
+  assert.equal(f.state.checkoutResult.status,'stopped');
+  assert.equal(f.state.checkoutResult.reasonCode,outcome==='nonempty'?'BASKET_NOT_EMPTY':'BASKET_LAYOUT_UNKNOWN');
+  assert.equal(f.state.checkoutRecords[0].selectionNotSent,true);
+  if(outcome==='nonempty')assert.deepEqual(f.state.checkoutRecords[0].slot,f.merchant.slot);
+  assert.equal(f.reads.some(read=>read.kind==='select-slot'),false);
+  const restarted=await startWorker(f.merchant,f.state,'recreated');
+  assert.equal((await restarted.send({kind:'prepareCheckout'})).status,'stopped');
+  assert.equal((await restarted.send({kind:'payCheckout'})).status,'stopped');
+  assert.ok(Object.values(f.merchant.counts).every(count=>count===0));
+ }
+});
+
+test('an intervening server basket change within the release window stops checkout after selection',async()=>{
+ const f=await navigationRun(),send=f.worker.chrome.tabs.sendMessage;
+ let gridReads=0;
+ f.worker.chrome.tabs.sendMessage=async(id,request)=>{
+  if(request.kind==='grid'&&++gridReads===2){
+   f.merchant.selected();
+   f.merchant.basket.items=[{...f.merchant.basket.items[0],court:4}];
+  }
+  const prior=request.kind==='select-slot'?structuredClone(f.merchant.basket.items):null;
+  const response=await send(id,request);
+  if(prior)f.merchant.basket.items.push(...prior);
+  return response;
+ };
+ await f.worker.alarm({name:'release'});
+ assert.equal(f.state.checkoutResult.reasonCode,'BASKET_MISMATCH');
+ assert.equal(f.navigations.filter(n=>n.kind==='create'&&n.url.endsWith('/basket')).length,1);
+ assert.deepEqual(f.merchant.counts,{selection:2,discount:0,opening:0,fill:0,pay:0,removal:0});
+});
+
 test('pre-payment refresh detects server basket changes hidden by an unchanged tab DOM',async()=>{
  const f=await navigationRun(),snapshots=new Map(),{create,update,sendMessage}=f.worker.chrome.tabs;let selectedRead=false;
  f.worker.chrome.tabs.create=async changes=>{const tab=await create(changes);if(changes.url.endsWith('/basket'))snapshots.set(tab.id,structuredClone(f.merchant.basket));return tab;};

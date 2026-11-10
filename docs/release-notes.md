@@ -6,7 +6,7 @@ Notes below describe changes made *at each release*, not instructions to install
 
 ## v0.9.14 — Overlapping release reads
 
-- Starts the scheduled account check, preferred grid read and fresh basket read together. Selection waits for all required checks. Empty-basket evidence from the overlapping read is refreshed after ten seconds.
+- Starts the scheduled account check, preferred grid read and fresh basket read together. Immediately before selection, the worker refreshes basket evidence that has reached ten seconds old and stops if it cannot establish emptiness.
 - Worker regressions and isolated Chromium cover the simulated release and submission safeguards. Live latency and merchant acceptance remain unverified.
 
 ## v0.9.13 — Court preference
