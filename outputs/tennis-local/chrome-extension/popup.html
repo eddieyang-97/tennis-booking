@@ -1,5 +1,5 @@
 <!doctype html><html lang="en"><meta charset="utf-8"><title>Tennis booking</title>
-<style>[hidden]{display:none!important}body{font:13px system-ui,sans-serif;width:440px;margin:12px;color:#17392f}h2{font-size:18px;margin:12px 0}h3{font-size:14px;margin:12px 0 6px}summary{cursor:pointer;font-weight:600}details{margin:12px 0}fieldset{border:1px solid #bccdc5;border-radius:8px;margin:12px 0;padding:10px}label{display:block;margin:6px 0}select,input{font:12px system-ui,sans-serif;padding:4px;max-width:100%;box-sizing:border-box}button{font:12px system-ui,sans-serif;padding:5px;margin:3px 0}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px}.note{font-size:12px;color:#496158}.arm-actions{display:flex;gap:8px;align-items:stretch}.arm-actions button{flex:1}#readiness{background:#edf7f1;padding:8px;border-radius:8px;white-space:pre-line}</style>
+<style>[hidden]{display:none!important}body{font:13px system-ui,sans-serif;width:440px;margin:12px;color:#17392f}h2{font-size:18px;margin:12px 0}h3{font-size:14px;margin:12px 0 6px}summary{cursor:pointer;font-weight:600}details{margin:12px 0}fieldset{border:1px solid #bccdc5;border-radius:8px;margin:12px 0;padding:10px}label{display:block;margin:6px 0}select,input{font:12px system-ui,sans-serif;padding:4px;max-width:100%;box-sizing:border-box}button{font:12px system-ui,sans-serif;padding:5px;margin:3px 0}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px}.note{font-size:12px;color:#496158}.arm-actions{display:flex;gap:8px;align-items:stretch}.arm-actions button{flex:1;min-width:0}#readiness{background:#edf7f1;padding:8px;border-radius:8px;white-space:pre-line}</style>
 <body><h2>Tennis booking</h2>
 <div id="readiness" role="status">Loading booking status…</div>
 <p id="cardStatus" role="status">Checking local card…</p>
@@ -22,8 +22,7 @@
 </fieldset>
 <p><label>Discount code (optional) <input id="discountCode" type="text" maxlength="10" autocomplete="off" placeholder="Leave blank for no code"></label></p>
 <p>A supplied code is saved with this armed run. Checkout stops if its discount cannot be verified. Editing this field does not change an already armed run; arm again to update it.</p>
-<div class="arm-actions"><button id="fullRecovery">Full recovery</button><button id="armPayment">Arm midnight booking and payment</button></div>
-<p><button id="cancel">Cancel scheduled run</button></p>
+<div class="arm-actions"><button id="armPayment">Arm midnight booking and payment</button><button id="fullRecovery">Full recovery</button><button id="cancel">Cancel scheduled run</button></div>
 <p id="armBlocker" role="status"></p>
 <p class="note">Full recovery retires eligible earlier attempts and resets interrupted availability checks without scheduling. Arm separately checks the card, account and empty basket, then schedules this date. Cancel an existing scheduled run before recovery. Earlier outcomes stay unknown in history; no booking or payment is repeated or cancelled.</p>
 <p class="note">Each arm saves a copy of these preferences. Editing the form does not change an armed run or a pending checkout. One booking per playing date; any playing day is supported.</p>
