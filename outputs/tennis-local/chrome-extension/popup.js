@@ -27,6 +27,7 @@ async function refresh(initial=false,show=false){
  const status=await chrome.runtime.sendMessage({kind:'status'}),view=readiness(status,Date.now(),day.value);
  field('readiness').textContent=[view.summary,...view.lines].join('\n');
  field('armBlocker').textContent=view.armBlocker||'';
+ field('fullRecovery').disabled=!!status.job;
  field('reloadExtension').disabled=!!(status.job||status.running);
  const recovery=view.recovery;
  const earlier=(status.checkoutRecords||[]).filter(r=>r.status!=='confirmed'&&isRetiredAttempt(r));
@@ -65,7 +66,7 @@ async function refresh(initial=false,show=false){
  if(initial&&!formEdited){const pendingTest=pendingAttempts(status.checkoutRecords).find(record=>record.checkoutTestOnly);writeSettings(status.job?.settings||status.bookingSettings||DEFAULT_SETTINGS);field('discountCode').value=status.job?.discountCode??pendingTest?.discountCode??'';}
  if(show)output.textContent=JSON.stringify(status,null,2);
 }
-async function send(kind){if(kind==='armPayment')field('armPayment').disabled=true;output.textContent=kind==='armPayment'?'Recovering earlier attempts and checking readiness…':'Checking…';try{
+async function send(kind){let statusRefreshed=false;const recoveryWasDisabled=field('fullRecovery').disabled;const armAction=['armPayment','fullRecovery'].includes(kind);if(armAction)for(const id of ['armPayment','fullRecovery'])field(id).disabled=true;output.textContent=kind==='armPayment'?'Checking readiness and arming…':kind==='fullRecovery'?'Recovering earlier attempts…':'Checking…';try{
  const message={kind:kind==='verifyEarlier'?'verifyPayment':kind==='reportEarlierManualPayment'?'reconcileManualPayment':kind,day:day.value};
  if(['verifyEarlier','reportEarlierManualPayment'].includes(kind))message.recordKey=field('earlierAttempt').value;
  if(kind==='reportEarlierManualPayment')message.reference=field('earlierManualReference').value;
@@ -74,10 +75,10 @@ async function send(kind){if(kind==='armPayment')field('armPayment').disabled=tr
  if(kind==='reconcileSelection'){message.unpaidTestConfirmed=field('unpaidTestConfirmed').checked;message.attestationIdentity=attestationIdentity;}
  if(kind==='archiveFailedCheckout'){message.noPaymentConfirmed=field('failedCheckoutNoPayment').checked;message.attestationIdentity=failedAttestationIdentity;}
  if(kind==='reconcileManualPayment')message.reference=field('manualReference').value;
- const result=await chrome.runtime.sendMessage(message);output.textContent=result.status==='stopped'?result.error:kind==='armPayment'&&result.status==='armed'?`Armed for ${result.day}. Initial checks passed; scheduled preflight is pending. Keep Chrome open and awake.${result.retiredAttempts?` ${result.retiredAttempts} earlier attempt(s) kept in history with unknown outcome.`:''}`:JSON.stringify(result,null,2);
- try{await refresh();}catch{/* Keep the completed action result visible. */}
-}catch(error){output.textContent=error.message;}finally{if(kind==='armPayment')field('armPayment').disabled=false;}}
-for(const kind of ['reloadExtension','openCardVault','payCheckout','armPayment','check','resume','prepareCheckout','verifyPayment','cancel','reset','reconcileBasket','reconcileSelection','archiveFailedCheckout','saveSettings','reconcileManualPayment','testDiscountCheckout','resetUnpaidTest','assessRecovery','verifyEarlier','reportEarlierManualPayment'])field(kind).addEventListener('click',()=>send(kind));
+ const result=await chrome.runtime.sendMessage(message);output.textContent=result.status==='stopped'?result.error:kind==='fullRecovery'&&result.status==='recovered'?`Recovery finished. ${result.retiredAttempts} earlier attempt(s) retained with unknown outcome. No run was armed. Click Arm when ready.`:kind==='armPayment'&&result.status==='armed'?`Armed for ${result.day}. Initial checks passed; scheduled preflight is pending. Keep Chrome open and awake.`:JSON.stringify(result,null,2);
+ try{await refresh();statusRefreshed=true;}catch{/* Keep the completed action result visible. */}
+}catch(error){output.textContent=error.message;}finally{if(armAction){field('armPayment').disabled=false;if(!statusRefreshed)field('fullRecovery').disabled=recoveryWasDisabled;}}}
+for(const kind of ['reloadExtension','openCardVault','payCheckout','fullRecovery','armPayment','check','resume','prepareCheckout','verifyPayment','cancel','reset','reconcileBasket','reconcileSelection','archiveFailedCheckout','saveSettings','reconcileManualPayment','testDiscountCheckout','resetUnpaidTest','assessRecovery','verifyEarlier','reportEarlierManualPayment'])field(kind).addEventListener('click',()=>send(kind));
 field('earlierAttempt').addEventListener('change',updateEarlierManual);
 for(const control of document.querySelectorAll('input,select'))control.addEventListener('input',()=>{formEdited=true;});
 field('preferredHours').addEventListener('change',()=>{if(Number(field('minHours').value)>Number(field('preferredHours').value))field('minHours').value=field('preferredHours').value;});

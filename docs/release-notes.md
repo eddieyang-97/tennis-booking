@@ -4,6 +4,12 @@ This is the historical change log for the **active Chrome extension** in [`outpu
 
 Notes below describe changes made *at each release*, not instructions to install or downgrade to older builds. Historical test counts and unverified behaviors are not current release-quality claims. For up-to-date setup, use the [project README](../README.md) and [extension usage guide](../outputs/tennis-local/chrome-extension/README.md). For original investigation and detailed timestamps, see [payment-system.md](payment-system.md).
 
+## v0.9.15 - Separate recovery and arming
+
+- Display Arm, Recover and Cancel on one row, in that order, with detailed tooltips and a collapsed Help section. Full recovery retires eligible older attempts and resets interrupted read-only checks without scheduling; Arm separately checks readiness and schedules.
+- Preserve financial journals and same-date protections. Recovery refuses an armed job; arming does not retire attempts or reset interrupted checks.
+- 185 worker regressions and 13 recovery/readiness tests passed locally. Live unattended booking acceptance remains unverified.
+
 ## v0.9.14 — Overlapping release reads
 
 - Starts the scheduled account check, preferred grid read and fresh basket read together. Immediately before selection, the worker refreshes basket evidence that has reached ten seconds old and stops if it cannot establish emptiness.
