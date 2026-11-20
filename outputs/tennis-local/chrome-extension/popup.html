@@ -17,65 +17,93 @@
 <label><input id="allowCourtSwitch" type="checkbox" checked> Allow switching courts between consecutive hours</label>
 <label>Maximum total payment (£) <input id="maxTotalGBP" type="number" min="0.01" max="9999.99" step="0.01" value="14.00"></label>
 <label>Maximum for a one-hour booking (£) <input id="maxOneHourGBP" type="number" min="0.01" max="9999.99" step="0.01" value="7.00"></label>
-<p class="note">Every hour must fit inside the selected range. Desired duration is preferred within the first available venue. Caps apply to the full court price before any discount.</p>
+
 <button id="saveSettings">Save preferences</button>
 </fieldset>
 <p><label>Discount code (optional) <input id="discountCode" type="text" maxlength="10" autocomplete="off" placeholder="Leave blank for no code"></label></p>
-<p>A supplied code is saved with this armed run. Checkout stops if its discount cannot be verified. Editing this field does not change an already armed run; arm again to update it.</p>
-<div class="arm-actions"><button id="armPayment">Arm midnight booking and payment</button><button id="fullRecovery">Full recovery</button><button id="cancel">Cancel scheduled run</button></div>
+
+<div class="arm-actions"><button id="armPayment" title="Check card, account and empty basket, then schedule midnight booking and payment for the selected date.">Arm</button><button id="fullRecovery" title="Retire eligible earlier attempts and reset interrupted availability checks. Preserves journals; does not schedule, book or pay. Cancel a scheduled run first.">Recover</button><button id="cancel" title="Cancel the scheduled run. Does not cancel a merchant booking or payment.">Cancel</button></div>
 <p id="armBlocker" role="status"></p>
-<p class="note">Full recovery retires eligible earlier attempts and resets interrupted availability checks without scheduling. Arm separately checks the card, account and empty basket, then schedules this date. Cancel an existing scheduled run before recovery. Earlier outcomes stay unknown in history; no booking or payment is repeated or cancelled.</p>
-<p class="note">Each arm saves a copy of these preferences. Editing the form does not change an armed run or a pending checkout. One booking per playing date; any playing day is supported.</p>
-<p>Unlock the card file before the run and keep Chrome open and the laptop awake. Payments use the local card directly; a locked card stops the run. Human verification or bank approval can stop a run. Uncertain payments are never submitted again.</p>
-<p class="note">A scheduled partial selection can proceed for one verified intended hour only when the saved minimum duration and one-hour cap permit it. Extra or mismatched items stop checkout.</p>
+
+
+
+
 <h3>Availability</h3>
-<p><button id="check">Check availability now</button> Reads the selected date and preferences; no courts are selected.</p>
+<p><button title="Reads the selected date and preferences; no courts are selected." id="check">Check availability now</button></p>
 <p id="availabilityHelp" class="note" role="status"></p>
-<p id="resumeRow" hidden><button id="resume">Resume availability check</button> After completing site verification in the retained tab. This does not resume checkout.</p>
-<p><button id="downloadLog">Download diagnostic log</button> Saves a JSON file for troubleshooting, with booking references and run history. Excludes card details, passphrases and discount codes; nothing is uploaded.</p>
+<p id="resumeRow" hidden><button title="After completing site verification in the retained tab. This does not resume checkout." id="resume">Resume availability check</button></p>
+<p><button title="Saves a JSON file for troubleshooting, with booking references and run history. Excludes card details, passphrases and discount codes; nothing is uploaded." id="downloadLog">Download diagnostic log</button></p>
 <details id="diagnosticControls"><summary>Advanced diagnostics and recovery</summary>
-<p class="note">Full recovery handles eligible older attempts; Arm checks readiness and schedules separately. These controls are for inspecting a current problem or checking an earlier outcome.</p>
+
 <div id="historyOutcomeRow" hidden>
 <label>Earlier attempt <select id="earlierAttempt"></select></label>
-<p><button id="verifyEarlier">Verify earlier outcome (read only)</button> Preserves the original journal. Does not cancel or resubmit. Cancel the scheduled run before inspecting an earlier outcome.</p>
+<p><button title="Preserves the original journal. Does not cancel or resubmit. Cancel the scheduled run before inspecting an earlier outcome." id="verifyEarlier">Verify earlier outcome (read only)</button></p>
 </div>
 <div id="earlierManualPaymentRow" hidden>
 <label>Earlier manual payment confirmation reference <input id="earlierManualReference" type="text" maxlength="22" autocomplete="off"></label>
-<p><button id="reportEarlierManualPayment">I paid the selected earlier checkout — verify</button> Only if you actually paid that checkout manually. Saves your report before read-only verification; never submits Pay. Cancel a scheduled run first.</p>
+<p><button title="Only if you actually paid that checkout manually. Saves your report before read-only verification; never submits Pay. Cancel a scheduled run first." id="reportEarlierManualPayment">I paid the selected earlier checkout — verify</button></p>
 </div>
 <details id="recoveryControls" hidden><summary>Recover a stopped booking</summary>
 <p id="recoveryHelp" class="note" role="status"></p>
-<p id="assessRecoveryRow" hidden><button id="assessRecovery">Assess recovery (read only)</button> Inspects the journal and open purchase pages; does not pay, cancel or remove items.</p>
-<p id="verifyPaymentRow" hidden><button id="verifyPayment">Verify booking/payment outcome</button> Read-only receipt reconciliation, including free bookings. Never submits another booking or charge.</p>
+<p id="assessRecoveryRow" hidden><button title="Inspects the journal and open purchase pages; does not pay, cancel or remove items." id="assessRecovery">Assess recovery (read only)</button></p>
+<p id="verifyPaymentRow" hidden><button title="Read-only receipt reconciliation, including free bookings. Never submits another booking or charge." id="verifyPayment">Verify booking/payment outcome</button></p>
 <div id="reconcileManualPaymentRow" hidden>
 <label>Manually paid booking reference <input id="manualReference" type="text" maxlength="22" autocomplete="off" placeholder="Reference from your confirmation"></label>
-<p><button id="reconcileManualPayment">Verify manual payment</button> Only if you actually paid this pending checkout manually. Checks its reference and amount in purchase history; does not charge your card or prove an active reservation.</p>
+<p><button title="Only if you actually paid this pending checkout manually. Checks its reference and amount in purchase history; does not charge your card or prove an active reservation." id="reconcileManualPayment">Verify manual payment</button></p>
 </div>
-<p id="resetUnpaidTestRow" hidden><button id="resetUnpaidTest">Clear unfinished unpaid test</button> Removes only verified test items. Paid or uncertain checkouts remain protected.</p>
+<p id="resetUnpaidTestRow" hidden><button title="Removes only verified test items. Paid or uncertain checkouts remain protected." id="resetUnpaidTest">Clear unfinished unpaid test</button></p>
 <div id="failedCheckoutRecovery" hidden>
 <p id="failedCheckoutGuide" class="note" role="status"></p>
 <label><input id="failedCheckoutNoPayment" type="checkbox"> I did not submit payment for the failed checkout shown above.</label>
-<p><button id="archiveFailedCheckout">Archive failed checkout</button> Requires an empty basket and no saved reference, card-fill or payment intent. Preserves its journal; does not cancel a merchant purchase.</p>
+<p><button title="Requires an empty basket and no saved reference, card-fill or payment intent. Preserves its journal; does not cancel a merchant purchase." id="archiveFailedCheckout">Archive failed checkout</button></p>
 </div>
 <p id="testRecoveryGuide" class="note" role="status" style="white-space:pre-line" hidden></p>
-<p id="reconcileSelectionRow" hidden><button id="reconcileSelection">Reconcile cleared selection</button> After manually removing an incomplete selection from the site basket. Submitted booking/payment records remain protected.</p>
+<p id="reconcileSelectionRow" hidden><button title="After manually removing an incomplete selection from the site basket. Submitted booking/payment records remain protected." id="reconcileSelection">Reconcile cleared selection</button></p>
 <label id="unpaidTestConfirmedRow" hidden><input id="unpaidTestConfirmed" type="checkbox"> For a checkout-page test only: I did not submit payment. Return to the basket, remove its items and discount, then reconcile the cleared selection.</label>
-<p id="reconcileBasketRow" hidden><button id="reconcileBasket">Verify cleared legacy test basket</button> Checks that the basket is empty for the old test record; does not remove items or clear a payment journal.</p>
+<p id="reconcileBasketRow" hidden><button title="Checks that the basket is empty for the old test record; does not remove items or clear a payment journal." id="reconcileBasket">Verify cleared legacy test basket</button></p>
 </details>
 <details id="manualBookingControls"><summary>Manual booking</summary>
 <p id="manualBookingHelp" class="note" role="status"></p>
-<p id="prepareCheckoutRow" hidden><button id="prepareCheckout">Prepare or resume checkout</button> Can select courts using the saved availability result.</p>
-<p id="payCheckoutRow" hidden><button id="payCheckout">Continue checkout (may book or pay)</button> Uses the saved authorization. Can submit a real booking or payment.</p>
+<p id="prepareCheckoutRow" hidden><button title="Can select courts using the saved availability result." id="prepareCheckout">Prepare or resume checkout</button></p>
+<p id="payCheckoutRow" hidden><button title="Uses the saved authorization. Can submit a real booking or payment." id="payCheckout">Continue checkout (may book or pay)</button></p>
 </details>
 <details id="developerTools"><summary>Developer tools</summary>
-<p><button id="reloadExtension">Reload updated extension</button> Only while no job is armed or running. Preserves checkout journals and preferences; locks the card. Reopen the popup and unlock afterward.</p>
-<p>Tests can select courts, apply a discount and change the live basket. They do not submit booking completion or payment.</p>
-<p><button id="testDiscountCheckout">Test basket, discount and checkout (no booking/payment)</button> Check availability with your chosen settings first. Stops at the card page or verified free basket. Changing a test can trigger guarded cleanup of its verified unpaid items.</p>
+<p><button title="Only while no job is armed or running. Preserves checkout journals and preferences; locks the card. Reopen the popup and unlock afterward." id="reloadExtension">Reload updated extension</button></p>
+
+<p><button title="Check availability with your chosen settings first. Stops at the card page or verified free basket. Changing a test can trigger guarded cleanup of its verified unpaid items." id="testDiscountCheckout">Test basket, discount and checkout (no booking/payment)</button></p>
 <p id="developerHelp" class="note" role="status"></p>
 
-<p id="resetRow" hidden><button id="reset">Reset interrupted availability check</button> Clears only the interrupted read-only check lock; preserves booking/payment journals.</p>
-<p><button id="showStatus">Show diagnostic JSON</button> Raw local status can include private discount codes and references. Prefer the sanitized download when requesting help.</p>
+<p id="resetRow" hidden><button title="Clears only the interrupted read-only check lock; preserves booking/payment journals." id="reset">Reset interrupted availability check</button></p>
+<p><button title="Raw local status can include private discount codes and references. Prefer the sanitized download when requesting help." id="showStatus">Show diagnostic JSON</button></p>
 </details>
 </details>
-<p>Direct-card payment and paid purchase recovery are supported. An actual midnight run remains to be verified.</p>
+
+<details id="helpControls"><summary>Help</summary>
+<p>Every hour must fit inside the selected range. Desired duration is preferred within the first available venue. Caps apply to the full court price before any discount.</p>
+<p>A supplied code is saved with this armed run. Checkout stops if its discount cannot be verified. Editing this field does not change an already armed run; arm again to update it.</p>
+<p>Full recovery retires eligible earlier attempts and resets interrupted availability checks without scheduling. Arm separately checks the card, account and empty basket, then schedules this date. Cancel an existing scheduled run before recovery. Earlier outcomes stay unknown in history; no booking or payment is repeated or cancelled.</p>
+<p>Each arm saves a copy of these preferences. Editing the form does not change an armed run or a pending checkout. One booking per playing date; any playing day is supported.</p>
+<p>Unlock the card file before the run and keep Chrome open and the laptop awake. Payments use the local card directly; a locked card stops the run. Human verification or bank approval can stop a run. Uncertain payments are never submitted again.</p>
+<p>A scheduled partial selection can proceed for one verified intended hour only when the saved minimum duration and one-hour cap permit it. Extra or mismatched items stop checkout.</p>
+<p><strong>Check availability now:</strong> Reads the selected date and preferences; no courts are selected.</p>
+<p><strong>Resume availability check:</strong> After completing site verification in the retained tab. This does not resume checkout.</p>
+<p><strong>Download diagnostic log:</strong> Saves a JSON file for troubleshooting, with booking references and run history. Excludes card details, passphrases and discount codes; nothing is uploaded.</p>
+<p>Full recovery handles eligible older attempts; Arm checks readiness and schedules separately. These controls are for inspecting a current problem or checking an earlier outcome.</p>
+<p><strong>Verify earlier outcome (read only):</strong> Preserves the original journal. Does not cancel or resubmit. Cancel the scheduled run before inspecting an earlier outcome.</p>
+<p><strong>I paid the selected earlier checkout — verify:</strong> Only if you actually paid that checkout manually. Saves your report before read-only verification; never submits Pay. Cancel a scheduled run first.</p>
+<p><strong>Assess recovery (read only):</strong> Inspects the journal and open purchase pages; does not pay, cancel or remove items.</p>
+<p><strong>Verify booking/payment outcome:</strong> Read-only receipt reconciliation, including free bookings. Never submits another booking or charge.</p>
+<p><strong>Verify manual payment:</strong> Only if you actually paid this pending checkout manually. Checks its reference and amount in purchase history; does not charge your card or prove an active reservation.</p>
+<p><strong>Clear unfinished unpaid test:</strong> Removes only verified test items. Paid or uncertain checkouts remain protected.</p>
+<p><strong>Archive failed checkout:</strong> Requires an empty basket and no saved reference, card-fill or payment intent. Preserves its journal; does not cancel a merchant purchase.</p>
+<p><strong>Reconcile cleared selection:</strong> After manually removing an incomplete selection from the site basket. Submitted booking/payment records remain protected.</p>
+<p><strong>Verify cleared legacy test basket:</strong> Checks that the basket is empty for the old test record; does not remove items or clear a payment journal.</p>
+<p><strong>Prepare or resume checkout:</strong> Can select courts using the saved availability result.</p>
+<p><strong>Continue checkout (may book or pay):</strong> Uses the saved authorization. Can submit a real booking or payment.</p>
+<p><strong>Reload updated extension:</strong> Only while no job is armed or running. Preserves checkout journals and preferences; locks the card. Reopen the popup and unlock afterward.</p>
+<p>Tests can select courts, apply a discount and change the live basket. They do not submit booking completion or payment.</p>
+<p><strong>Test basket, discount and checkout (no booking/payment):</strong> Check availability with your chosen settings first. Stops at the card page or verified free basket. Changing a test can trigger guarded cleanup of its verified unpaid items.</p>
+<p><strong>Reset interrupted availability check:</strong> Clears only the interrupted read-only check lock; preserves booking/payment journals.</p>
+<p><strong>Show diagnostic JSON:</strong> Raw local status can include private discount codes and references. Prefer the sanitized download when requesting help.</p>
+</details>
 <pre id="result" aria-live="polite"></pre><script type="module" src="popup.js"></script></body></html>

@@ -253,6 +253,12 @@ try{
  await popup.locator('#fullRecovery').click();await popup.waitForFunction(()=>document.querySelector('#result').textContent.includes('Recovery finished.'));
  const recoveredStatus=await send({kind:'status'});assert.equal(recoveredStatus.job,undefined);assert.equal(recoveredStatus.running,null);assert.ok(Object.values(merchant.state.counts).every(n=>n===0));
  assert.deepEqual(await popup.locator('.arm-actions button').evaluateAll(buttons=>buttons.map(button=>button.id)),['armPayment','fullRecovery','cancel']);
+ assert.deepEqual(await popup.locator('.arm-actions button').allTextContents(),['Arm','Recover','Cancel']);
+ assert.ok((await popup.locator('.arm-actions button').evaluateAll(buttons=>buttons.map(button=>button.title))).every(Boolean));
+ assert.equal(await popup.locator('#helpControls').getAttribute('open'),null);
+ assert.match(await popup.locator('#helpControls').textContent(),/keep Chrome open and the laptop awake/);
+ assert.equal(await popup.getByText('Direct-card payment and paid purchase recovery are supported. An actual midnight run remains to be verified.').count(),0);
+ const buttonTops=await popup.locator('.arm-actions button').evaluateAll(buttons=>buttons.map(button=>button.getBoundingClientRect().top));assert.ok(buttonTops.every(top=>top===buttonTops[0]));
  await popup.locator('#armPayment').click();await popup.waitForFunction(()=>document.querySelector('#result').textContent.includes('Armed for '));
  let armStatus=await send({kind:'status'});assert.equal(armStatus.job.prepared,false);assert.ok(armStatus.job.armReadyAt);assert.equal(armStatus.running,null);assert.deepEqual(armStatus.checkoutResult,previousResult);
  const {runRetirement,...originalJournal}=armStatus.checkoutRecords[0];assert.deepEqual(originalJournal,old);assert.equal(runRetirement.reason,'release-window-passed');
