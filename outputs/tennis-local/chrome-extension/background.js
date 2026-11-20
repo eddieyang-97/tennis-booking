@@ -136,7 +136,8 @@ async function arm(day,mode='availability',code='',settings=null) {
   const {checkoutRecords=[],basketTest,running}=await chrome.storage.local.get(['checkoutRecords','basketTest','running']);
   assertFreshPlayingDate(checkoutRecords,day);
   if(running)throw Error('Use Full recovery to review the interrupted availability check before arming');
-  if(pendingAttempts(checkoutRecords).length)throw Error('Use Full recovery or inspect the current checkout before arming');
+  const pending=pendingAttempts(checkoutRecords);
+  if(pending.length)throw Object.assign(Error(pendingArmBlocker(pending)||'Use Full recovery or inspect the current checkout before arming'),{code:'UNRESOLVED_CHECKOUT',attemptedDay:day});
   if(basketTest&&basketTest.status!=='cleared'&&!isRetiredBasketTest(basketTest))throw Error('Use Full recovery or inspect the current basket test before arming');
   let armReadinessPassed=false;
   if(mode==='payment'){
