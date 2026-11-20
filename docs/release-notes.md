@@ -6,7 +6,7 @@ Notes below describe changes made *at each release*, not instructions to install
 
 ## v0.9.15 - Separate recovery and arming
 
-- Display Arm, Full recovery and Cancel on one row, in that order. Full recovery retires eligible older attempts and resets interrupted read-only checks without scheduling; Arm separately checks readiness and schedules.
+- Display Arm, Recover and Cancel on one row, in that order, with detailed tooltips and a collapsed Help section. Full recovery retires eligible older attempts and resets interrupted read-only checks without scheduling; Arm separately checks readiness and schedules.
 - Preserve financial journals and same-date protections. Recovery refuses an armed job; arming does not retire attempts or reset interrupted checks.
 - 185 worker regressions and 13 recovery/readiness tests passed locally. Live unattended booking acceptance remains unverified.
 
