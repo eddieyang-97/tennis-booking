@@ -824,7 +824,7 @@ test('Full recovery is separate from Arm: no tabs, alarms or merchant actions, a
  const blocked=await worker.send({kind:'armPayment',day:'2026-11-10'});
  assert.equal(blocked.status,'stopped');assert.deepEqual(f.state.checkoutRecords,original);assert.ok(f.state.running);assert.equal(alarms,0);
  const recovered=await worker.send({kind:'fullRecovery',day:'2026-11-10'});
- assert.equal(recovered.status,'recovered');assert.equal(recovered.retiredAttempts,1);assert.equal(f.state.job,undefined);assert.equal(f.state.running,null);
+ assert.equal(recovered.status,'recovered');assert.equal(recovered.retiredAttempts,1);assert.equal(Object.hasOwn(recovered,'booked'),false);assert.equal(Object.hasOwn(recovered,'paid'),false);assert.equal(f.state.job,undefined);assert.equal(f.state.running,null);
  assert.equal(worker.tabs.size,0);assert.equal(alarms,0);assert.ok(Object.values(f.merchant.counts).every(n=>n===0));
  const retired=structuredClone(f.state.checkoutRecords);
  worker=await startWorker(f.merchant,f.state,'after-recovery');

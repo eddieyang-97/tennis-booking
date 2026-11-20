@@ -124,7 +124,7 @@ async function fullRecovery(day) {
   const retiredAttempts=retired.filter((r,i)=>r!==records[i]).length;
   const armRecovery={at:new Date(now).toISOString(),day,retiredAttempts,...(snapshot.running?{interruptedCheck:{day:snapshot.running.day,started:snapshot.running.started}}:{})};
   await chrome.storage.local.set({checkoutRecords:retired,...(basketTest?{basketTest}:{}),armRecovery,running:null});
-  return {status:'recovered',day,retiredAttempts,booked:false,paid:false};
+  return {status:'recovered',day,retiredAttempts};
 }
 async function arm(day,mode='availability',code='',settings=null) {
   const discountCode=normalizeDiscount(code);
