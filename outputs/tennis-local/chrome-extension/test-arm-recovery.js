@@ -30,7 +30,7 @@ test('retired journals are visible as unknown history, not unresolved controls o
  try{
   const view=readiness({checkoutRecords:retired,localCardUnlocked:true,job,version:'simulation'},now);
   assert.equal(view.ready,true);assert.equal(view.recovery.showRecovery,false);assert.match(view.lines.join('\n'),/unknown outcome/);assert.equal(view.armBlocker,'');
-  const preview=readiness({checkoutRecords:[record()],localCardUnlocked:true},now,day);assert.equal(preview.summary,'Ready to recover and arm');assert.match(preview.armBlocker,/Click Arm/);
+  const preview=readiness({checkoutRecords:[record()],localCardUnlocked:true},now,day);assert.equal(preview.summary,'Ready for Full recovery');assert.match(preview.armBlocker,/Click Full recovery/);
   let reads=0,mutations=0;
   await assert.rejects(prepareCheckout({...slot,court:2},{load:async()=>retired,read:async()=>reads++,select:async()=>mutations++,save:async()=>mutations++}),/earlier attempt.*unknown/i);assert.equal(reads,0);assert.equal(mutations,0);
  }finally{Date.now=realNow;}

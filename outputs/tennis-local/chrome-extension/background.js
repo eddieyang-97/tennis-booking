@@ -105,14 +105,12 @@ async function check(day, scheduled=false,settings=null,retainForCheckout=false)
     trace=null;
   }
 }
-async function arm(day,mode='availability',code='',settings=null) {
-  const discountCode=normalizeDiscount(code);
-  settings=normalizeSettings(settings||undefined);addDays(day,0);
-  const when=releaseAt(day);
-  if(when<=Date.now())throw Error('This date has already released; use Check now');
-  if(!['availability','checkout','payment'].includes(mode))throw Error('Unknown release mode');
+async function fullRecovery(day) {
+  addDays(day,0);
+  if(releaseAt(day)<=Date.now())throw Error('Choose a future release date for recovery');
   if(busy)throw Error('Another run is active');
-  const snapshot=await chrome.storage.local.get(['checkoutRecords','basketTest','running']);
+  const snapshot=await chrome.storage.local.get(['checkoutRecords','basketTest','running','job']);
+  if(snapshot.job)throw Error('Cancel the scheduled run before full recovery');
   const records=snapshot.checkoutRecords||[];
   assertFreshPlayingDate(records,day);
   const now=Date.now(),retired=retireAttempts(records,day,now);
@@ -126,7 +124,20 @@ async function arm(day,mode='availability',code='',settings=null) {
   const retiredAttempts=retired.filter((r,i)=>r!==records[i]).length;
   const armRecovery={at:new Date(now).toISOString(),day,retiredAttempts,...(snapshot.running?{interruptedCheck:{day:snapshot.running.day,started:snapshot.running.started}}:{})};
   await chrome.storage.local.set({checkoutRecords:retired,...(basketTest?{basketTest}:{}),armRecovery,running:null});
-  if(basketTest&&basketTest.status!=='cleared'&&!isRetiredBasketTest(basketTest))throw Error('A current basket test needs review in Advanced diagnostics');
+  return {status:'recovered',day,retiredAttempts,booked:false,paid:false};
+}
+async function arm(day,mode='availability',code='',settings=null) {
+  const discountCode=normalizeDiscount(code);
+  settings=normalizeSettings(settings||undefined);addDays(day,0);
+  const when=releaseAt(day);
+  if(when<=Date.now())throw Error('This date has already released; use Check now');
+  if(!['availability','checkout','payment'].includes(mode))throw Error('Unknown release mode');
+  if(busy)throw Error('Another run is active');
+  const {checkoutRecords=[],basketTest,running}=await chrome.storage.local.get(['checkoutRecords','basketTest','running']);
+  assertFreshPlayingDate(checkoutRecords,day);
+  if(running)throw Error('Use Full recovery to review the interrupted availability check before arming');
+  if(pendingAttempts(checkoutRecords).length)throw Error('Use Full recovery or inspect the current checkout before arming');
+  if(basketTest&&basketTest.status!=='cleared'&&!isRetiredBasketTest(basketTest))throw Error('Use Full recovery or inspect the current basket test before arming');
   let armReadinessPassed=false;
   if(mode==='payment'){
    try{await resolvePendingPayment();}catch(error){
@@ -148,7 +159,7 @@ async function arm(day,mode='availability',code='',settings=null) {
   await chrome.alarms.clear('prepare');await chrome.alarms.clear('release');
   await chrome.alarms.create('prepare',{when:Math.max(Date.now()+1000,when-300000)});
   await chrome.alarms.create('release',{when});
-  return {status:'armed',day,release:new Date(when).toISOString(),mode,paymentAutomatic:mode==='payment',armReadinessPassed,retiredAttempts,discountRequested:!!discountCode,settings};
+  return {status:'armed',day,release:new Date(when).toISOString(),mode,paymentAutomatic:mode==='payment',armReadinessPassed,discountRequested:!!discountCode,settings};
 }
 function checkoutCommands(tabId) {
  const command=async request=>{
@@ -639,6 +650,7 @@ chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{
      return {status:'reloading',cardUnlocked:false,journalsPreserved:true};
     }
     if(message.kind==='payCheckout')return automaticPayment();
+    if(message.kind==='fullRecovery')return fullRecovery(message.day);
     if(message.kind==='armPayment')return arm(message.day,'payment',message.discountCode,message.settings);
     if(message.kind==='archiveFailedCheckout') {
      if(busy)throw Error('Another run is active');busy=true;
