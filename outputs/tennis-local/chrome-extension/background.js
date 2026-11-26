@@ -63,6 +63,8 @@ async function takePreparedBasket(){
  }catch{return null;}
 }
 async function discardPreparedBasket(){const hint=await takePreparedBasket();if(hint)await closePreparedBasket(hint.tabId);}
+function preparedAuthRequired(tab){return [tab.url,tab.pendingUrl].some(url=>{try{const parsed=new URL(url);return parsed.origin===BASE&&/\/(verify-human|login|sign-in)(\/|$)/.test(parsed.pathname);}catch{return false;}});}
+function preparedRouteError(tabId,auth){return Object.assign(Error(auth?'Prepared basket requires sign-in or human verification':'Prepared basket route changed; inspect retained tab'),{diagnostic:{page:'basket-read',errorCode:auth?'PAGE_AUTHENTICATION_REQUIRED':'PAGE_BASKET_ROUTE_CHANGED',retainedTabId:tabId}});}
 async function releaseBasket(job){
  const hint=await takePreparedBasket();
  const fallback=async reason=>{await step('prepared-basket-fallback',{reason});const readStartedAt=Date.now();return {...await readPage(BASE+'/basket',{kind:'basket-read'},{scheduled:true}),readStartedAt};};
@@ -70,7 +72,7 @@ async function releaseBasket(job){
  if(hint.jobDigest!==await jobIdentity(job)){await closePreparedBasket(hint.tabId);return fallback('job-changed');}
  let tab;
  try{tab=await readTab(()=>chrome.tabs.get(hint.tabId));}catch(e){if(tabErrorReason(e)==='tab-closed')return fallback('tab-closed');throw e;}
- if([tab.url,tab.pendingUrl].some(url=>{try{const parsed=new URL(url);return parsed.origin===BASE&&/\/(verify-human|login|sign-in)(\/|$)/.test(parsed.pathname);}catch{return false;}}))throw Object.assign(Error('Prepared basket requires sign-in or human verification'),{diagnostic:{page:'basket-read',errorCode:'PAGE_AUTHENTICATION_REQUIRED',retainedTabId:hint.tabId}});
+ if(preparedAuthRequired(tab))throw preparedRouteError(hint.tabId,true);
  if(tab.url!==BASE+'/basket'||tab.pendingUrl||tab.active||tab.status!=='complete')return fallback('tab-changed');
  await step('prepared-basket-handoff',{tabId:hint.tabId});
  // Reload normally; the preflight DOM is never evidence of the current shared
@@ -82,8 +84,15 @@ async function releaseBasket(job){
   return {...response,readStartedAt};
  }catch(e){
   if(e.diagnostic?.reason==='tab-closed')return fallback('tab-closed-during-refresh');
-  if(e.diagnostic?.errorCode==='PAGE_READY_TIMEOUT'&&e.diagnostic?.routeCategory==='requested-page'&&e.diagnostic?.pendingDestination==='none'){
-   await closePreparedBasket(hint.tabId);return fallback('fresh-document-unavailable');
+  if(e.diagnostic?.errorCode==='PAGE_PREPARED_TAB_ACTIVE')return fallback('tab-active-before-refresh');
+  if(e.diagnostic?.errorCode==='PAGE_PREPARED_TAB_NOT_READY')return fallback('tab-not-ready-before-refresh');
+  if(e.diagnostic?.errorCode==='PAGE_READY_TIMEOUT'&&e.diagnostic?.routeCategory==='requested-page'&&e.diagnostic?.preparedRouteExact===true&&e.diagnostic?.preparedPendingRouteExact===true){
+   // Recheck both routes at fallback time: neither a pending authentication
+   // navigation nor a different query/fragment is an ordinary basket stall.
+   let current;try{current=await readTab(()=>chrome.tabs.get(hint.tabId));}catch(error){if(tabErrorReason(error)==='tab-closed')return fallback('tab-closed-during-refresh');throw error;}
+   if(current.url!==BASE+'/basket'||(current.pendingUrl&&current.pendingUrl!==BASE+'/basket'))throw preparedRouteError(hint.tabId,preparedAuthRequired(current));
+   if(!current.active)await chrome.tabs.remove(hint.tabId).catch(()=>{});
+   return fallback('fresh-document-unavailable');
   }
   throw e;
  }

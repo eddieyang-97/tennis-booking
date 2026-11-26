@@ -321,6 +321,67 @@ for(const boundary of ['second-lookup','reload'])for(const changed of [false,tru
  else {assert.equal(f.state.checkoutResult.status,'confirmed',f.state.checkoutResult.error);assert.deepEqual(f.merchant.counts,{selection:2,discount:0,opening:1,fill:1,pay:1,removal:0});}
 });
 
+for(const changed of [false,true])test(`stalled exact basket reload falls back to a freshly observed ${changed?'nonempty':'empty'} basket`,async()=>{
+ const f=await preparedRelease();const reload=f.worker.chrome.tabs.reload;let reloads=0;
+ f.worker.chrome.tabs.reload=async id=>{reloads++;await reload(id);const tab=f.worker.tabs.get(id);tab.status='loading';tab.pendingUrl=tab.url;};
+ if(changed)f.merchant.selected();await f.worker.alarm({name:'release'});
+ const timeout=f.state.runHistory.flatMap(run=>run.steps).find(s=>s.name==='page-read-stopped'&&s.pendingDestination==='basket');
+ assert.equal(timeout?.errorCode,'PAGE_READY_TIMEOUT');assert.equal(timeout.preparedRouteExact,true);assert.equal(timeout.preparedPendingRouteExact,true);
+ assert.ok(f.state.runHistory.some(run=>run.steps.some(s=>s.name==='prepared-basket-fallback'&&s.reason==='fresh-document-unavailable')));
+ assert.equal(reloads,1);assert.equal(f.navigations.filter(n=>n.kind==='create'&&n.url.endsWith('/basket')).length,1);assert.equal(f.worker.tabs.has(f.preparedId),false);
+ if(changed){assert.equal(f.state.checkoutResult.status,'stopped');assert.ok(Object.values(f.merchant.counts).every(n=>n===0));}
+ else {assert.equal(f.state.checkoutResult.status,'confirmed',f.state.checkoutResult.error);assert.deepEqual(f.merchant.counts,{selection:2,discount:0,opening:1,fill:1,pay:1,removal:0});}
+});
+
+test('exact-route reload acknowledgement arriving after the readiness deadline also falls back',async()=>{
+ const f=await preparedRelease(),reload=f.worker.chrome.tabs.reload;
+ f.worker.chrome.tabs.reload=async id=>{await reload(id);f.worker.tabs.get(id).pendingUrl='https://tennistowerhamlets.com/basket';f.merchant.clock+=11000;};
+ f.merchant.selected();await f.worker.alarm({name:'release'});
+ assert.ok(f.state.runHistory.some(run=>run.steps.some(s=>s.name==='prepared-basket-fallback'&&s.reason==='fresh-document-unavailable')));
+ assert.equal(f.state.checkoutResult.status,'stopped');assert.equal(f.navigations.filter(n=>n.kind==='create'&&n.url.endsWith('/basket')).length,1);
+ assert.ok(Object.values(f.merchant.counts).every(n=>n===0));
+});
+
+for(const changed of [false,true])test(`prepared tab activated at second lookup is untouched; fresh ${changed?'nonempty':'empty'} basket controls selection`,async()=>{
+ const f=await preparedRelease(),{get,reload}=f.worker.chrome.tabs;let gets=0,reloads=0;
+ f.worker.chrome.tabs.get=async id=>{if(id===f.preparedId&&++gets===2)f.worker.tabs.get(id).active=true;return get(id);};
+ f.worker.chrome.tabs.reload=async id=>{reloads++;return reload(id);};
+ if(changed)f.merchant.selected();await f.worker.alarm({name:'release'});
+ assert.ok(f.state.runHistory.some(run=>run.steps.some(s=>s.name==='prepared-basket-fallback'&&s.reason==='tab-active-before-refresh')));
+ assert.equal(reloads,0);assert.equal(f.worker.tabs.get(f.preparedId).active,true);assert.equal(f.navigations.filter(n=>n.kind==='create'&&n.url.endsWith('/basket')).length,1);
+ if(changed){assert.equal(f.state.checkoutResult.status,'stopped');assert.ok(Object.values(f.merchant.counts).every(n=>n===0));}
+ else {assert.equal(f.state.checkoutResult.status,'confirmed',f.state.checkoutResult.error);assert.deepEqual(f.merchant.counts,{selection:2,discount:0,opening:1,fill:1,pay:1,removal:0});}
+});
+
+test('prepared basket starts an exact navigation just before refresh; leave it alone and check a new tab',async()=>{
+ const f=await preparedRelease(),{get,reload}=f.worker.chrome.tabs;let gets=0,reloads=0;
+ f.worker.chrome.tabs.get=async id=>{if(id===f.preparedId&&++gets===2){const tab=f.worker.tabs.get(id);tab.status='loading';tab.pendingUrl=tab.url;}return get(id);};
+ f.worker.chrome.tabs.reload=async id=>{reloads++;return reload(id);};
+ f.merchant.selected();await f.worker.alarm({name:'release'});
+ assert.ok(f.state.runHistory.some(run=>run.steps.some(s=>s.name==='prepared-basket-fallback'&&s.reason==='tab-not-ready-before-refresh')));
+ assert.equal(reloads,0);assert.ok(f.worker.tabs.has(f.preparedId));assert.equal(f.navigations.filter(n=>n.kind==='create'&&n.url.endsWith('/basket')).length,1);
+ assert.equal(f.state.checkoutResult.status,'stopped');assert.ok(Object.values(f.merchant.counts).every(n=>n===0));
+});
+
+for(const destination of ['/verify-human','/account','/basket?unexpected=1','/basket#unexpected'])for(const when of ['during-refresh','active-before-refresh'])test(`prepared ${when} navigation to ${destination} stops without fallback`,async()=>{
+ const f=await preparedRelease(),{get,reload}=f.worker.chrome.tabs;let gets=0;
+ const change=()=>{const tab=f.worker.tabs.get(f.preparedId);tab.pendingUrl='https://tennistowerhamlets.com'+destination;};
+ if(when==='during-refresh')f.worker.chrome.tabs.reload=async id=>{await reload(id);change();};
+ else f.worker.chrome.tabs.get=async id=>{if(id===f.preparedId&&++gets===2){f.worker.tabs.get(id).active=true;change();}return get(id);};
+ await f.worker.alarm({name:'release'});
+ assert.equal(f.state.result.status,'stopped');assert.equal(f.state.result.errorCode,destination==='/verify-human'?'PAGE_AUTHENTICATION_REQUIRED':'PAGE_BASKET_ROUTE_CHANGED');
+ assert.equal(f.navigations.filter(n=>n.kind==='create'&&n.url.endsWith('/basket')).length,0);assert.ok(Object.values(f.merchant.counts).every(n=>n===0));assert.ok(f.worker.tabs.has(f.preparedId));
+});
+
+test('prepared basket pending route changes to authentication after the timeout observation; do not fall back',async()=>{
+ const f=await preparedRelease(),{reload}=f.worker.chrome.tabs,set=f.worker.chrome.storage.local.set;
+ f.worker.chrome.tabs.reload=async id=>{await reload(id);const tab=f.worker.tabs.get(id);tab.status='loading';tab.pendingUrl=tab.url;};
+ f.worker.chrome.storage.local.set=async value=>{const last=value.runHistory?.at(-1)?.steps?.at(-1);if(last?.name==='page-read-stopped'&&last.pendingDestination==='basket')f.worker.tabs.get(f.preparedId).pendingUrl='https://tennistowerhamlets.com/verify-human';return set(value);};
+ await f.worker.alarm({name:'release'});
+ assert.equal(f.state.result.errorCode,'PAGE_AUTHENTICATION_REQUIRED');assert.equal(f.navigations.filter(n=>n.kind==='create'&&n.url.endsWith('/basket')).length,0);
+ assert.ok(f.worker.tabs.has(f.preparedId));assert.ok(Object.values(f.merchant.counts).every(n=>n===0));
+});
+
 test('old empty basket document cannot hide a changed shared basket after preflight',async()=>{
  const f=await preparedRelease(),send=f.worker.chrome.tabs.sendMessage;
  f.merchant.selected();let staleReplies=0;

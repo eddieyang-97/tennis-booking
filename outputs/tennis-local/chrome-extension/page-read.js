@@ -65,13 +65,26 @@ export async function readPageState(tabs,url,request,{tabId=null,navigate=true,r
   if(last.pageType==='merchant-error')throw Object.assign(Error('Merchant reported an error after discount submission; outcome unknown; no mutation replay'),{pageCode:'DISCOUNT_MERCHANT_ERROR'});
  };
  const checkDeadline=readState=>{if(now()>=deadline){last.readState=readState;throw Object.assign(Error('Read-only page readiness timed out; inspect retained tab'),{pageCode:'PAGE_READY_TIMEOUT'});}};
+ const validatePreparedRoute=current=>{
+  // Destination categories intentionally ignore query/fragment differences.
+  // The prepared refresh requires the exact trusted URL for both routes.
+  last.destination=destinationFor(current.url);last.pendingDestination=current.pendingUrl?destinationFor(current.pendingUrl):'none';
+  last.preparedRouteExact=current.url===url;last.preparedPendingRouteExact=!current.pendingUrl||current.pendingUrl===url;
+  if(!last.preparedRouteExact||!last.preparedPendingRouteExact){
+   const authentication=[last.destination,last.pendingDestination].includes('authentication');
+   throw Object.assign(Error(authentication?'Sign-in or human verification required':'Prepared basket route changed; inspect retained tab'),{pageCode:authentication?'PAGE_AUTHENTICATION_REQUIRED':'PAGE_BASKET_ROUTE_CHANGED'});
+  }
+  last.routeCategory='requested-page';
+ };
  try {
   await step(refreshPrepared?'prepared-basket-refresh':navigate?'page-navigation':'existing-basket-read',{page:request.kind,timeoutMs, ...(navigate?{}:{tabId})});
   checkDeadline('setup-after-deadline');operation='navigation';
   let freshAfter;
   if(refreshPrepared){
    tab={id:tabId};const current=await retryTab(()=>tabs.get(tabId));
-   if(current.url!==url||current.pendingUrl||current.active||current.status!=='complete')throw Object.assign(Error('Prepared basket tab changed before refresh'),{pageCode:'PAGE_BASKET_ROUTE_CHANGED'});
+   validatePreparedRoute(current);
+   if(current.active)throw Object.assign(Error('Prepared basket tab is active; leave it untouched'),{pageCode:'PAGE_PREPARED_TAB_ACTIVE'});
+   if(current.pendingUrl||current.status!=='complete')throw Object.assign(Error('Prepared basket tab is not ready; leave it untouched'),{pageCode:'PAGE_PREPARED_TAB_NOT_READY'});
    freshAfter=documentNow();await tabs.reload(tabId);
   }else tab=!navigate?{id:tabId}:reused?await retryTab(()=>tabs.update(tabId,{url}),{navigation:true}):await retryTab(()=>tabs.create({url,active:false}),{navigation:true});
   checkDeadline('navigation-after-deadline');
@@ -82,6 +95,7 @@ export async function readPageState(tabs,url,request,{tabId=null,navigate=true,r
    last.loadState=current.status||'unknown';last.destination=destinationFor(current.url);last.pendingDestination=current.pendingUrl?destinationFor(current.pendingUrl):'none';
    last.routeCategory=!parsed||parsed.href==='about:blank'?'loading':parsed.origin!==BASE?'other-origin':/\/(verify-human|login|sign-in)(\/|$)/.test(parsed.pathname)?'authentication':parsed.pathname===path?'requested-page':'other-page';
    if(['authentication','other-origin'].includes(last.routeCategory))throw Object.assign(Error(last.routeCategory==='authentication'?'Sign-in or human verification required':'Read-only page left the trusted site'),{pageCode:last.routeCategory==='authentication'?'PAGE_AUTHENTICATION_REQUIRED':'PAGE_UNEXPECTED_ORIGIN'});
+   if(refreshPrepared)validatePreparedRoute(current);
    if(!navigate&&last.routeCategory==='other-page'){
     last.readState='route-changed';checkDeadline('route-after-deadline');
     if(observeDiscountNavigation)await observePage();
@@ -123,8 +137,7 @@ export async function readPageState(tabs,url,request,{tabId=null,navigate=true,r
      if(refreshPrepared){
       // A reload can briefly leave the old receiver reachable at the same URL.
       // Its document timestamp cannot prove a new server basket observation.
-      const after=await retryTab(()=>tabs.get(tab.id));checkDeadline('response-route-after-deadline');
-      if(after.url!==url||(after.pendingUrl&&after.pendingUrl!==url))throw Object.assign(Error('Prepared basket route changed during refresh'),{pageCode:'PAGE_BASKET_ROUTE_CHANGED'});
+      const after=await retryTab(()=>tabs.get(tab.id));validatePreparedRoute(after);checkDeadline('response-route-after-deadline');
       if(after.pendingUrl||!Number.isFinite(response.documentStartedAt)||response.documentStartedAt<=freshAfter){last.readState='stale-document';await delay(Math.min(500,Math.max(0,deadline-now())));continue;}
      }
      if(observeDiscountNavigation){
