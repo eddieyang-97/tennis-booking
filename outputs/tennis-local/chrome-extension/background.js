@@ -25,9 +25,8 @@ let busy=false;
 let reloadRequested=false;
 let resumedTab=null;
 let trace=null;
-// Only a tab hint, never basket contents or durable authorization. The worker
-// may be suspended between alarms; a new worker uses the ordinary fresh read.
-let preparedBasket=null;
+// Session-only tab hint; never basket contents or durable authorization.
+const PREPARED_BASKET_KEY='preparedBasket';
 function newRun(kind,day){return startRun(chrome.storage.local,kind,day,{version:chrome.runtime.getManifest?.().version||'unknown'});}
 async function step(name,detail={}){if(trace)await trace.step(name,detail);}
 async function readTab(operation){return retryTab(operation,{onRetry:attempt=>step('temporary-tab-retry',{attempt})});}
@@ -47,16 +46,28 @@ async function account(scheduled=false) {
 function emptyBasket(value){return value?.empty===true&&Array.isArray(value.items)&&value.items.length===0&&(value.discountApplied===undefined||value.discountApplied===false)&&(value.discountGBP===undefined||value.discountGBP==='0.00');}
 // Chrome storage can return object properties in a different order. Compare
 // the complete saved snapshot by value, preserving the order of venue arrays.
-function jobIdentity(job){return JSON.stringify(job,(_,value)=>value&&typeof value==='object'&&!Array.isArray(value)?Object.fromEntries(Object.keys(value).sort().map(key=>[key,value[key]])):value);}
+async function jobIdentity(job){
+ const canonical=JSON.stringify(job,(_,value)=>value&&typeof value==='object'&&!Array.isArray(value)?Object.fromEntries(Object.keys(value).sort().map(key=>[key,value[key]])):value);
+ const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(canonical));
+ return [...new Uint8Array(digest)].map(byte=>byte.toString(16).padStart(2,'0')).join('');
+}
 async function closePreparedBasket(tabId){
  try{const tab=await chrome.tabs.get(tabId);if(tab.url===BASE+'/basket'&&!tab.pendingUrl&&!tab.active)await chrome.tabs.remove(tabId);}catch{}
 }
-async function discardPreparedBasket(){const hint=preparedBasket;preparedBasket=null;if(hint)await closePreparedBasket(hint.tabId);}
+async function takePreparedBasket(){
+ try{
+  const hint=(await chrome.storage.session.get(PREPARED_BASKET_KEY))[PREPARED_BASKET_KEY];
+  if(hint===undefined)return null;
+  await chrome.storage.session.remove(PREPARED_BASKET_KEY);
+  return Number.isInteger(hint?.tabId)&&hint.tabId>=0&&/^[a-f0-9]{64}$/.test(hint.jobDigest||'')?hint:null;
+ }catch{return null;}
+}
+async function discardPreparedBasket(){const hint=await takePreparedBasket();if(hint)await closePreparedBasket(hint.tabId);}
 async function releaseBasket(job){
- const hint=preparedBasket;preparedBasket=null;
+ const hint=await takePreparedBasket();
  const fallback=async reason=>{await step('prepared-basket-fallback',{reason});const readStartedAt=Date.now();return {...await readPage(BASE+'/basket',{kind:'basket-read'},{scheduled:true}),readStartedAt};};
  if(!hint)return fallback('no-handoff');
- if(hint.job!==jobIdentity(job)){await closePreparedBasket(hint.tabId);return fallback('job-changed');}
+ if(hint.jobDigest!==await jobIdentity(job)){await closePreparedBasket(hint.tabId);return fallback('job-changed');}
  let tab;
  try{tab=await readTab(()=>chrome.tabs.get(hint.tabId));}catch(e){if(tabErrorReason(e)==='tab-closed')return fallback('tab-closed');throw e;}
  if([tab.url,tab.pendingUrl].some(url=>{try{const parsed=new URL(url);return parsed.origin===BASE&&/\/(verify-human|login|sign-in)(\/|$)/.test(parsed.pathname);}catch{return false;}}))throw Object.assign(Error('Prepared basket requires sign-in or human verification'),{diagnostic:{page:'basket-read',errorCode:'PAGE_AUTHENTICATION_REQUIRED',retainedTabId:hint.tabId}});
@@ -70,6 +81,7 @@ async function releaseBasket(job){
   if(response.ok&&emptyBasket(response.value))await closePreparedBasket(hint.tabId);
   return {...response,readStartedAt};
  }catch(e){
+  if(e.diagnostic?.reason==='tab-closed')return fallback('tab-closed-during-refresh');
   if(e.diagnostic?.errorCode==='PAGE_READY_TIMEOUT'&&e.diagnostic?.routeCategory==='requested-page'&&e.diagnostic?.pendingDestination==='none'){
    await closePreparedBasket(hint.tabId);return fallback('fresh-document-unavailable');
   }
@@ -636,12 +648,15 @@ async function runAlarm(alarm){
        if(!basket.ok||!emptyBasket(basket.value))throw Object.assign(Error(basket.error||'Preflight basket is not verifiably empty'),{diagnostic:{page:'basket-read',errorCode:basket.reasonCode||'BASKET_NOT_EMPTY',retainedTabId:basket.readTabId||basket.retainedTabId}});
        await step('preflight-basket-prepared',{tabId:basket.readTabId});
       }
-      const readyJob={...job,prepared:true,preparedAt:new Date().toISOString()};
+      const readyJob={...job,prepared:true,preparedAt:new Date().toISOString(),preflightId:crypto.randomUUID()};
+      if(basket){
+       try{await chrome.storage.session.set({[PREPARED_BASKET_KEY]:{tabId:basket.readTabId,jobDigest:await jobIdentity(readyJob)}});}
+       catch{await closePreparedBasket(basket.readTabId);await step('preflight-basket-hint-unavailable');}
+      }
       await trace.finish('complete');
       await chrome.storage.local.set({job:readyJob});
-      if(basket)preparedBasket={tabId:basket.readTabId,job:jobIdentity(readyJob)};
      }
-     catch(e){await trace.finish('stopped');throw e;}
+     catch(e){await discardPreparedBasket();await trace.finish('stopped');throw e;}
      finally{busy=false;trace=null;}
     }
     if(alarm.name==='release') {

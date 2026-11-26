@@ -7,7 +7,7 @@ Notes below describe changes made *at each release*, not instructions to install
 ## v0.9.16 — Preflight basket preparation
 
 - Scheduled booking preflight now verifies an empty basket and retains a background tab hint for the prepared job. With a valid hint, release reloads that tab and requires a new document; without it, release performs the existing fresh basket read. Authentication, unexpected or ambiguous basket state stop the run.
-- The hint is not durable and never authorizes selection. Existing fresh grid, basket age, selection journal, post-selection and pre-payment checks remain required. A successful handoff avoids one new release-time tab, but still reloads the merchant page. A navigation-free fast path and live speed gains remain unverified.
+- Only the tab ID and prepared-job digest survive ordinary worker suspension in session storage. A tab closure during refresh falls back to a fresh read. The hint never authorizes selection. Existing fresh grid, basket age, selection journal, post-selection and pre-payment checks remain required. A successful handoff avoids one new release-time tab, but still reloads the merchant page. A navigation-free fast path and live speed gains remain unverified.
 
 ## v0.9.15 - Separate recovery and arming
 

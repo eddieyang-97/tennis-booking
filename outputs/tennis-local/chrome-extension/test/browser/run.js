@@ -54,6 +54,8 @@ try{
  console.log('Browser gate: preflight returned');
  assert.equal((await send({kind:'status'})).job.prepared,true);
  const preparedBasketPage=context.pages().find(page=>page.url()===merchant.origin+'/basket');assert.ok(preparedBasketPage);
+ // The real five-minute alarm gap normally permits MV3 worker suspension.
+ await restartWorker();assert.equal(preparedBasketPage.isClosed(),false);
  merchant.state.options.selectionDelay=80;merchant.state.options.holdPayResponse=true;merchant.state.options.holdAccountAfterPay=true;
  const release=worker.evaluate(()=>globalThis.__testAlarm({name:'release'})).catch(()=>{});
  const deadline=Date.now()+45000;while(!merchant.state.payObserved&&Date.now()<deadline)await new Promise(resolve=>setTimeout(resolve,50));
@@ -94,6 +96,7 @@ try{
  // Change only the fake shared server state; the prepared DOM remains empty.
  merchant.state.items=[{hour:18,court:4}];
  assert.match(await stalePage.locator('body').innerText(),/There are no items in your basket/);
+ await restartWorker();assert.equal(stalePage.isClosed(),false);
  await within(worker.evaluate(()=>globalThis.__testAlarm({name:'release'})),90000,'Prepared basket changed release');
  const changedBasket=(await send({kind:'status'}));
  assert.equal(changedBasket.checkoutResult?.status,'stopped');assert.match(changedBasket.checkoutResult.error,/Existing basket/);

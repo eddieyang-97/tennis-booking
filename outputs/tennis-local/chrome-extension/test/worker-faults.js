@@ -296,6 +296,31 @@ test('prepared release refreshes the same basket tab while leaving grid and post
  assert.equal(f.worker.tabs.has(f.preparedId),false);
 });
 
+test('ordinary worker suspension preserves the prepared tab identity but no basket evidence',async()=>{
+ const f=await preparedRelease(),hint=f.worker.session.preparedBasket;
+ assert.deepEqual(Object.keys(hint).sort(),['jobDigest','tabId']);assert.equal(hint.tabId,f.preparedId);
+ assert.match(hint.jobDigest,/^[a-f0-9]{64}$/);assert.equal(f.state.preparedBasket,undefined);
+ const worker=await startWorker(f.merchant,f.state,'recreated',f.worker),reload=worker.chrome.tabs.reload,reloads=[];
+ worker.chrome.tabs.reload=async id=>{reloads.push(id);await reload(id);};
+ await worker.alarm({name:'release'});
+ assert.deepEqual(reloads,[f.preparedId]);assert.equal(f.state.checkoutResult.status,'confirmed',f.state.checkoutResult.error);
+ assert.equal(worker.session.preparedBasket,undefined);assert.equal(worker.tabs.has(f.preparedId),false);
+ assert.deepEqual(f.merchant.counts,{selection:2,discount:0,opening:1,fill:1,pay:1,removal:0});
+});
+
+for(const boundary of ['second-lookup','reload'])for(const changed of [false,true])test(`prepared tab closure at ${boundary} falls back to a freshly observed ${changed?'nonempty':'empty'} basket`,async()=>{
+ const f=await preparedRelease(),{get,reload}=f.worker.chrome.tabs;let gets=0;
+ if(boundary==='second-lookup')f.worker.chrome.tabs.get=async id=>{if(id===f.preparedId&&++gets===2)f.worker.tabs.delete(id);return get(id);};
+ else f.worker.chrome.tabs.reload=async id=>{if(id===f.preparedId)f.worker.tabs.delete(id);return reload(id);};
+ if(changed)f.merchant.selected();
+ await f.worker.alarm({name:'release'});
+ assert.ok(f.state.runHistory.some(run=>run.steps.some(s=>s.name==='prepared-basket-fallback'&&s.reason==='tab-closed-during-refresh')));
+ assert.equal(f.navigations.filter(n=>n.kind==='create'&&n.url.endsWith('/basket')).length,1);
+ assert.equal(f.worker.session.preparedBasket,undefined);
+ if(changed){assert.equal(f.state.checkoutResult.status,'stopped');assert.ok(Object.values(f.merchant.counts).every(n=>n===0));}
+ else {assert.equal(f.state.checkoutResult.status,'confirmed',f.state.checkoutResult.error);assert.deepEqual(f.merchant.counts,{selection:2,discount:0,opening:1,fill:1,pay:1,removal:0});}
+});
+
 test('old empty basket document cannot hide a changed shared basket after preflight',async()=>{
  const f=await preparedRelease(),send=f.worker.chrome.tabs.sendMessage;
  f.merchant.selected();let staleReplies=0;
@@ -308,11 +333,12 @@ test('old empty basket document cannot hide a changed shared basket after prefli
  assert.ok(staleReplies>=2);assert.equal(f.state.checkoutRecords,undefined);assert.ok(Object.values(f.merchant.counts).every(n=>n===0));
 });
 
-for(const invalidation of ['closed','navigated','worker-restart','changed-job','stale-document','challenge'])test(`prepared basket does not authorize selection from ${invalidation}`,async()=>{
+for(const invalidation of ['closed','navigated','worker-restart','session-cleared','changed-job','stale-document','challenge'])test(`prepared basket does not authorize selection from ${invalidation}`,async()=>{
  const f=await preparedRelease();let worker=f.worker;
  if(invalidation==='closed')worker.tabs.delete(f.preparedId);
  if(invalidation==='navigated')worker.tabs.get(f.preparedId).url='https://example.com/';
- if(invalidation==='worker-restart')worker=await startWorker(f.merchant,f.state);
+ if(invalidation==='worker-restart')worker=await startWorker(f.merchant,f.state,'recreated',f.worker);
+ if(invalidation==='session-cleared')delete worker.session.preparedBasket;
  if(invalidation==='changed-job')f.state.job.preparedAt='different-preflight';
  if(invalidation==='challenge')worker.tabs.get(f.preparedId).url='https://tennistowerhamlets.com/verify-human';
  if(invalidation==='stale-document')worker.chrome.tabs.reload=async()=>{};
@@ -320,7 +346,17 @@ for(const invalidation of ['closed','navigated','worker-restart','changed-job','
  assert.ok(Object.values(f.merchant.counts).every(n=>n===0));assert.equal(f.state.checkoutRecords,undefined);
  if(invalidation==='challenge')assert.equal(f.state.result.errorCode,'PAGE_AUTHENTICATION_REQUIRED');
  else assert.equal(f.state.checkoutResult.status,'stopped');
+ if(invalidation==='worker-restart')assert.ok(f.state.runHistory.some(run=>run.steps.some(s=>s.name==='prepared-basket-refresh')));
  if(invalidation==='navigated'||invalidation==='challenge')assert.ok(worker.tabs.has(f.preparedId));
+});
+
+test('session hint write failure keeps successful preflight but requires a fresh release basket',async()=>{
+ const f=await navigationRun();f.state.job.prepared=false;f.merchant.clock=f.state.job.when-300000;
+ f.worker.chrome.storage.session.set=async()=>{throw Error('Synthetic session storage failure');};
+ await f.worker.alarm({name:'prepare'});assert.equal(f.state.job.prepared,true);
+ assert.equal(f.worker.session.preparedBasket,undefined);assert.equal(f.worker.tabs.size,0);
+ f.merchant.clock=f.state.job.when;f.merchant.selected();await f.worker.alarm({name:'release'});
+ assert.equal(f.state.checkoutResult.status,'stopped');assert.ok(Object.values(f.merchant.counts).every(n=>n===0));
 });
 
 test('repeated preflight invalidates its old handoff and refuses a nonempty basket',async()=>{
@@ -341,8 +377,9 @@ for(const when of ['before','after'])test(`interrupted preflight readiness persi
  if(when==='after')assert.equal(f.state.checkoutResult.status,'stopped');else assert.match(f.state.result.error,/Preflight did not complete/);
 });
 
-test('cancel removes only its unused prepared basket hint and does not mutate merchant state',async()=>{
- const f=await preparedRelease();assert.equal((await f.worker.send({kind:'cancel'})).status,'cancelled');
+test('cancel removes only its unused prepared basket hint after worker recreation and does not mutate merchant state',async()=>{
+ const f=await preparedRelease(),worker=await startWorker(f.merchant,f.state,'recreated',f.worker);assert.equal((await worker.send({kind:'cancel'})).status,'cancelled');
+ assert.equal(worker.session.preparedBasket,undefined);assert.ok(worker.session.localPaymentCard);
  assert.equal(f.state.job,undefined);assert.equal(f.worker.tabs.has(f.preparedId),false);assert.ok(Object.values(f.merchant.counts).every(n=>n===0));
 });
 
