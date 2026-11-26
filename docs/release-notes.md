@@ -4,6 +4,11 @@ This is the historical change log for the **active Chrome extension** in [`outpu
 
 Notes below describe changes made *at each release*, not instructions to install or downgrade to older builds. Historical test counts and unverified behaviors are not current release-quality claims. For up-to-date setup, use the [project README](../README.md) and [extension usage guide](../outputs/tennis-local/chrome-extension/README.md). For original investigation and detailed timestamps, see [payment-system.md](payment-system.md).
 
+## v0.9.16 — Preflight basket preparation
+
+- Scheduled booking preflight now verifies an empty basket and retains a background tab hint for the prepared job. With a valid hint, release reloads that tab and requires a new document; without it, release performs the existing fresh basket read. Authentication, unexpected or ambiguous basket state stop the run.
+- The hint is not durable and never authorizes selection. Existing fresh grid, basket age, selection journal, post-selection and pre-payment checks remain required. A successful handoff avoids one new release-time tab, but still reloads the merchant page. A navigation-free fast path and live speed gains remain unverified.
+
 ## v0.9.15 - Separate recovery and arming
 
 - Display Arm, Recover and Cancel on one row, in that order, with detailed tooltips and a collapsed Help section. Full recovery retires eligible older attempts and resets interrupted read-only checks without scheduling; Arm separately checks readiness and schedules.

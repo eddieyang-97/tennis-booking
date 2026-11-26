@@ -1,7 +1,10 @@
 // Only background-origin commands can reach this isolated world. No page listener.
 function basketSummary() {
  if(location.pathname!=='/basket')throw Error('Not on basket page');
- if(document.body.innerText.includes('There are no items in your basket'))return {empty:true,items:[]};
+ if(document.body.innerText.includes('There are no items in your basket')){
+  if(document.querySelectorAll('a[href^="#item-"], a[href="/basket/discount-remove"]').length||[...document.querySelectorAll('tr')].some(r=>/^Discount(?:\s|$)/.test(r.querySelector('td')?.textContent.trim()||'')))throw Error('Unknown basket layout: contradictory empty basket');
+  return {empty:true,items:[]};
+ }
  const anchors=[...document.querySelectorAll('a[href^="#item-"]')];
  const items=anchors.map(a=>{
   const item=document.getElementById(a.getAttribute('href').slice(1));
@@ -127,10 +130,14 @@ async function selectSequentially(s,timeoutMs=15000) {
 }
 chrome.runtime.onMessage.addListener((request,sender,respond)=>{
  if(sender.id!==chrome.runtime.id||!['basket-read','select-slot'].includes(request.kind))return;
+ const freshRead=request.kind==='basket-read'&&Number.isFinite(request.freshAfter);
+ const documentStartedAt=freshRead?performance.timeOrigin:undefined;
+ if(freshRead&&(!Number.isFinite(documentStartedAt)||documentStartedAt<=request.freshAfter)){respond({ok:false,notReady:true});return;}
+ const reply=value=>respond({...value,...(freshRead?{documentStartedAt}:{})});
  (async()=>{
   if(/\/(verify-human|login|sign-in)(\/|$)/.test(location.pathname))throw Object.assign(Error('Human verification required; inspect retained tab'),{reasonCode:'AUTHENTICATION_REQUIRED'});
   if(request.kind==='basket-read')return stableBasketSummary();
   const timeout=[15000,60000].includes(request.selectionTimeoutMs)?request.selectionTimeoutMs:15000;
   return selectSequentially(request.slot,timeout);
- })().then(value=>respond(value.notReady?{ok:false,notReady:true,error:'Basket DOM not stable'}:{ok:true,value}),e=>respond(request.kind==='basket-read'&&document.readyState&&document.readyState!=='complete'&&/Unknown basket|Basket item layout/.test(e.message)?{ok:false,notReady:true,error:'Basket DOM not ready'}:{ok:false,...(request.kind==='basket-read'?{reasonCode:e.reasonCode||'BASKET_LAYOUT_UNKNOWN'}:{}),error:request.kind==='select-slot'?'Court selection stopped; inspect diagnostic evidence':e.message,...(request.kind==='select-slot'?{reasonCode:e.reasonCode||'SELECTION_OBSERVATION_FAILED'}:{}),selectionAttempted:!!e.selectionAttempted,...(e.selectionDiagnostic?{selectionDiagnostic:e.selectionDiagnostic}:{})}));return true;
+ })().then(value=>reply(value.notReady?{ok:false,notReady:true,error:'Basket DOM not stable'}:{ok:true,value}),e=>reply(request.kind==='basket-read'&&document.readyState&&document.readyState!=='complete'&&/Unknown basket|Basket item layout/.test(e.message)?{ok:false,notReady:true,error:'Basket DOM not ready'}:{ok:false,...(request.kind==='basket-read'?{reasonCode:e.reasonCode||'BASKET_LAYOUT_UNKNOWN'}:{}),error:request.kind==='select-slot'?'Court selection stopped; inspect diagnostic evidence':e.message,...(request.kind==='select-slot'?{reasonCode:e.reasonCode||'SELECTION_OBSERVATION_FAILED'}:{}),selectionAttempted:!!e.selectionAttempted,...(e.selectionDiagnostic?{selectionDiagnostic:e.selectionDiagnostic}:{})}));return true;
 });

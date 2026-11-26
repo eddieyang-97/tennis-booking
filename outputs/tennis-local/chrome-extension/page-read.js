@@ -26,12 +26,14 @@ export async function waitPaymentState(read,{timeoutMs=15000,accept=()=>true,now
 }
 // Only known read-only adapters. No card, selection, checkout-opening or Pay
 // messages are accepted. A failed read retains its tab; navigation is once.
-export async function readPageState(tabs,url,request,{tabId=null,navigate=true,timeoutMs=15000,messageTimeoutMs=2000,observeLoadingMessageErrors=false,observeDiscountNavigation=false,now=Date.now,delay=ms=>new Promise(r=>setTimeout(r,ms)),timers=globalThis,step=async()=>{}}={}) {
+export async function readPageState(tabs,url,request,{tabId=null,navigate=true,retainSuccess=false,refreshPrepared=false,documentNow=()=>performance.timeOrigin+performance.now(),timeoutMs=15000,messageTimeoutMs=2000,observeLoadingMessageErrors=false,observeDiscountNavigation=false,now=Date.now,delay=ms=>new Promise(r=>setTimeout(r,ms)),timers=globalThis,step=async()=>{}}={}) {
  const path={'account':'/account','purchase-read':'/account','test-purchase-state':'/account','basket-read':'/basket'}[request.kind];
  if(!path||url!==BASE+path)throw Error('Invalid read-only page request');
  if(!navigate&&(tabId===null||request.kind!=='basket-read'))throw Error('Existing-tab reads require a basket tab');
  if(observeLoadingMessageErrors&&(navigate||tabId===null||request.kind!=='basket-read'))throw Error('Loading message observation requires an existing basket tab');
  if(observeDiscountNavigation&&(navigate||tabId===null||request.kind!=='basket-read'))throw Error('Discount navigation observation requires an existing basket tab');
+ if((retainSuccess||refreshPrepared)&&request.kind!=='basket-read')throw Error('Prepared reads require a basket');
+ if(refreshPrepared&&(!navigate||tabId===null))throw Error('Prepared refresh requires an existing basket tab');
  const started=now(),deadline=started+timeoutMs,reused=tabId!==null;
  let observationPath,tab,retain=reused,operation='read-diagnostics',messageReadRetries=0,navigationReads=0,last={loadState:'unknown',routeCategory:'loading',readState:'not-probed'};
  const observePage=async()=>{
@@ -64,9 +66,14 @@ export async function readPageState(tabs,url,request,{tabId=null,navigate=true,t
  };
  const checkDeadline=readState=>{if(now()>=deadline){last.readState=readState;throw Object.assign(Error('Read-only page readiness timed out; inspect retained tab'),{pageCode:'PAGE_READY_TIMEOUT'});}};
  try {
-  await step(navigate?'page-navigation':'existing-basket-read',{page:request.kind,timeoutMs, ...(navigate?{}:{tabId})});
+  await step(refreshPrepared?'prepared-basket-refresh':navigate?'page-navigation':'existing-basket-read',{page:request.kind,timeoutMs, ...(navigate?{}:{tabId})});
   checkDeadline('setup-after-deadline');operation='navigation';
-  tab=!navigate?{id:tabId}:reused?await retryTab(()=>tabs.update(tabId,{url}),{navigation:true}):await retryTab(()=>tabs.create({url,active:false}),{navigation:true});
+  let freshAfter;
+  if(refreshPrepared){
+   tab={id:tabId};const current=await retryTab(()=>tabs.get(tabId));
+   if(current.url!==url||current.pendingUrl||current.active||current.status!=='complete')throw Object.assign(Error('Prepared basket tab changed before refresh'),{pageCode:'PAGE_BASKET_ROUTE_CHANGED'});
+   freshAfter=documentNow();await tabs.reload(tabId);
+  }else tab=!navigate?{id:tabId}:reused?await retryTab(()=>tabs.update(tabId,{url}),{navigation:true}):await retryTab(()=>tabs.create({url,active:false}),{navigation:true});
   checkDeadline('navigation-after-deadline');
   while(now()<deadline) {
    operation='tab-state';const current=await retryTab(()=>tabs.get(tab.id));let parsed;
@@ -90,7 +97,7 @@ export async function readPageState(tabs,url,request,{tabId=null,navigate=true,t
     let response;
     try {
      operation='message-read';last.readState='probing';
-     response=await responseWithin(()=>tabs.sendMessage(tab.id,request),Math.max(1,Math.min(messageTimeoutMs,deadline-now())),timers);
+     response=await responseWithin(()=>tabs.sendMessage(tab.id,refreshPrepared?{...request,freshAfter}:request),Math.max(1,Math.min(messageTimeoutMs,deadline-now())),timers);
     }catch(e){
      last.readState=/timed out/i.test(e?.message||'')?'response-timeout':tabErrorReason(e);
      // Discount POST navigation can replace a receiver after usable loading
@@ -108,6 +115,18 @@ export async function readPageState(tabs,url,request,{tabId=null,navigate=true,t
     // not be mistaken for a failed content-script read and retried.
     if(response&&!response.notReady){
      checkDeadline('response-after-deadline');
+     if(retainSuccess){
+      const after=await retryTab(()=>tabs.get(tab.id));checkDeadline('response-route-after-deadline');
+      if(after.url!==url||(after.pendingUrl&&after.pendingUrl!==url))throw Object.assign(Error('Prepared basket route changed during preflight'),{pageCode:'PAGE_BASKET_ROUTE_CHANGED'});
+      if(after.pendingUrl){last.readState='pending-navigation';await delay(Math.min(500,Math.max(0,deadline-now())));continue;}
+     }
+     if(refreshPrepared){
+      // A reload can briefly leave the old receiver reachable at the same URL.
+      // Its document timestamp cannot prove a new server basket observation.
+      const after=await retryTab(()=>tabs.get(tab.id));checkDeadline('response-route-after-deadline');
+      if(after.url!==url||(after.pendingUrl&&after.pendingUrl!==url))throw Object.assign(Error('Prepared basket route changed during refresh'),{pageCode:'PAGE_BASKET_ROUTE_CHANGED'});
+      if(after.pendingUrl||!Number.isFinite(response.documentStartedAt)||response.documentStartedAt<=freshAfter){last.readState='stale-document';await delay(Math.min(500,Math.max(0,deadline-now())));continue;}
+     }
      if(observeDiscountNavigation){
       if(response.ok===false)await observePage();
       // A reply from an old document cannot authorize continuation after a
@@ -119,7 +138,9 @@ export async function readPageState(tabs,url,request,{tabId=null,navigate=true,t
      }
      if(response.humanRequired||response.ok===false){retain=true;response.retainedTabId=tab.id;response.page=response.page||request.kind;}
      if(response.ok===false)Object.assign(response,failureFor(response,{operation:request.kind}));
-     operation='read-diagnostics';await step('page-read',{page:request.kind,ok:response.ok,loadState:last.loadState,...(messageReadRetries?{messageReadRetries,elapsedMs:now()-started}:{}),...(response.ok===false?failureFor(response,{operation:request.kind}):{})});checkDeadline('diagnostics-after-deadline');return response;
+     operation='read-diagnostics';await step('page-read',{page:request.kind,ok:response.ok,loadState:last.loadState,...(messageReadRetries||refreshPrepared?{messageReadRetries,elapsedMs:now()-started}:{}),...(response.ok===false?failureFor(response,{operation:request.kind}):{})});checkDeadline('diagnostics-after-deadline');
+     if(retainSuccess&&response.ok===true){retain=true;return {...response,readTabId:tab.id};}
+     return response;
     }
     if(response||last.readState==='probing')last.readState='dom-not-ready';
    }

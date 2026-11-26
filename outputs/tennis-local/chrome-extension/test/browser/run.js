@@ -52,11 +52,19 @@ try{
  console.log('Browser gate: settings snapshot verified');
  await worker.evaluate(async()=>{await globalThis.__testAlarm({name:'prepare'});const {job}=await chrome.storage.local.get('job');globalThis.__testClock=job.when;});
  console.log('Browser gate: preflight returned');
+ assert.equal((await send({kind:'status'})).job.prepared,true);
+ const preparedBasketPage=context.pages().find(page=>page.url()===merchant.origin+'/basket');assert.ok(preparedBasketPage);
  merchant.state.options.selectionDelay=80;merchant.state.options.holdPayResponse=true;merchant.state.options.holdAccountAfterPay=true;
  const release=worker.evaluate(()=>globalThis.__testAlarm({name:'release'})).catch(()=>{});
  const deadline=Date.now()+45000;while(!merchant.state.payObserved&&Date.now()<deadline)await new Promise(resolve=>setTimeout(resolve,50));
  if(!merchant.state.payObserved){const status=await send({kind:'status'});throw Error('Release did not reach fake Pay: '+JSON.stringify(status.latestAction||status.checkoutResult||status.result));}
  const before=await send({kind:'status'});assert.ok(before.checkoutRecords[0].paymentDispatchedAt);assert.equal(merchant.state.counts.pay,1);assert.equal(merchant.state.counts.selection,2);
+ assert.ok(before.runHistory.some(run=>run.steps.some(step=>step.name==='prepared-basket-refresh')),'release refreshed the prepared merchant tab');
+ const preflightRun=before.runHistory.find(run=>run.kind==='release-preflight'),releaseRun=before.runHistory.find(run=>run.kind==='release-check');
+ const stamp=(run,name)=>Date.parse(run.steps.find(s=>s.name===name)?.at);
+ const selectionStep=before.runHistory.flatMap(run=>run.steps).find(s=>s.name==='selection-message-dispatched');
+ const preparedTimings={preflightBasketMs:stamp(preflightRun,'preflight-basket-prepared')-stamp(preflightRun,'preflight-basket-started'),releaseBasketRefreshMs:releaseRun.steps.find(s=>s.name==='page-read'&&s.page==='basket-read')?.elapsedMs,releaseToSelectionMs:Date.parse(selectionStep?.at)-Date.parse(releaseRun.startedAt),releaseToPaymentIntentMs:Date.parse(before.checkoutRecords[0].paymentDispatchedAt)-Date.parse(releaseRun.startedAt)};
+ assert.ok(Object.values(preparedTimings).every(n=>Number.isFinite(n)&&n>=0));
  console.log('Browser gate: Pay dispatched, terminating Chromium');
  // Closing Chromium terminates the real extension worker after a dispatched Pay.
  await context.close();await release;context=null;
@@ -65,7 +73,7 @@ try{
  await launch();const reconciled=await send({kind:'verifyPayment'});assert.equal(reconciled.status,'confirmed',reconciled.error);assert.equal(reconciled.receiptSource,'account-purchase');assert.equal(reconciled.booked,null);
  console.log('Browser gate: process restart reconciliation verified');
  await send({kind:'payCheckout'});assert.equal(merchant.state.counts.pay,1);assert.equal(merchant.state.counts.opening,1);assert.equal(merchant.state.counts.fill,1);
- reports.push({scenario:'real-extension-alarm-pay-restart-reconcile',outcome:'passed',evidence:'local-fake-merchant',mutations:{...merchant.state.counts}});
+ reports.push({scenario:'real-extension-alarm-pay-restart-reconcile',outcome:'passed',evidence:'local-fake-merchant',timings:preparedTimings,mutations:{...merchant.state.counts}});
  // Adapter fixtures: no page uses real merchant credentials or card information.
  const page=await context.newPage();
  await page.goto(merchant.origin+'/account');const paidRecord=(await send({kind:'status'})).checkoutRecords[0];
@@ -78,6 +86,20 @@ try{
  await page.goto(merchant.origin+'/purchase/card/100001');response=await read(page,'checkout-progress');assert.equal(response.value.stage,'existing-purchase');assert.equal(response.value.cancellationSupported,false);assert.equal(merchant.state.counts.pay,1);
  reports.push({scenario:'actual-dom-paid-duplicate-existing-purchase',outcome:'passed',evidence:'local-fake-merchant'});
  console.log('Browser gate: account DOM fixtures verified');
+ await fresh('prepared-basket-changed-profile');
+ const changedBasketArm=await send({kind:'armPayment',day:'2026-10-27'});assert.equal(changedBasketArm.status,'armed',changedBasketArm.error);
+ await worker.evaluate(async()=>{await globalThis.__testAlarm({name:'prepare'});const {job}=await chrome.storage.local.get('job');globalThis.__testClock=job.when;});
+ const stalePage=context.pages().find(page=>page.url()===merchant.origin+'/basket');assert.ok(stalePage);
+ assert.match(await stalePage.locator('body').innerText(),/There are no items in your basket/);
+ // Change only the fake shared server state; the prepared DOM remains empty.
+ merchant.state.items=[{hour:18,court:4}];
+ assert.match(await stalePage.locator('body').innerText(),/There are no items in your basket/);
+ await within(worker.evaluate(()=>globalThis.__testAlarm({name:'release'})),90000,'Prepared basket changed release');
+ const changedBasket=(await send({kind:'status'}));
+ assert.equal(changedBasket.checkoutResult?.status,'stopped');assert.match(changedBasket.checkoutResult.error,/Existing basket/);
+ assert.ok(changedBasket.runHistory.some(run=>run.steps.some(step=>step.name==='prepared-basket-refresh')));
+ assert.ok(Object.values(merchant.state.counts).every(n=>n===0));
+ reports.push({scenario:'prepared-basket-changed-shared-state-no-mutation',outcome:'passed',mutations:{...merchant.state.counts}});
  await fresh('contextual-recovery-profile');
  assert.equal(await popup.locator('#recoveryControls').isVisible(),false);assert.equal(await popup.locator('#payCheckoutRow').isVisible(),false);assert.equal(await popup.locator('#daytimeBasketTest').count(),0);
  const uiRecord={key:'synthetic-ui-checkout',status:'pending',test:false,phase:'awaiting-payment',slot:{venue:'bethnal-green-gardens',date:'2026-10-25',court:1,start:'20:00',hours:1,totalGBP:'7.00'}};

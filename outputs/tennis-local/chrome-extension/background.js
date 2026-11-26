@@ -1,6 +1,6 @@
 import {VENUES, londonDay, addDays, releaseAt, candidates} from './core.js';
 import {verifyBasket,basketEvidence} from './stage-rules.js';
-import {retryTab,temporaryTabError} from './retry.js';
+import {retryTab,temporaryTabError,tabErrorReason} from './retry.js';
 import {startRun} from './run-log.js';
 import {prepareCheckout,checkoutCandidate,confirmCheckout,PAYMENT_TEST_SLOT,reconcileClearedSelection,archiveFailedCheckout,assertFailedCheckoutAttestation,basketTestKey,recoverPreparationTab} from './checkout.js';
 import {payCheckout,openVerifiedCheckout,assertCardFillProvenance} from './payment.js';
@@ -25,6 +25,9 @@ let busy=false;
 let reloadRequested=false;
 let resumedTab=null;
 let trace=null;
+// Only a tab hint, never basket contents or durable authorization. The worker
+// may be suspended between alarms; a new worker uses the ordinary fresh read.
+let preparedBasket=null;
 function newRun(kind,day){return startRun(chrome.storage.local,kind,day,{version:chrome.runtime.getManifest?.().version||'unknown'});}
 async function step(name,detail={}){if(trace)await trace.step(name,detail);}
 async function readTab(operation){return retryTab(operation,{onRetry:attempt=>step('temporary-tab-retry',{attempt})});}
@@ -41,7 +44,39 @@ async function account(scheduled=false) {
   const result=await readPage(BASE+'/account',{kind:'account'},{scheduled});
   if(!result.ok) throw Object.assign(Error(result.error),{diagnostic:{page:result.page,retainedTabId:result.retainedTabId}});
 }
-async function check(day, scheduled=false,settings=null,retainForCheckout=false) {
+function emptyBasket(value){return value?.empty===true&&Array.isArray(value.items)&&value.items.length===0&&(value.discountApplied===undefined||value.discountApplied===false)&&(value.discountGBP===undefined||value.discountGBP==='0.00');}
+// Chrome storage can return object properties in a different order. Compare
+// the complete saved snapshot by value, preserving the order of venue arrays.
+function jobIdentity(job){return JSON.stringify(job,(_,value)=>value&&typeof value==='object'&&!Array.isArray(value)?Object.fromEntries(Object.keys(value).sort().map(key=>[key,value[key]])):value);}
+async function closePreparedBasket(tabId){
+ try{const tab=await chrome.tabs.get(tabId);if(tab.url===BASE+'/basket'&&!tab.pendingUrl&&!tab.active)await chrome.tabs.remove(tabId);}catch{}
+}
+async function discardPreparedBasket(){const hint=preparedBasket;preparedBasket=null;if(hint)await closePreparedBasket(hint.tabId);}
+async function releaseBasket(job){
+ const hint=preparedBasket;preparedBasket=null;
+ const fallback=async reason=>{await step('prepared-basket-fallback',{reason});const readStartedAt=Date.now();return {...await readPage(BASE+'/basket',{kind:'basket-read'},{scheduled:true}),readStartedAt};};
+ if(!hint)return fallback('no-handoff');
+ if(hint.job!==jobIdentity(job)){await closePreparedBasket(hint.tabId);return fallback('job-changed');}
+ let tab;
+ try{tab=await readTab(()=>chrome.tabs.get(hint.tabId));}catch(e){if(tabErrorReason(e)==='tab-closed')return fallback('tab-closed');throw e;}
+ if([tab.url,tab.pendingUrl].some(url=>{try{const parsed=new URL(url);return parsed.origin===BASE&&/\/(verify-human|login|sign-in)(\/|$)/.test(parsed.pathname);}catch{return false;}}))throw Object.assign(Error('Prepared basket requires sign-in or human verification'),{diagnostic:{page:'basket-read',errorCode:'PAGE_AUTHENTICATION_REQUIRED',retainedTabId:hint.tabId}});
+ if(tab.url!==BASE+'/basket'||tab.pendingUrl||tab.active||tab.status!=='complete')return fallback('tab-changed');
+ await step('prepared-basket-handoff',{tabId:hint.tabId});
+ // Reload normally; the preflight DOM is never evidence of the current shared
+ // basket. The read adapter rejects replies from the document predating reload.
+ try{
+  const readStartedAt=Date.now();
+  const response=await readPageState(chrome.tabs,BASE+'/basket',{kind:'basket-read'},{tabId:hint.tabId,refreshPrepared:true,timeoutMs:RELEASE_BASKET_MAX_AGE_MS,step});
+  if(response.ok&&emptyBasket(response.value))await closePreparedBasket(hint.tabId);
+  return {...response,readStartedAt};
+ }catch(e){
+  if(e.diagnostic?.errorCode==='PAGE_READY_TIMEOUT'&&e.diagnostic?.routeCategory==='requested-page'&&e.diagnostic?.pendingDestination==='none'){
+   await closePreparedBasket(hint.tabId);return fallback('fresh-document-unavailable');
+  }
+  throw e;
+ }
+}
+async function check(day, scheduled=false,settings=null,retainForCheckout=false,job=null) {
   if(!scheduled)await admitManualCheck();
   if(busy) throw Error('A check is already running');
   busy=true;
@@ -62,9 +97,8 @@ async function check(day, scheduled=false,settings=null,retainForCheckout=false)
     let firstGrid,initialBasket;
     if(scheduled&&retainForCheckout){
      await step('release-reads-overlapped',{venue:venues[0]});
-     const startedAt=Date.now();
      const [accountRead,gridRead,basketRead]=await Promise.allSettled([
-      account(true),gridFor(venues[0]),readPage(BASE+'/basket',{kind:'basket-read'},{scheduled:true})
+      account(true),gridFor(venues[0]),releaseBasket(job)
      ]);
      // Join every read before changing trace or starting checkout. Retain only
      // failed read tabs for inspection if another required check stops release.
@@ -76,7 +110,7 @@ async function check(day, scheduled=false,settings=null,retainForCheckout=false)
       const response=basketRead.value;
       throw Object.assign(Error(response.error),{diagnostic:{page:response.page,errorCode:response.reasonCode,retainedTabId:response.retainedTabId}});
      }
-     initialBasket={value:basketRead.value.value,startedAt};
+     initialBasket={value:basketRead.value.value,startedAt:basketRead.value.readStartedAt};
     }else await account(scheduled);
     const results=[];let gridHandoff=null;
     for(const venue of venues) {
@@ -156,6 +190,7 @@ async function arm(day,mode='availability',code='',settings=null) {
    finally{busy=false;trace=null;}
   }
   if(when<=Date.now())throw Error('Release passed during readiness checks; no late booking was scheduled');
+  await discardPreparedBasket();
   await chrome.storage.local.set({job:{day,when,prepared:false,mode,settings,...(armReadinessPassed?{armReadyAt:new Date().toISOString()}:{}),...(discountCode?{discountCode}:{})},bookingSettings:settings});
   await chrome.alarms.clear('prepare');await chrome.alarms.clear('release');
   await chrome.alarms.create('prepare',{when:Math.max(Date.now()+1000,when-300000)});
@@ -333,6 +368,7 @@ async function checkout(expectedDay=null,scheduled=false,basketOnly=false,discou
    const response=await readPageState(chrome.tabs,BASE+'/basket',{kind:'basket-read'},{timeoutMs,step});
    if(!response.ok)throw Object.assign(Error(response.error),failureFor(response));
    await step('basket-observed',basketEvidence(response.value,slot));
+   if(!emptyBasket(response.value))throw Error('Existing basket items or ambiguous basket; no selection sent');
    return response.value;
   };
   const read=async()=>{
@@ -340,7 +376,8 @@ async function checkout(expectedDay=null,scheduled=false,basketOnly=false,discou
     const initial=gridHandoff.initialBasket;
     if(initial){
      // Never discard evidence of existing items, even when the read is old.
-     if(initial.value.empty!==true||basketIsFresh()){
+     if(!emptyBasket(initial.value)){await step('basket-observed',basketEvidence(initial.value,slot));throw Error('Existing basket items or ambiguous basket; no selection sent');}
+     if(basketIsFresh()){
       await step('release-basket-read-reused',{ageMs:basketAge(),basketEmpty:initial.value.empty===true});
       await step('basket-observed',basketEvidence(initial.value,slot));return initial.value;
      }
@@ -374,8 +411,7 @@ async function checkout(expectedDay=null,scheduled=false,basketOnly=false,discou
     await readSelectionGrid(s);
     if(basketIsFresh())return;
     await step('release-basket-read-expired',{ageMs:basketAge(),beforeSelection:true});
-    const basket=await refreshInitialBasket(RELEASE_BASKET_MAX_AGE_MS);
-    if(basket.empty!==true||!Array.isArray(basket.items)||basket.items.length!==0)throw Error('Existing basket items or ambiguous basket; no selection sent');
+    await refreshInitialBasket(RELEASE_BASKET_MAX_AGE_MS);
     if(!basketIsFresh())throw Object.assign(Error('Basket freshness window expired; no selection sent'),{pageCode:'PAGE_READY_TIMEOUT'});
    }}:{}),
    select:async s=>{
@@ -587,17 +623,31 @@ async function runAlarm(alarm){
   try {
     if(alarm.name==='prepare') {
      await chrome.storage.local.set({job:{...job,prepared:false}});
+     await discardPreparedBasket();
      if(job.mode==='payment')await resolvePendingPayment(true);
      if(busy)throw Error('Another run is active; preflight stopped');
      busy=true;trace=newRun('release-preflight',job.day);
-     try {await step('started');if(job.mode==='payment'){await step('local-card-preflight');await paymentCard(chrome.storage,null);}await account(true);await chrome.storage.local.set({job:{...job,prepared:true,preparedAt:new Date().toISOString()}});await trace.finish('complete');}
+     try {
+      await step('started');if(job.mode==='payment'){await step('local-card-preflight');await paymentCard(chrome.storage,null);}await account(true);
+      let basket;
+      if(['checkout','payment'].includes(job.mode)){
+       await step('preflight-basket-started');
+       basket=await readPageState(chrome.tabs,BASE+'/basket',{kind:'basket-read'},{retainSuccess:true,timeoutMs:pageReadBudget(true),step});
+       if(!basket.ok||!emptyBasket(basket.value))throw Object.assign(Error(basket.error||'Preflight basket is not verifiably empty'),{diagnostic:{page:'basket-read',errorCode:basket.reasonCode||'BASKET_NOT_EMPTY',retainedTabId:basket.readTabId||basket.retainedTabId}});
+       await step('preflight-basket-prepared',{tabId:basket.readTabId});
+      }
+      const readyJob={...job,prepared:true,preparedAt:new Date().toISOString()};
+      await trace.finish('complete');
+      await chrome.storage.local.set({job:readyJob});
+      if(basket)preparedBasket={tabId:basket.readTabId,job:jobIdentity(readyJob)};
+     }
      catch(e){await trace.finish('stopped');throw e;}
      finally{busy=false;trace=null;}
     }
     if(alarm.name==='release') {
       if(!job.prepared) throw Error('Preflight did not complete; check stopped');
       if(job.mode==='payment'){await resolvePendingPayment(true);await paymentCard(chrome.storage,null);}
-      const gridHandoff=await check(job.day,true,job.settings||null,['checkout','payment'].includes(job.mode));
+      const gridHandoff=await check(job.day,true,job.settings||null,['checkout','payment'].includes(job.mode),job);
       let outcome=(await chrome.storage.local.get('result')).result;
       if(['checkout','payment'].includes(job.mode)){
        const prepared=await checkout(job.day,true,false,job.discountCode||'',job.settings||null,false,gridHandoff);
@@ -607,6 +657,7 @@ async function runAlarm(alarm){
       return outcome;
     }
   } catch(e) {const {checkoutRecords=[]}=await chrome.storage.local.get('checkoutRecords'),possible=pendingAttempts(checkoutRecords).some(r=>r.paymentDispatchedAt||r.manualPaymentReportedAt);if(!e.recorded)await save({status:'stopped',day:job.day,checkedAt:new Date().toISOString(),step:alarm.name,error:e.message,...e.diagnostic,booked:possible?null:false,paid:possible?null:false});await notifyPaymentResult({status:'stopped'});return {status:'stopped',...failureFor(e,{paymentPossible:possible}),error:e.message,paid:possible?null:false,booked:possible?null:false};}
+  finally{if(alarm.name==='release')await discardPreparedBasket();}
 }
 chrome.alarms.onAlarm.addListener(alarm=>enqueueAction(()=>executeAction(chrome.storage.local,alarm.name,()=>runAlarm(alarm),{version:chrome.runtime.getManifest?.().version||'unknown',source:'alarm'})));
 chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{
@@ -693,7 +744,7 @@ chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{
      return {status:'basket-reconciled-empty',booked:false,paid:false};
      }finally{busy=false;}
     }
-    if(message.kind==='cancel') {await chrome.alarms.clear('prepare');await chrome.alarms.clear('release');await chrome.storage.local.remove('job');return {status:'cancelled'};}
+    if(message.kind==='cancel') {await chrome.alarms.clear('prepare');await chrome.alarms.clear('release');await chrome.storage.local.remove('job');await discardPreparedBasket();return {status:'cancelled'};}
     if(message.kind==='reset' && !busy) {await chrome.storage.local.remove('running');return {status:'reset'};}
     if(message.kind==='status') {
      const status=await chrome.storage.local.get(['latestAction','result','job','running','basketTest','basketTestResult','runHistory','checkoutRecords','checkoutResult','abandonedCheckouts','bookingSettings','armRecovery']);
@@ -712,6 +763,7 @@ chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{
 });
 // Recreate one-shot alarms after restart without starting a missed release.
 async function restoreReleaseJob() {
+  await discardPreparedBasket();
   const {job}=await chrome.storage.local.get('job'); if(!job) return;
   if(job.when<=Date.now()) {await save({status:'stopped',day:job.day,checkedAt:new Date().toISOString(),error:'Chrome was closed at release; no late retry'});await chrome.storage.local.remove('job');return;}
   await chrome.alarms.create('prepare',{when:Math.max(Date.now()+1000,job.when-300000)});

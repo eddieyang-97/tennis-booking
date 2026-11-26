@@ -273,6 +273,79 @@ test('scheduled release reuses one freshly read grid and verified basket through
  assert.equal(JSON.stringify(f.state).includes('gridTabId'),false,'tab handoff must not become durable authorization');
 });
 
+async function preparedRelease(){
+ const f=await navigationRun();f.state.job.prepared=false;f.merchant.clock=f.state.job.when-300000;
+ await f.worker.alarm({name:'prepare'});assert.equal(f.state.job.prepared,true);
+ const prepared=f.navigations.find(n=>n.url.endsWith('/basket'));assert.ok(prepared);
+ assert.ok(f.worker.tabs.has(prepared.id));assert.ok(Object.values(f.merchant.counts).every(n=>n===0));
+ f.merchant.clock=f.state.job.when;f.navigations.length=0;f.reads.length=0;
+ return {...f,preparedId:prepared.id};
+}
+
+test('prepared release refreshes the same basket tab while leaving grid and post-selection validations intact',async()=>{
+ const f=await preparedRelease(),reload=f.worker.chrome.tabs.reload,reloads=[];
+ // A real storage round trip can reorder object keys without changing the job.
+ f.state.job=Object.fromEntries(Object.entries(f.state.job).reverse());
+ f.worker.chrome.tabs.reload=async id=>{reloads.push(id);await reload(id);};
+ await f.worker.alarm({name:'release'});
+ assert.equal(f.state.checkoutResult?.status,'confirmed',f.state.checkoutResult?.error||f.state.result?.error);
+ assert.deepEqual(reloads,[f.preparedId]);assert.equal(f.navigations.filter(n=>n.kind==='create'&&n.url.endsWith('/basket')).length,0);
+ assert.equal(f.reads.filter(r=>r.kind==='basket-read').length,4);
+ assert.ok(f.state.runHistory.some(run=>run.steps.some(s=>s.name==='prepared-basket-refresh')));
+ assert.deepEqual(f.merchant.counts,{selection:2,discount:0,opening:1,fill:1,pay:1,removal:0});
+ assert.equal(f.worker.tabs.has(f.preparedId),false);
+});
+
+test('old empty basket document cannot hide a changed shared basket after preflight',async()=>{
+ const f=await preparedRelease(),send=f.worker.chrome.tabs.sendMessage;
+ f.merchant.selected();let staleReplies=0;
+ f.worker.chrome.tabs.sendMessage=async(id,request)=>{
+  if(id===f.preparedId&&Number.isFinite(request.freshAfter)&&staleReplies++===0)return {ok:true,value:{empty:true,items:[]},documentStartedAt:request.freshAfter-1};
+  return send(id,request);
+ };
+ await f.worker.alarm({name:'release'});
+ assert.equal(f.state.checkoutResult.status,'stopped');assert.match(f.state.checkoutResult.error,/Existing basket/);
+ assert.ok(staleReplies>=2);assert.equal(f.state.checkoutRecords,undefined);assert.ok(Object.values(f.merchant.counts).every(n=>n===0));
+});
+
+for(const invalidation of ['closed','navigated','worker-restart','changed-job','stale-document','challenge'])test(`prepared basket does not authorize selection from ${invalidation}`,async()=>{
+ const f=await preparedRelease();let worker=f.worker;
+ if(invalidation==='closed')worker.tabs.delete(f.preparedId);
+ if(invalidation==='navigated')worker.tabs.get(f.preparedId).url='https://example.com/';
+ if(invalidation==='worker-restart')worker=await startWorker(f.merchant,f.state);
+ if(invalidation==='changed-job')f.state.job.preparedAt='different-preflight';
+ if(invalidation==='challenge')worker.tabs.get(f.preparedId).url='https://tennistowerhamlets.com/verify-human';
+ if(invalidation==='stale-document')worker.chrome.tabs.reload=async()=>{};
+ f.merchant.selected();await worker.alarm({name:'release'});
+ assert.ok(Object.values(f.merchant.counts).every(n=>n===0));assert.equal(f.state.checkoutRecords,undefined);
+ if(invalidation==='challenge')assert.equal(f.state.result.errorCode,'PAGE_AUTHENTICATION_REQUIRED');
+ else assert.equal(f.state.checkoutResult.status,'stopped');
+ if(invalidation==='navigated'||invalidation==='challenge')assert.ok(worker.tabs.has(f.preparedId));
+});
+
+test('repeated preflight invalidates its old handoff and refuses a nonempty basket',async()=>{
+ const f=await preparedRelease();f.merchant.clock=f.state.job.when-300000;f.merchant.selected();await f.worker.alarm({name:'prepare'});
+ assert.equal(f.state.job.prepared,false);assert.equal(f.worker.tabs.has(f.preparedId),false);
+ f.merchant.clock=f.state.job.when;const result=await f.worker.alarm({name:'release'});assert.match(result.error,/Preflight did not complete/);
+ assert.ok(Object.values(f.merchant.counts).every(n=>n===0));
+});
+
+for(const when of ['before','after'])test(`interrupted preflight readiness persistence ${when} cannot authorize a stale basket`,async()=>{
+ const f=await navigationRun();f.state.job.prepared=false;f.merchant.clock=f.state.job.when-300000;
+ const set=f.worker.chrome.storage.local.set;
+ f.worker.chrome.storage.local.set=async value=>{if(value.job?.prepared&&when==='before')throw Error('Synthetic readiness write failed');await set(value);if(value.job?.prepared&&when==='after')throw Error('Synthetic readiness acknowledgement lost');};
+ await f.worker.alarm({name:'prepare'});assert.equal(f.state.job.prepared,when==='after');
+ f.merchant.selected();f.merchant.clock=f.state.job.when;
+ const restarted=await startWorker(f.merchant,f.state);await restarted.alarm({name:'release'});
+ assert.ok(Object.values(f.merchant.counts).every(n=>n===0));assert.equal(f.state.checkoutRecords,undefined);
+ if(when==='after')assert.equal(f.state.checkoutResult.status,'stopped');else assert.match(f.state.result.error,/Preflight did not complete/);
+});
+
+test('cancel removes only its unused prepared basket hint and does not mutate merchant state',async()=>{
+ const f=await preparedRelease();assert.equal((await f.worker.send({kind:'cancel'})).status,'cancelled');
+ assert.equal(f.state.job,undefined);assert.equal(f.worker.tabs.has(f.preparedId),false);assert.ok(Object.values(f.merchant.counts).every(n=>n===0));
+});
+
 for(const outcome of ['empty','nonempty','unreadable'])test(`release refreshes the basket after a slow grid re-read: ${outcome}`,async()=>{
  const f=await navigationRun(),send=f.worker.chrome.tabs.sendMessage;
  let gridReads=0,basketReads=0;

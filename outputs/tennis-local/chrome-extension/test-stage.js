@@ -35,6 +35,14 @@ test('Victoria Park Court label is parsed with exact one-hour basket identity',(
  const parsed=JSON.parse(JSON.stringify(vm.runInNewContext('basketSummary()',context)));
  assert.deepEqual(parsed,basket);assert.equal(verifyBasket(parsed,slot),true);
 });
+test('a prepared-basket refresh refuses an old document and contradictory empty markup',async()=>{
+ const code=fs.readFileSync(new URL('./stage-content.js',import.meta.url),'utf8');let listener,domReads=0;
+ const context={chrome:{runtime:{id:'test',onMessage:{addListener:fn=>listener=fn}}},location:{pathname:'/basket'},performance:{timeOrigin:100},document:{readyState:'complete',body:{get innerText(){domReads++;return 'There are no items in your basket';}},querySelectorAll:()=>[{}]}};
+ vm.runInNewContext(code,context);
+ const send=freshAfter=>new Promise(resolve=>listener({kind:'basket-read',freshAfter},{id:'test'},resolve));
+ assert.equal((await send(100)).notReady,true);assert.equal(domReads,0);
+ const fresh=await send(99);assert.equal(fresh.ok,false);assert.equal(fresh.documentStartedAt,100);assert.match(fresh.error,/contradictory empty basket/);
+});
 test('two-hour verification requires adjacent same-court identities and exact total',()=>{
  const s={...slot,start:'20:00',hours:2,totalGBP:'14.00'};
  const b={...basket,items:[{...basket.items[0],hour:20,priceGBP:'7.00'},{...basket.items[0],hour:21,priceGBP:'7.00'}],totalGBP:'14.00'};

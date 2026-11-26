@@ -18,7 +18,7 @@ function fixture(){
  const storage={get:async()=>structuredClone(state),set:async value=>Object.assign(state,structuredClone(value)),remove:async key=>delete state[key]};
  const context={pendingAttempts,chrome:{storage:{local:storage},action:{setBadgeText:async()=>{}}},busy:false,trace:null,resumedTab:null,Date,failureFor,
   newRun:()=>({record:{id:'synthetic-run'},finish:async()=>{}}),step:async(name,detail)=>steps.push({name,...detail}),
-  notifyPaymentResult:async()=>{},save:async()=>{},paymentCard:async()=>null,resolvePendingPayment:async()=>{}};
+  notifyPaymentResult:async()=>{},save:async()=>{},paymentCard:async()=>null,resolvePendingPayment:async()=>{},discardPreparedBasket:async()=>{}};
  return {state,steps,storage,context};
 }
 for(const [mode,status,paid] of [['checkout','stopped',false],['checkout','awaiting-payment',false],['payment','stopped',null],['payment','confirmed',true]])test(`alarm propagates ${mode} ${status} instead of fabricating completion`,async()=>{
